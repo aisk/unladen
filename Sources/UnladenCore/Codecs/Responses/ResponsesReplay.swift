@@ -38,9 +38,19 @@ enum ResponsesReplay {
 ///
 /// Format: the prefix ``prefix`` (`unladen-seal1:`, which also versions the
 /// format) followed by standard base64 of a compact JSON object:
-/// `{"o": origin, "s": signature?, "e": encrypted?}`. The reasoning text is
-/// not repeated: it travels as the item's `summary` (or `content`), which
-/// clients echo too.
+/// `{"o": origin, "s": signature?, "e": encrypted?, "t": target?}`. The
+/// reasoning text is not repeated: it travels as the item's `summary` (or
+/// `content`), which clients echo too.
+///
+/// **Call signatures.** A Gemini `thoughtSignature` on a function call
+/// (which Gemini 3 requires back) has no reasoning to ride on, so the reply
+/// encoders write an extra reasoning item with an empty summary right
+/// before the `function_call` item, sealing `{"o", "s", "t": "call"}`
+/// (``Contents/target`` ``callTarget``). The request parser removes that item
+/// and puts the signature and origin back on the call that follows it (its
+/// gateway-made item id cleared); an envelope that is not followed by a
+/// call is dropped with a warning. Text signatures are not carried (Gemini
+/// does not require them back).
 ///
 /// - The Responses reply encoders seal reasoning whose origin
 ///   ``ResponsesReplay`` does not accept and that has a signature or
@@ -56,16 +66,22 @@ enum ResponsesReplay {
 ///   trust, so it is dropped with a warning.
 @_spi(Wire) public enum ResponsesSeal {
     public static let prefix = "unladen-seal1:"
+    /// ``Contents/target`` of a function call's signature.
+    public static let callTarget = "call"
 
     public struct Contents: Hashable, Sendable {
         public var origin: WireSystemID
         public var signature: String?
         public var encrypted: String?
+        /// What the data belongs to when not the reasoning item itself:
+        /// ``callTarget`` for the function call that follows.
+        public var target: String?
 
-        public init(origin: WireSystemID, signature: String? = nil, encrypted: String? = nil) {
+        public init(origin: WireSystemID, signature: String? = nil, encrypted: String? = nil, target: String? = nil) {
             self.origin = origin
             self.signature = signature
             self.encrypted = encrypted
+            self.target = target
         }
     }
 
@@ -82,6 +98,7 @@ enum ResponsesReplay {
         object["o"] = .string(contents.origin)
         if let value = contents.signature { object["s"] = .string(value) }
         if let value = contents.encrypted { object["e"] = .string(value) }
+        if let value = contents.target { object["t"] = .string(value) }
         return prefix + Base64.encode(JSONValue.object(object).encoded())
     }
 
@@ -99,6 +116,11 @@ enum ResponsesReplay {
         }
         switch object["e"] {
         case .string(let value)?: contents.encrypted = value
+        case nil: break
+        default: return .unreadable
+        }
+        switch object["t"] {
+        case .string(let value)?: contents.target = value
         case nil: break
         default: return .unreadable
         }

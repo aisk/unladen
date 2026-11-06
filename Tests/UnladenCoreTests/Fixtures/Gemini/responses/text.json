@@ -1,0 +1,21 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [{"text": "Hello! How can I help you today?", "thoughtSignature": "sigTextReply=="}],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "avgLogprobs": -0.25
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 8,
+    "candidatesTokenCount": 9,
+    "totalTokenCount": 41,
+    "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 8}],
+    "thoughtsTokenCount": 24
+  },
+  "modelVersion": "gemini-3-pro-preview",
+  "responseId": "resp-T1"
+}

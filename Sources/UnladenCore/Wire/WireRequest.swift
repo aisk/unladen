@@ -94,6 +94,11 @@
     /// JSON Schema of the arguments.
     public var parameters: JSONValue?
     public var strict: Bool?
+    /// The key the source protocol used for ``parameters`` when it has
+    /// several (Gemini `parameters`, an OpenAPI subset, vs
+    /// `parametersJsonSchema`). Honoured only by an encoder for the same
+    /// protocol.
+    public var sourceKey: String?
     /// Unknown keys of the function definition (the object with `name`).
     public var extra: JSONObject
     /// Unknown keys of a protocol's wrapper object around it (Chat's
@@ -105,6 +110,7 @@
         description: String? = nil,
         parameters: JSONValue? = nil,
         strict: Bool? = nil,
+        sourceKey: String? = nil,
         extra: JSONObject = [:],
         envelopeExtra: JSONObject = [:],
     ) {
@@ -112,6 +118,7 @@
         self.description = description
         self.parameters = parameters
         self.strict = strict
+        self.sourceKey = sourceKey
         self.extra = extra
         self.envelopeExtra = envelopeExtra
     }
@@ -199,6 +206,10 @@
     public var description: String?
     public var schema: JSONValue?
     public var strict: Bool?
+    /// The key the source protocol used for ``schema`` when it has several
+    /// (Gemini `responseSchema` vs `responseJsonSchema`). Honoured only by
+    /// an encoder for the same protocol.
+    public var sourceKey: String?
     /// Unknown keys of the schema object (Chat `json_schema`).
     public var extra: JSONObject
 
@@ -208,6 +219,7 @@
         description: String? = nil,
         schema: JSONValue? = nil,
         strict: Bool? = nil,
+        sourceKey: String? = nil,
         extra: JSONObject = [:],
     ) {
         self.kind = kind
@@ -215,6 +227,7 @@
         self.description = description
         self.schema = schema
         self.strict = strict
+        self.sourceKey = sourceKey
         self.extra = extra
     }
 }

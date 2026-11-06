@@ -1,0 +1,23 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {"text": "**Planning**\nI will add the numbers.", "thought": true, "thoughtSignature": "sigThought=="},
+          {"text": "2 + 2 = 4."}
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP"
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 12,
+    "candidatesTokenCount": 7,
+    "totalTokenCount": 59,
+    "cachedContentTokenCount": 4,
+    "thoughtsTokenCount": 40
+  },
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "resp-R1"
+}

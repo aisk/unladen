@@ -1,0 +1,10 @@
+{
+  "contents": [
+    {"role": "user", "parts": [{"text": "Run it."}]},
+    {"role": "model", "parts": [{"executableCode": {"language": "PYTHON", "code": "print(1)"}}, {"codeExecutionResult": {"outcome": "OUTCOME_OK", "output": "1\n"}}]},
+    {"role": "user", "parts": [{"text": "And now call a tool."}]}
+  ],
+  "tools": [{"functionDeclarations": [{"name": "a"}, {"name": "b", "description": "B"}]}],
+  "toolConfig": {"functionCallingConfig": {"mode": "VALIDATED", "allowedFunctionNames": ["a", "b"]}},
+  "generationConfig": {"responseMimeType": "application/json", "responseJsonSchema": {"type": "object"}}
+}

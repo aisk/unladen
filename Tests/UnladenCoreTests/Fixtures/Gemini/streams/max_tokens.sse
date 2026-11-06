@@ -1,0 +1,4 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Once upon a time, there"}],"role": "model"}}],"modelVersion": "gemini-2.5-flash","responseId": "resp-M1"}
+
+data: {"candidates": [{"content": {"parts": [{"text": " was a"}],"role": "model"},"finishReason": "MAX_TOKENS"}],"usageMetadata": {"promptTokenCount": 5,"candidatesTokenCount": 8,"totalTokenCount": 13},"modelVersion": "gemini-2.5-flash","responseId": "resp-M1"}
+

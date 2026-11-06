@@ -100,9 +100,35 @@ extension ResponsesCodec {
         case .array(let items)?:
             _ = reader.raw("input")
             messages.reserveCapacity(items.count)
-            for (i, item) in items.enumerated() {
-                messages.append(try ResponsesDecode.inputItem(item, path: WirePath.index("input", i), warnings: &warnings))
+            // A sealed call signature waiting for its call (see ResponsesSeal).
+            var pending: (contents: ResponsesSeal.Contents, path: String)?
+            func dropPending(_ warnings: inout [WireWarning]) {
+                if let pending {
+                    warnings.append(WireWarning(.droppedContent, "sealed tool call signature without its call dropped", path: pending.path))
+                }
+                pending = nil
             }
+            for (i, item) in items.enumerated() {
+                let path = WirePath.index("input", i)
+                if let sealed = ResponsesDecode.sealedCallSignature(item) {
+                    dropPending(&warnings)
+                    pending = (sealed, path)
+                    continue
+                }
+                var message = try ResponsesDecode.inputItem(item, path: path, warnings: &warnings)
+                if let carried = pending?.contents, message.role == .assistant, message.parts.count == 1,
+                   case .toolCall(var call) = message.parts[0], call.itemType == nil
+                {
+                    call.signature = carried.signature
+                    call.origin = carried.origin
+                    call.itemID = nil
+                    message.parts[0] = .toolCall(call)
+                    pending = nil
+                }
+                dropPending(&warnings)
+                messages.append(message)
+            }
+            dropPending(&warnings)
         case nil:
             inputSpelling = "absent"
         case .null?:

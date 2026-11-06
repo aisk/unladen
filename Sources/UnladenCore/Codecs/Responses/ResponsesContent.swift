@@ -208,6 +208,17 @@ enum ResponsesDecode {
         return parts
     }
 
+    /// The contents of a reasoning item that only carries a sealed function
+    /// call signature (``ResponsesSeal/callTarget``), or `nil`.
+    static func sealedCallSignature(_ value: JSONValue) -> ResponsesSeal.Contents? {
+        guard case .object(let object) = value, object["type"] == "reasoning",
+              case .string(let encrypted)? = object["encrypted_content"],
+              case .sealed(let contents) = ResponsesSeal.open(encrypted), contents.target == ResponsesSeal.callTarget,
+              contents.signature != nil
+        else { return nil }
+        return contents
+    }
+
     /// Decodes a `function_call` or `custom_tool_call` item, or `nil` if it
     /// is malformed.
     static func toolCall(

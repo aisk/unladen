@@ -1,0 +1,4 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Checking both."}],"role": "model"}}],"modelVersion": "gemini-3-pro-preview","responseId": "resp-P1"}
+
+data: {"candidates": [{"content": {"parts": [{"functionCall": {"name": "get_weather","args": {"city": "Paris"}},"thoughtSignature": "sigCallFirst=="},{"functionCall": {"name": "get_time","args": {"tz": "Europe/Paris"}}}],"role": "model"},"finishReason": "STOP"}],"usageMetadata": {"promptTokenCount": 50,"candidatesTokenCount": 20,"totalTokenCount": 70},"modelVersion": "gemini-3-pro-preview","responseId": "resp-P1"}
+

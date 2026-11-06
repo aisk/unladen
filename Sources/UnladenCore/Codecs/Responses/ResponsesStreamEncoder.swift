@@ -31,7 +31,9 @@
 ///   (``ResponsesSeal``) of the origin's signature/encrypted data.
 /// - Tool calls are `function_call` (or `custom_tool_call`, by
 ///   ``WireToolCall/itemType``) items; a call that received no arguments
-///   gets `{}`. Responses opaque items are written whole; other protocols'
+///   gets `{}`. A call's signature from another system (Gemini's
+///   `thoughtSignature`) is sealed into a reasoning item written just
+///   before the call (see ``ResponsesSeal``). Responses opaque items are written whole; other protocols'
 ///   opaque content is dropped with a warning.
 ///
 /// The reply:
@@ -71,6 +73,8 @@ package struct ResponsesStreamEncoder: Sendable {
         var origin: WireSystemID?
         var signature: String?
         var encrypted: String?
+        /// ``ResponsesSeal/Contents/target`` of a sealed call signature.
+        var target: String?
         var extra: JSONObject = [:]
         var call: WireToolCall?
         var arguments = ""
@@ -517,7 +521,20 @@ package struct ResponsesStreamEncoder: Sendable {
 
     private mutating func openCall(_ call: WireToolCall, into out: inout [SSEElement]) {
         closeItem(status: "completed", into: &out)
-        if call.signature != nil { dropOnce("tool-signature", "tool call signature cannot be carried by Responses") }
+        if let signature = call.signature {
+            if ResponsesReplay.acceptsID(origin: call.origin, sameProtocol: sameProtocol, trusted: trusted) {
+                dropOnce("tool-signature", "tool call signature cannot be carried by Responses")
+            } else {
+                // Sealed into a reasoning item just before the call.
+                var carrier = Item(kind: .reasoning, sourceID: nil)
+                carrier.origin = call.origin
+                carrier.signature = signature
+                carrier.target = ResponsesSeal.callTarget
+                item = carrier
+                addItem(into: &out)
+                closeItem(status: "completed", into: &out)
+            }
+        }
         var next = Item(kind: .call(custom: call.itemType == "custom_tool_call"), sourceID: call.itemID)
         next.call = call
         item = next
@@ -605,6 +622,7 @@ package struct ResponsesStreamEncoder: Sendable {
             } else if current.signature != nil || current.encrypted != nil {
                 object["encrypted_content"] = .string(ResponsesSeal.seal(ResponsesSeal.Contents(
                     origin: current.origin ?? "unknown", signature: current.signature, encrypted: current.encrypted,
+                    target: current.target,
                 )))
             }
             appendExtra(current.extra, to: &object, include: sameProtocol, path: "item", warnings: &warnings)

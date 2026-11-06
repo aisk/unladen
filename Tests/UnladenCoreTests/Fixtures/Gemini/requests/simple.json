@@ -1,0 +1,7 @@
+{
+  "contents": [
+    {"role": "user", "parts": [{"text": "Write a haiku about the sea."}]}
+  ],
+  "systemInstruction": "You are a poet.",
+  "generationConfig": {"responseMimeType": "text/plain", "thinkingConfig": {"thinkingBudget": 0}}
+}

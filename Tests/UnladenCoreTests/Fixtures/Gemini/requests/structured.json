@@ -1,0 +1,46 @@
+{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        {"text": "Extract the invoice total."},
+        {"fileData": {"mimeType": "application/pdf", "fileUri": "https://generativelanguage.googleapis.com/v1beta/files/abc123"}}
+      ]
+    },
+    {
+      "role": "model",
+      "parts": [
+        {"functionCall": {"id": "fc-lookup-1", "name": "lookup", "args": {"q": "ACME", "limit": 1}}, "thoughtSignature": "sigLookup=="}
+      ]
+    },
+    {
+      "role": "user",
+      "parts": [
+        {"functionResponse": {"id": "fc-lookup-1", "name": "lookup", "response": {"error": "not found"}}}
+      ]
+    }
+  ],
+  "systemInstruction": {"parts": [{"text": "Be terse."}]},
+  "tools": [
+    {"functionDeclarations": [{"name": "lookup", "parameters": {"type": "OBJECT", "properties": {"q": {"type": "STRING"}}}}]},
+    {"codeExecution": {}}
+  ],
+  "toolConfig": {
+    "functionCallingConfig": {"mode": "ANY", "allowedFunctionNames": ["lookup"]},
+    "retrievalConfig": {"languageCode": "en"}
+  },
+  "generationConfig": {
+    "stopSequences": ["END"],
+    "responseMimeType": "application/json",
+    "responseSchema": {"type": "OBJECT", "properties": {"total": {"type": "NUMBER"}}},
+    "candidateCount": 1,
+    "seed": 42,
+    "topK": 40,
+    "presencePenalty": 0.5,
+    "frequencyPenalty": 0.25,
+    "responseModalities": ["TEXT"],
+    "thinkingConfig": {"thinkingLevel": "low"}
+  },
+  "cachedContent": "cachedContents/xyz",
+  "labels": {"team": "billing"}
+}

@@ -1,0 +1,76 @@
+{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        {"text": "What is in this image, and what is the weather and time in Paris?"},
+        {"inlineData": {"mimeType": "image/png", "data": "iVBORw0KGgo="}}
+      ]
+    },
+    {
+      "role": "model",
+      "parts": [
+        {"text": "**Planning the calls**", "thought": true},
+        {"functionCall": {"name": "get_weather", "args": {"city": "Paris", "unit": "celsius", "days": 1.0}}, "thoughtSignature": "CiQBVKhc7sigWeather=="},
+        {"functionCall": {"name": "get_time", "args": {"tz": "Europe/Paris"}}}
+      ]
+    },
+    {
+      "role": "user",
+      "parts": [
+        {"functionResponse": {"name": "get_weather", "response": {"output": "18°C, cloudy"}}},
+        {"functionResponse": {"name": "get_time", "response": {"time": "14:05", "dst": true}}}
+      ]
+    },
+    {
+      "role": "model",
+      "parts": [
+        {"text": "The image is a bar chart. In Paris it is 18°C and cloudy, and the time is 14:05.", "thoughtSignature": "CiQBVKhc7sigText=="}
+      ]
+    },
+    {
+      "role": "user",
+      "parts": [{"text": "Now search the news for Paris."}]
+    }
+  ],
+  "systemInstruction": {
+    "role": "user",
+    "parts": [{"text": "You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks."}]
+  },
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "name": "get_weather",
+          "description": "Get the current weather for a city.",
+          "parametersJsonSchema": {
+            "type": "object",
+            "properties": {
+              "city": {"type": "string"},
+              "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+              "days": {"type": "number"}
+            },
+            "required": ["city"]
+          }
+        },
+        {
+          "name": "get_time",
+          "description": "Get the local time.",
+          "parameters": {"type": "OBJECT", "properties": {"tz": {"type": "STRING"}}, "required": ["tz"]}
+        }
+      ]
+    },
+    {"googleSearch": {}}
+  ],
+  "toolConfig": {"functionCallingConfig": {"mode": "AUTO"}},
+  "safetySettings": [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"}
+  ],
+  "generationConfig": {
+    "temperature": 0.70,
+    "topP": 0.95,
+    "maxOutputTokens": 8192,
+    "thinkingConfig": {"includeThoughts": true, "thinkingBudget": 1024}
+  }
+}

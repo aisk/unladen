@@ -1,0 +1,4 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Here is how"}],"role": "model"}}],"modelVersion": "gemini-2.5-flash","responseId": "resp-S1"}
+
+data: {"candidates": [{"content": {"parts": [{"text": ""}],"role": "model"},"finishReason": "SAFETY","safetyRatings": [{"category": "HARM_CATEGORY_DANGEROUS_CONTENT","probability": "HIGH","blocked": true}]}],"usageMetadata": {"promptTokenCount": 7,"candidatesTokenCount": 3,"totalTokenCount": 10},"modelVersion": "gemini-2.5-flash","responseId": "resp-S1"}
+
