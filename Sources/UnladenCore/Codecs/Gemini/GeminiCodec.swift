@@ -96,9 +96,20 @@
     /// The documented sentinel for ``missingSignatureFallback``.
     public static let skipSignatureValidator = "skip_thought_signature_validator"
 
-    public init(trustedSignatureOrigins: Set<WireSystemID> = ["gemini"], missingSignatureFallback: String? = nil) {
+    /// The function-declaration key for tool schemas: `parameters` (the
+    /// OpenAPI subset) or `parametersJsonSchema`. When set it wins over the
+    /// client's own key; `nil` keeps the same-protocol key, else
+    /// `parametersJsonSchema`.
+    public var parametersKey: String?
+
+    public init(
+        trustedSignatureOrigins: Set<WireSystemID> = ["gemini"],
+        missingSignatureFallback: String? = nil,
+        parametersKey: String? = nil,
+    ) {
         self.trustedSignatureOrigins = trustedSignatureOrigins
         self.missingSignatureFallback = missingSignatureFallback
+        self.parametersKey = parametersKey
     }
 }
 
@@ -454,7 +465,7 @@ extension GeminiCodec {
             }
         }
         if let tools = request.tools {
-            object["tools"] = .array(encodeTools(tools, include: include, warnings: &warnings))
+            object["tools"] = .array(encodeTools(tools, include: include, parametersKey: options.parametersKey, warnings: &warnings))
         }
         var toolConfig = JSONObject()
         if let choice = request.toolChoice, let calling = encodeToolChoice(choice, warnings: &warnings) {
@@ -504,7 +515,12 @@ extension GeminiCodec {
         drop(!(request.streamOptions?.extra.isEmpty ?? true), "stream_options")
     }
 
-    private static func encodeTools(_ tools: [WireTool], include: Bool, warnings: inout [WireWarning]) -> [JSONValue] {
+    private static func encodeTools(
+        _ tools: [WireTool],
+        include: Bool,
+        parametersKey: String?,
+        warnings: inout [WireWarning],
+    ) -> [JSONValue] {
         var items: [JSONValue] = []
         var declarations: [JSONValue] = []
         func flush() {
@@ -519,7 +535,7 @@ extension GeminiCodec {
                 object["name"] = .string(function.name)
                 if let value = function.description { object["description"] = .string(value) }
                 if let schema = function.parameters {
-                    let key = include && function.sourceKey == "parameters" ? "parameters" : "parametersJsonSchema"
+                    let key = parametersKey ?? (include && function.sourceKey == "parameters" ? "parameters" : "parametersJsonSchema")
                     object[key] = schema
                 }
                 if function.strict == true {

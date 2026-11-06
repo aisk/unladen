@@ -15,6 +15,20 @@
 /// unknown fields in their decode order.
 @_spi(Wire) public enum ChatCompletionsCodec {}
 
+/// Settings for building a Chat request that the wire model does not carry.
+/// Profiles supply them per endpoint and model.
+@_spi(Wire) public struct ChatRequestOptions: Hashable, Sendable {
+    /// The key for ``WireRequest/maxOutputTokens`` (`max_tokens` or
+    /// `max_completion_tokens`). When set it wins over the client's own
+    /// spelling, since the upstream accepts only this one; `nil` keeps the
+    /// same-protocol spelling, else `max_completion_tokens`.
+    public var maxTokensKey: String?
+
+    public init(maxTokensKey: String? = nil) {
+        self.maxTokensKey = maxTokensKey
+    }
+}
+
 // MARK: - Requests
 
 extension ChatCompletionsCodec {
@@ -196,7 +210,7 @@ extension ChatCompletionsCodec {
     /// of another protocol are merged into one. Content Chat cannot carry
     /// (signatures, top-k, other protocols' opaque parts) is dropped with a
     /// warning. No default values are added.
-    public static func buildRequest(_ request: WireRequest) -> WireEncoded {
+    public static func buildRequest(_ request: WireRequest, options: ChatRequestOptions = .init()) -> WireEncoded {
         var warnings: [WireWarning] = []
         let include = request.source == .chatCompletions
         let spellings = include ? request.spellings : [:]
@@ -233,7 +247,7 @@ extension ChatCompletionsCodec {
         if let value = request.frequencyPenalty { object["frequency_penalty"] = .number(value) }
         if let value = request.maxOutputTokens {
             let spelling = spellings[.maxOutputTokens].flatMap { ["max_tokens", "max_completion_tokens"].contains($0) ? $0 : nil }
-            object[spelling ?? "max_completion_tokens"] = .number(JSONNumber(value))
+            object[options.maxTokensKey ?? spelling ?? "max_completion_tokens"] = .number(JSONNumber(value))
         }
         if let value = request.candidateCount { object["n"] = .number(JSONNumber(value)) }
         if let value = request.parallelToolCalls { object["parallel_tool_calls"] = .bool(value) }

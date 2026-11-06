@@ -26,6 +26,9 @@
         public static let unsupportedValue: Code = "unsupported_value"
         /// A stream did not follow the protocol (e.g. ended without `[DONE]`).
         public static let malformedStream: Code = "malformed_stream"
+        /// A Profile transform changed the request to fit the upstream
+        /// (synthesized a tool result, converted an effort, clamped a limit).
+        public static let adjusted: Code = "adjusted"
     }
 
     public var code: Code

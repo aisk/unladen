@@ -53,9 +53,21 @@
     /// dropped with a warning.
     public var trustedReasoningOrigins: Set<WireSystemID>
 
-    public init(defaultMaxTokens: Int = 4096, trustedReasoningOrigins: Set<WireSystemID> = ["anthropic"]) {
+    /// Whether the upstream takes thinking blocks without a signature it can
+    /// verify (DeepSeek's Anthropic endpoint does; Anthropic does not). When
+    /// set, reasoning text whose data is not trusted, or that has none, is
+    /// written as `thinking` with an empty signature instead of being
+    /// dropped.
+    public var acceptsUnsignedThinking: Bool
+
+    public init(
+        defaultMaxTokens: Int = 4096,
+        trustedReasoningOrigins: Set<WireSystemID> = ["anthropic"],
+        acceptsUnsignedThinking: Bool = false,
+    ) {
         self.defaultMaxTokens = defaultMaxTokens
         self.trustedReasoningOrigins = trustedReasoningOrigins
+        self.acceptsUnsignedThinking = acceptsUnsignedThinking
     }
 }
 
@@ -258,7 +270,7 @@ extension AnthropicMessagesCodec {
         var warnings: [WireWarning] = []
         let include = request.source == .anthropicMessages
         let context = AnthropicEncode.Context(
-            include: include, trusted: options.trustedReasoningOrigins, keepUnsignedReasoning: false,
+            include: include, trusted: options.trustedReasoningOrigins, keepUnsignedReasoning: options.acceptsUnsignedThinking,
         )
         var object = JSONObject()
         object["model"] = .string(request.model)
