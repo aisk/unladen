@@ -13,6 +13,11 @@
     /// `systemInstruction`, Responses `instructions`. Chat keeps its
     /// `system`/`developer` messages in ``messages`` instead.
     public var instructions: [WirePart]?
+    /// How ``instructions`` was written (Anthropic `system` string vs blocks).
+    public var instructionsForm: WireContentForm?
+    /// Unknown keys of the instructions wrapper object (Gemini
+    /// `systemInstruction` keys besides `parts`).
+    public var instructionsExtra: JSONObject
     public var messages: [WireMessage]
 
     /// `nil`: absent; `[]`: sent as an empty array.
@@ -48,7 +53,8 @@
     public var verbosity: String?
 
     /// The client's spelling of fields with synonyms, so the same protocol
-    /// writes them back as sent.
+    /// writes them back as sent. Encoders honour it only when the target is
+    /// ``source``; another protocol's spelling could be invalid for theirs.
     public var spellings: [WireSynonym: String]
     /// Unknown top-level keys, in decode order.
     public var extra: JSONObject
@@ -57,6 +63,7 @@
         self.source = source
         self.model = model
         self.messages = messages
+        self.instructionsExtra = [:]
         self.spellings = [:]
         self.extra = [:]
     }
@@ -147,6 +154,9 @@
     public var budgetTokens: Int?
     /// Anthropic `thinking.type` enabled/disabled, OpenRouter `enabled`.
     public var enabled: Bool?
+    /// Whether reasoning text should be returned: Gemini
+    /// `thinkingConfig.includeThoughts`, OpenRouter `!exclude`.
+    public var visible: Bool?
     /// Responses `reasoning.summary`.
     public var summary: String?
     /// Unknown keys of the reasoning object, when it was an object.
@@ -156,12 +166,14 @@
         effort: String? = nil,
         budgetTokens: Int? = nil,
         enabled: Bool? = nil,
+        visible: Bool? = nil,
         summary: String? = nil,
         extra: JSONObject = [:],
     ) {
         self.effort = effort
         self.budgetTokens = budgetTokens
         self.enabled = enabled
+        self.visible = visible
         self.summary = summary
         self.extra = extra
     }

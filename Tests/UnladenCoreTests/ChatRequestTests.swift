@@ -118,7 +118,7 @@ private func parseFixture(_ name: String) throws -> WireDecoded<WireRequest> {
         ])
         #expect(request.extra["frequency_penalty"] == .null)
         #expect(request.spellings[.reasoning] == "reasoning")
-        #expect(request.reasoning == WireReasoningConfig(effort: "high", extra: ["exclude": false]))
+        #expect(request.reasoning == WireReasoningConfig(effort: "high", visible: true))
         #expect(request.presencePenalty?.literal == "0")
         #expect(request.temperature?.literal == "1.0")
         #expect(request.stop == .single("###"))

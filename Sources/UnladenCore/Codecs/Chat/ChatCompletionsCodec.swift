@@ -38,7 +38,9 @@ extension ChatCompletionsCodec {
         var messages: [WireMessage] = []
         messages.reserveCapacity(rawMessages.count)
         for (i, message) in rawMessages.enumerated() {
-            messages.append(try ChatDecode.message(message, path: WirePath.index("messages", i), warnings: &warnings))
+            messages.append(try ChatDecode.message(
+                message, path: WirePath.index("messages", i), idPrefix: "call_m\(i)", warnings: &warnings,
+            ))
         }
         var request = WireRequest(model: model, messages: messages, source: .chatCompletions)
 
@@ -61,6 +63,7 @@ extension ChatCompletionsCodec {
             reasoning.effort = try inner.string("effort")
             reasoning.budgetTokens = try inner.int("max_tokens")
             reasoning.enabled = try inner.bool("enabled")
+            reasoning.visible = try inner.bool("exclude").map { !$0 }
             reasoning.extra = inner.remaining(warnings: &warnings)
             request.reasoning = reasoning
             request.spellings[.reasoning] = "reasoning"
@@ -187,18 +190,23 @@ extension ChatCompletionsCodec {
 
     /// Encodes a request for a Chat Completions upstream.
     ///
-    /// Bags are written only if `request.source` is Chat. Content Chat cannot
-    /// carry (signatures, top-k, other protocols' opaque parts) is dropped
-    /// with a warning. No default values are added.
+    /// Bags and the client's spellings (``WireRequest/spellings``, part
+    /// `sourceKey`s) are honoured only if `request.source` is Chat: another
+    /// protocol's spelling may be invalid here. Content Chat cannot carry
+    /// (signatures, top-k, other protocols' opaque parts) is dropped with a
+    /// warning. No default values are added.
     public static func buildRequest(_ request: WireRequest) -> WireEncoded {
         var warnings: [WireWarning] = []
         let include = request.source == .chatCompletions
+        let spellings = include ? request.spellings : [:]
         var object = JSONObject()
         object["model"] = .string(request.model)
 
         var messages: [JSONValue] = []
         if let instructions = request.instructions {
-            let system = WireMessage(role: .system, parts: instructions)
+            let system = WireMessage(
+                role: .system, parts: instructions, contentForm: request.instructionsForm, extra: request.instructionsExtra,
+            )
             messages += ChatEncode.messages(system, include: include, path: "instructions", warnings: &warnings)
         }
         for (i, message) in request.messages.enumerated() {
@@ -208,7 +216,7 @@ extension ChatCompletionsCodec {
 
         if let value = request.frequencyPenalty { object["frequency_penalty"] = .number(value) }
         if let value = request.maxOutputTokens {
-            let spelling = request.spellings[.maxOutputTokens].flatMap { ["max_tokens", "max_completion_tokens"].contains($0) ? $0 : nil }
+            let spelling = spellings[.maxOutputTokens].flatMap { ["max_tokens", "max_completion_tokens"].contains($0) ? $0 : nil }
             object[spelling ?? "max_completion_tokens"] = .number(JSONNumber(value))
         }
         if let value = request.candidateCount { object["n"] = .number(JSONNumber(value)) }
@@ -216,7 +224,7 @@ extension ChatCompletionsCodec {
         if let value = request.presencePenalty { object["presence_penalty"] = .number(value) }
         if let value = request.promptCacheKey { object["prompt_cache_key"] = .string(value) }
         if let reasoning = request.reasoning {
-            encodeReasoning(reasoning, spelling: request.spellings[.reasoning], include: include, into: &object, warnings: &warnings)
+            encodeReasoning(reasoning, spelling: spellings[.reasoning], include: include, into: &object, warnings: &warnings)
         }
         if let format = request.responseFormat {
             object["response_format"] = encodeResponseFormat(format, include: include, warnings: &warnings)
@@ -273,6 +281,7 @@ extension ChatCompletionsCodec {
             if let value = reasoning.effort { inner["effort"] = .string(value) }
             if let value = reasoning.budgetTokens { inner["max_tokens"] = .number(JSONNumber(value)) }
             if let value = reasoning.enabled { inner["enabled"] = .bool(value) }
+            if let value = reasoning.visible { inner["exclude"] = .bool(!value) }
             if reasoning.summary != nil {
                 warnings.append(WireWarning(.droppedField, "Chat has no reasoning summary setting", path: "reasoning.summary"))
             }
@@ -283,7 +292,9 @@ extension ChatCompletionsCodec {
         if let effort = reasoning.effort {
             object["reasoning_effort"] = .string(effort)
         }
-        if reasoning.budgetTokens != nil || reasoning.enabled != nil || reasoning.summary != nil || !reasoning.extra.isEmpty {
+        if reasoning.budgetTokens != nil || reasoning.enabled != nil || reasoning.visible != nil
+            || reasoning.summary != nil || !reasoning.extra.isEmpty
+        {
             warnings.append(WireWarning(.droppedField, "Chat `reasoning_effort` carries only an effort level", path: "reasoning_effort"))
         }
     }
@@ -408,7 +419,9 @@ extension ChatCompletionsCodec {
             guard let message = choiceReader.raw("message") else {
                 throw WireDecodingError(.missingField, path: "choices[0].message")
             }
-            response.message = try ChatDecode.message(message, path: "choices[0].message", warnings: &warnings)
+            response.message = try ChatDecode.message(
+                message, path: "choices[0].message", idPrefix: "call", warnings: &warnings,
+            )
             if let reason = try choiceReader.string("finish_reason") {
                 response.finishReason = ChatFinish.decode(reason)
             }
@@ -460,7 +473,11 @@ extension ChatCompletionsCodec {
         var choice = JSONObject()
         choice["index"] = 0
         choice["message"] = encoded.last ?? ["role": "assistant", "content": nil]
-        choice["finish_reason"] = ChatFinish.encode(response.finishReason, sameProtocol: include)
+        // Same protocol without a reason: whatever the source had (`null`)
+        // comes back from the choice bag; otherwise a reason is required.
+        if !(include && response.finishReason == nil) {
+            choice["finish_reason"] = ChatFinish.encode(response.finishReason, sameProtocol: include)
+        }
         appendExtra(response.choiceExtra, to: &choice, include: include, path: "choices[0]", warnings: &warnings)
         object["choices"] = [.object(choice)]
         if let usage = response.usage {

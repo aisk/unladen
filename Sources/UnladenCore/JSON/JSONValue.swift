@@ -4,6 +4,10 @@
 /// Equality is structural and order-sensitive for objects, and compares
 /// number literals textually (see ``JSONNumber``), so `a == b` implies
 /// `a.encoded() == b.encoded()`.
+///
+/// The JSON and SSE types are deliberately plain `public` (not SPI): they
+/// are stable building blocks library users need for tool schemas, raw
+/// extras and custom transports. Wire-model types are `@_spi(Wire)`.
 public enum JSONValue: Hashable, Sendable {
     case null
     case bool(Bool)

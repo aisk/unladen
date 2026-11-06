@@ -10,7 +10,11 @@
 /// - the usage-only final chunk of `stream_options.include_usage` (and
 ///   usage on any chunk; the last one wins);
 /// - `finish_reason` (closes all open blocks; the finish event itself waits
-///   for `[DONE]` or ``finish()`` so it can carry the usage);
+///   for `[DONE]` or ``finish()`` so it can carry the usage; unknown keys of
+///   that choice, e.g. OpenRouter `native_finish_reason`, go to
+///   ``WireFinish/extra``). Content after it is still decoded, with a warning;
+/// - tool-call fragments without `index` (their position in the array is used)
+///   and without `id` (a position-based id is synthesized, marked as such);
 /// - in-stream `{"error": …}` objects;
 /// - SSE comments as ``WireEvent/ping``.
 ///
@@ -25,9 +29,12 @@
     private struct ToolState: Sendable {
         var block: String
         var index: Int
-        var call: WireToolCall
+        var id: String?
+        var name: String
+        var extra: JSONObject
+        /// Set once started; holds the arguments received so far.
+        var call: WireToolCall?
         var bufferedArguments: String
-        var started: Bool
         var ended: Bool
     }
 
@@ -39,6 +46,7 @@
     private var tools: [ToolState] = []
     private var toolByIndex: [Int: Int] = [:]
     private var finishReason: WireFinishReason?
+    private var finishExtra: JSONObject = [:]
     private var usage: WireUsage?
     private var warned: Set<String> = []
 
@@ -101,15 +109,24 @@
                     continue
                 }
                 choiceIndex = index
+                let finishing = choice["finish_reason"]?.stringValue
                 for (key, value) in choice where !Self.knownChoiceKeys.contains(key) && !value.isNull {
-                    warnOnce("choice.\(key)", WireWarning(.droppedField, "stream choice field `\(key)` is not carried", path: "choices[].\(key)"))
+                    if finishing != nil {
+                        finishExtra[key] = value
+                    } else {
+                        warnOnce("choice.\(key)", WireWarning(.droppedField, "stream choice field `\(key)` is not carried", path: "choices[].\(key)"))
+                    }
                 }
                 if case .object(let delta)? = choice["delta"] {
+                    let before = events.count
                     decodeDelta(delta, into: &events)
+                    if finishReason != nil, events.count > before {
+                        warnOnce("after-finish", WireWarning(.malformedStream, "content after finish_reason"))
+                    }
                 }
-                if case .string(let reason)? = choice["finish_reason"] {
+                if let finishing {
                     closeAll(into: &events)
-                    finishReason = ChatFinish.decode(reason)
+                    finishReason = ChatFinish.decode(finishing)
                 }
             }
         }
@@ -136,7 +153,7 @@
         var events: [WireEvent] = []
         closeAll(into: &events)
         done = true
-        events.append(.finish(WireFinish(reason: finishReason, usage: usage)))
+        events.append(.finish(WireFinish(reason: finishReason, usage: usage, extra: finishExtra)))
         return events
     }
 
@@ -187,13 +204,13 @@
         switch kind {
         case .text:
             block = newBlock("text")
-            events.append(.textStart(id: block))
+            events.append(.textStart(id: block, text: WireText("")))
         case .reasoning:
             block = newBlock("reasoning")
             events.append(.reasoningStart(id: block, reasoning: WireReasoning(text: "", sourceKey: sourceKey)))
         case .refusal:
             block = newBlock("refusal")
-            events.append(.refusalStart(id: block))
+            events.append(.refusalStart(id: block, refusal: WireRefusal("", sourceKey: "refusal")))
         }
         open = (kind, block, sourceKey)
         events.append(Self.delta(kind, block, text))
@@ -211,9 +228,9 @@
         guard let current = open else { return }
         open = nil
         switch current.kind {
-        case .text: events.append(.textEnd(id: current.block))
+        case .text: events.append(.textEnd(id: current.block, text: nil))
         case .reasoning: events.append(.reasoningEnd(id: current.block, reasoning: nil))
-        case .refusal: events.append(.refusalEnd(id: current.block))
+        case .refusal: events.append(.refusalEnd(id: current.block, refusal: nil))
         }
     }
 
@@ -225,18 +242,18 @@
         let arguments = function?["arguments"]?.stringValue ?? ""
 
         if let slot = toolByIndex[index], !tools[slot].ended,
-           id == nil || tools[slot].call.id == nil || id == tools[slot].call.id
+           id == nil || tools[slot].id == nil || id == tools[slot].id
         {
-            if tools[slot].started {
+            if tools[slot].call != nil {
                 if !arguments.isEmpty {
-                    tools[slot].call.arguments += arguments
+                    tools[slot].call?.arguments += arguments
                     events.append(.toolInputDelta(id: tools[slot].block, delta: arguments))
                 }
             } else {
-                if tools[slot].call.id == nil { tools[slot].call.id = id }
-                if let name { tools[slot].call.name = name }
+                if tools[slot].id == nil { tools[slot].id = id }
+                if let name { tools[slot].name = name }
                 tools[slot].bufferedArguments += arguments
-                if !tools[slot].call.name.isEmpty { startTool(slot, into: &events) }
+                if !tools[slot].name.isEmpty { startTool(slot, into: &events) }
             }
             return
         }
@@ -245,34 +262,46 @@
         if let slot = toolByIndex[index], !tools[slot].ended {
             endTool(slot, into: &events)
         }
-        var call = WireToolCall(id: id, name: name ?? "", arguments: "")
+        var extra = JSONObject()
         for (key, value) in fragment where !["index", "id", "type", "function"].contains(key) {
-            call.extra[key] = value
+            extra[key] = value
         }
-        tools.append(ToolState(block: newBlock("tool"), index: index, call: call, bufferedArguments: arguments, started: false, ended: false))
+        tools.append(ToolState(
+            block: newBlock("tool"), index: index, id: id, name: name ?? "", extra: extra,
+            call: nil, bufferedArguments: arguments, ended: false,
+        ))
         toolByIndex[index] = tools.count - 1
         if name != nil { startTool(tools.count - 1, into: &events) }
     }
 
     private mutating func startTool(_ slot: Int, into events: inout [WireEvent]) {
-        tools[slot].started = true
-        events.append(.toolInputStart(id: tools[slot].block, call: tools[slot].call))
-        if !tools[slot].bufferedArguments.isEmpty {
-            events.append(.toolInputDelta(id: tools[slot].block, delta: tools[slot].bufferedArguments))
+        let state = tools[slot]
+        // Chat requires ids; a relay that sends none gets a position-based one.
+        let id = state.id ?? "call_\(state.block)"
+        if state.id == nil {
+            warnings.append(WireWarning(.malformedStream, "tool call at index \(state.index) has no id; using `\(id)`"))
         }
-        tools[slot].call.arguments = tools[slot].bufferedArguments
+        var call = WireToolCall(id: id, idSynthesized: state.id == nil, name: state.name, arguments: "", extra: state.extra)
+        events.append(.toolInputStart(id: state.block, call: call))
+        if !state.bufferedArguments.isEmpty {
+            events.append(.toolInputDelta(id: state.block, delta: state.bufferedArguments))
+        }
+        call.arguments = state.bufferedArguments
+        tools[slot].call = call
         tools[slot].bufferedArguments = ""
     }
 
     private mutating func endTool(_ slot: Int, into events: inout [WireEvent]) {
-        if !tools[slot].started {
+        if tools[slot].call == nil {
             warnings.append(WireWarning(.malformedStream, "tool call at index \(tools[slot].index) never received a name"))
             startTool(slot, into: &events)
         }
         tools[slot].ended = true
         let block = tools[slot].block
         events.append(.toolInputEnd(id: block))
-        events.append(.toolCall(id: block, call: tools[slot].call))
+        if let call = tools[slot].call {
+            events.append(.toolCall(id: block, call: call))
+        }
     }
 
     private mutating func closeAll(into events: inout [WireEvent]) {

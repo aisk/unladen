@@ -47,7 +47,7 @@ extension JSONValue {
     }
 
     /// Appends `string` as a quoted, escaped JSON string.
-    public static func encodeString(_ string: String, into output: inout [UInt8]) {
+    static func encodeString(_ string: String, into output: inout [UInt8]) {
         output.append(UInt8(ascii: "\""))
         var string = string
         string.withUTF8 { utf8 in

@@ -12,7 +12,11 @@
 ///   what a Chat upstream used); signatures and encrypted reasoning cannot
 ///   be carried and produce a warning.
 /// - Unknown fields from the upstream (``WireResponseMetadata/extra``, usage
-///   bags) are written only if the metadata says the source was Chat.
+///   and finish bags, tool-call bags, Chat opaque tool calls) and spelling
+///   hints are written only if the metadata says the source was Chat.
+/// - Early usage (``WireResponseMetadata/usage``) is not written: Chat
+///   reports usage once, at the end, and the finish usage supersedes it.
+/// - Item ids are dropped silently; signatures produce a warning.
 package struct ChatCompletionsStreamEncoder: Sendable {
     package var includeUsage: Bool
     package private(set) var warnings: [WireWarning] = []
@@ -52,7 +56,14 @@ package struct ChatCompletionsStreamEncoder: Sendable {
                 appendExtra(metadata.extra, to: &ignored, include: false, path: "", warnings: &warnings)
             }
 
-        case .textStart, .textEnd, .refusalStart, .refusalEnd, .toolInputEnd:
+        case .textStart(_, let text), .textEnd(_, let text?):
+            if text.signature != nil { dropSignature("text") }
+            if !text.extra.isEmpty { dropExtra(text.extra) }
+
+        case .refusalStart(_, let refusal), .refusalEnd(_, let refusal?):
+            if !refusal.extra.isEmpty { dropExtra(refusal.extra) }
+
+        case .textEnd(_, nil), .refusalEnd(_, nil), .toolInputEnd:
             break
 
         case .textDelta(_, let delta):
@@ -92,7 +103,14 @@ package struct ChatCompletionsStreamEncoder: Sendable {
             }
 
         case .opaque(let opaque):
-            warnings.append(WireWarning(.droppedContent, "\(opaque.protocol.rawValue) stream content cannot be carried by Chat"))
+            // A Chat tool call of a non-function type, mirroring ChatEncode.messages.
+            if opaque.protocol == .chatCompletions, opaque.slot == "tool_calls", case .object(var fragment) = opaque.value {
+                fragment["index"] = .number(JSONNumber(nextToolIndex))
+                nextToolIndex += 1
+                content(["tool_calls": [.object(fragment)]], into: &output)
+            } else {
+                warnings.append(WireWarning(.droppedContent, "\(opaque.protocol.rawValue) stream content cannot be carried by Chat"))
+            }
 
         case .ping:
             output.append(.comment("ping"))
@@ -114,8 +132,10 @@ package struct ChatCompletionsStreamEncoder: Sendable {
             // finish_reason chunk would contradict it.
             if !errored {
                 ensureRole(into: &output)
-                let reason = ChatFinish.encode(finish.reason ?? WireFinishReason(.stop), sameProtocol: sameProtocol)
-                output.append(chunk(delta: [:], finishReason: reason))
+                let reason = ChatFinish.encode(finish.reason, sameProtocol: sameProtocol)
+                output.append(chunk(delta: [:], finishReason: reason, choiceExtra: finish.extra))
+            } else if !finish.extra.isEmpty {
+                dropExtra(finish.extra)
             }
             if includeUsage, let usage = finish.usage {
                 var object = header()
@@ -145,16 +165,24 @@ package struct ChatCompletionsStreamEncoder: Sendable {
         toolIndexByBlock[block] = index
         var fragment = JSONObject()
         fragment["index"] = .number(JSONNumber(index))
-        fragment["id"] = .string(call.id ?? "call_\(index)")
+        fragment["id"] = .string(call.id)
         fragment["type"] = "function"
         fragment["function"] = ["name": .string(call.name), "arguments": .string(arguments)]
-        if call.signature != nil || call.itemID != nil {
-            warnings.append(WireWarning(.droppedContent, "tool call signature/item id cannot be carried by Chat"))
-        }
+        if call.signature != nil { dropSignature("tool call") }
         appendExtra(call.extra, to: &fragment, include: sameProtocol, path: "tool_calls[\(index)]", warnings: &warnings)
         var output: [SSEElement] = []
         content(["tool_calls": [.object(fragment)]], into: &output)
         return output
+    }
+
+    private mutating func dropSignature(_ what: String) {
+        warnings.append(WireWarning(.droppedContent, "\(what) signature cannot be carried by Chat"))
+    }
+
+    /// Part bags have no place in Chat stream deltas.
+    private mutating func dropExtra(_ extra: JSONObject) {
+        var ignored = JSONObject()
+        appendExtra(extra, to: &ignored, include: false, path: "", warnings: &warnings)
     }
 
     private mutating func dropFidelity(_ block: String) {
@@ -189,9 +217,11 @@ package struct ChatCompletionsStreamEncoder: Sendable {
         appendExtra(chunkExtra, to: &object, include: true, path: "", warnings: &ignored)
     }
 
-    private func chunk(delta: JSONObject, finishReason: JSONValue) -> SSEElement {
+    private mutating func chunk(delta: JSONObject, finishReason: JSONValue, choiceExtra: JSONObject = [:]) -> SSEElement {
         var object = header()
-        object["choices"] = [["index": 0, "delta": .object(delta), "finish_reason": finishReason]]
+        var choice: JSONObject = ["index": 0, "delta": .object(delta), "finish_reason": finishReason]
+        appendExtra(choiceExtra, to: &choice, include: sameProtocol, path: "choices[0]", warnings: &warnings)
+        object["choices"] = [.object(choice)]
         appendChunkExtra(to: &object)
         return event(object)
     }

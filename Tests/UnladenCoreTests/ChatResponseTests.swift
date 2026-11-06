@@ -83,10 +83,10 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
                 id: "chatcmpl-1", model: "gpt-4.1-2025-04-14", created: 1_741_569_952,
                 extra: ["service_tier": "default", "system_fingerprint": "fp_1"], source: .chatCompletions,
             )),
-            .textStart(id: "text-0"),
+            .textStart(id: "text-0", text: WireText("")),
             .textDelta(id: "text-0", delta: "Hello"),
             .textDelta(id: "text-0", delta: " world"),
-            .textEnd(id: "text-0"),
+            .textEnd(id: "text-0", text: nil),
             .finish(WireFinish(
                 reason: WireFinishReason(.stop, raw: "stop"),
                 usage: WireUsage(
@@ -112,9 +112,9 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
             .reasoningDelta(id: "reasoning-0", delta: " think."),
             .ping,
             .reasoningEnd(id: "reasoning-0", reasoning: nil),
-            .textStart(id: "text-1"),
+            .textStart(id: "text-1", text: WireText("")),
             .textDelta(id: "text-1", delta: "4"),
-            .textEnd(id: "text-1"),
+            .textEnd(id: "text-1", text: nil),
         ])
         guard case .finish(let finish)? = events.last else {
             Issue.record("expected finish")
@@ -126,7 +126,7 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
 
     @Test func interleavedParallelToolCalls() throws {
         let (events, warnings) = try decodeChatStream(Fixtures.sse("Chat/streams/parallel_tools.sse"))
-        #expect(warnings.map(\.message) == ["stream choice field `native_finish_reason` is not carried"])
+        #expect(warnings.isEmpty, "\(warnings)")
         let tokyo = WireToolCall(id: "call_T", name: "get_weather", arguments: "")
         let osaka = WireToolCall(id: "call_O", name: "get_weather", arguments: "")
         var tokyoDone = tokyo
@@ -159,6 +159,7 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
                     inputTokens: 80, outputTokens: 40, totalTokens: 120, cachedInputTokens: 64, reasoningTokens: 8,
                     extra: ["cost": 0.00042], inputDetailsExtra: [:], outputDetailsExtra: [:],
                 ),
+                extra: ["native_finish_reason": "tool_calls"],
             )),
         ]
         #expect(events == expected)
@@ -167,10 +168,10 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
     @Test func refusalThenErrorWithoutDone() throws {
         let (events, warnings) = try decodeChatStream(Fixtures.sse("Chat/streams/refusal_error.sse"))
         #expect(Array(events.dropFirst()) == [
-            .refusalStart(id: "refusal-0"),
+            .refusalStart(id: "refusal-0", refusal: WireRefusal("", sourceKey: "refusal")),
             .refusalDelta(id: "refusal-0", delta: "I can't"),
             .refusalDelta(id: "refusal-0", delta: " help with that."),
-            .refusalEnd(id: "refusal-0"),
+            .refusalEnd(id: "refusal-0", refusal: nil),
             .error(WireStreamError(
                 message: "Upstream overloaded", type: "server_error", code: "529",
                 raw: ["message": "Upstream overloaded", "type": "server_error", "code": 529],
@@ -200,10 +201,9 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
     }
 
     @Test func encoderAssignsContiguousIndicesAndDone() throws {
-        let call = WireToolCall(id: nil, name: "f", arguments: "")
         let events: [WireEvent] = [
-            .toolInputStart(id: "a", call: call),
-            .toolInputStart(id: "b", call: call),
+            .toolInputStart(id: "a", call: WireToolCall(id: "call_0", name: "f", arguments: "")),
+            .toolInputStart(id: "b", call: WireToolCall(id: "call_1", name: "f", arguments: "")),
             .toolInputDelta(id: "b", delta: "{}"),
             .toolInputDelta(id: "a", delta: "{\"x\":1}"),
             .toolInputEnd(id: "a"),

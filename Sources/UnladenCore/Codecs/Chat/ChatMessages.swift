@@ -112,10 +112,13 @@ enum ChatDecode {
         }
     }
 
-    /// Decodes an assistant `tool_calls` entry.
+    /// Decodes an assistant `tool_calls` entry. Chat requires call ids; a
+    /// non-conforming call without one gets `syntheticID` (marked
+    /// synthesized) and a warning.
     static func toolCall(
         _ value: JSONValue,
         path: String,
+        syntheticID: String,
         warnings: inout [WireWarning],
     ) throws(WireDecodingError) -> WirePart {
         guard case .object(let object) = value else {
@@ -145,13 +148,23 @@ enum ChatDecode {
             warnings.append(WireWarning(.lossyConversion, "non-string arguments encoded as a JSON string", path: inner.path("arguments")))
         }
         inner.dropRemaining(warnings: &warnings)
-        return .toolCall(WireToolCall(id: id, name: name, arguments: arguments, extra: reader.remaining(warnings: &warnings)))
+        if id == nil {
+            warnings.append(WireWarning(.lossyConversion, "tool call without an id given `\(syntheticID)`", path: path))
+        }
+        return .toolCall(WireToolCall(
+            id: id ?? syntheticID, idSynthesized: id == nil, name: name, arguments: arguments,
+            extra: reader.remaining(warnings: &warnings),
+        ))
     }
 
     /// Decodes a message (request `messages[i]` or response `choices[0].message`).
+    ///
+    /// - Parameter idPrefix: prefix of position-based ids synthesized for
+    ///   tool calls that lack one (`<prefix>_<call index>`), unique per message.
     static func message(
         _ value: JSONValue,
         path: String,
+        idPrefix: String,
         warnings: inout [WireWarning],
     ) throws(WireDecodingError) -> WireMessage {
         guard case .object(let object) = value else {
@@ -182,13 +195,16 @@ enum ChatDecode {
         parts += content.parts
         if role == .assistant {
             if let refusal = try reader.string("refusal") {
-                parts.append(.refusal(WireRefusal(refusal)))
+                parts.append(.refusal(WireRefusal(refusal, sourceKey: "refusal")))
             }
             // An empty array has no part to live in; it stays in the bag.
             if case .array(let calls)? = object["tool_calls"], !calls.isEmpty {
                 _ = reader.raw("tool_calls")
                 for (i, call) in calls.enumerated() {
-                    parts.append(try toolCall(call, path: WirePath.index(reader.path("tool_calls"), i), warnings: &warnings))
+                    parts.append(try toolCall(
+                        call, path: WirePath.index(reader.path("tool_calls"), i),
+                        syntheticID: "\(idPrefix)_\(i)", warnings: &warnings,
+                    ))
                 }
             }
         }
@@ -320,9 +336,10 @@ enum ChatEncode {
         return .object(object)
     }
 
+    /// Item ids (Responses `fc_…`, `msg_…`) are dropped silently: they are
+    /// bookkeeping, not content. Signatures are content and warn.
     static func toolCall(
         _ call: WireToolCall,
-        index: Int,
         include: Bool,
         path: String,
         warnings: inout [WireWarning],
@@ -331,11 +348,14 @@ enum ChatEncode {
         function["name"] = .string(call.name)
         function["arguments"] = .string(call.arguments)
         var object = JSONObject()
-        object["id"] = .string(call.id ?? "call_\(index)")
+        object["id"] = .string(call.id)
         object["type"] = "function"
         object["function"] = .object(function)
-        if call.signature != nil || call.itemID != nil {
-            warnings.append(WireWarning(.droppedContent, "tool call signature/item id cannot be carried by Chat", path: path))
+        if call.signature != nil {
+            warnings.append(WireWarning(.droppedContent, "tool call signature cannot be carried by Chat", path: path))
+        }
+        if let itemType = call.itemType {
+            warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a function call", path: path))
         }
         appendExtra(call.extra, to: &object, include: include, path: path, warnings: &warnings)
         return .object(object)
@@ -344,6 +364,10 @@ enum ChatEncode {
     /// Encodes one wire message as one or more Chat messages: tool results
     /// become `tool` messages (first, so they follow the assistant turn that
     /// called them), the remaining parts one message of the original role.
+    /// A role-less ``WireRole/item`` keeps only its tool results.
+    ///
+    /// `include` (target == source protocol) also gates the source-spelling
+    /// hints (`sourceKey`) of reasoning and refusals.
     static func messages(
         _ message: WireMessage,
         include: Bool,
@@ -358,7 +382,6 @@ enum ChatEncode {
         var calls: [JSONValue] = []
         var results: [WireToolResult] = []
         let isAssistant = message.role == .assistant
-        let keepsRefusalInContent = message.contentForm == .parts
         let callsPath = WirePath.key(path, "tool_calls")
 
         for part in message.parts {
@@ -368,8 +391,10 @@ enum ChatEncode {
             case .reasoning(let value) where isAssistant:
                 reasoning.append(value)
             case .toolCall(let call) where isAssistant:
-                calls.append(toolCall(call, index: calls.count, include: include, path: WirePath.index(callsPath, calls.count), warnings: &warnings))
-            case .refusal(let refusal) where isAssistant && !keepsRefusalInContent:
+                calls.append(toolCall(call, include: include, path: WirePath.index(callsPath, calls.count), warnings: &warnings))
+            case .refusal(let refusal) where isAssistant && !(include && refusal.sourceKey == nil):
+                // Same protocol: back where it came from (a content part has
+                // no sourceKey). Otherwise the message field, valid everywhere.
                 refusals.append(refusal)
             case .opaque(let opaque) where opaque.slot == "tool_calls":
                 if opaque.protocol == .chatCompletions, isAssistant {
@@ -394,6 +419,9 @@ enum ChatEncode {
             if result.isError == true {
                 warnings.append(WireWarning(.lossyConversion, "Chat tool messages cannot mark an error", path: path))
             }
+            if let itemType = result.itemType {
+                warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a tool message", path: path))
+            }
             appendExtra(result.extra, to: &object, include: include, path: path, warnings: &warnings)
             if message.role == .tool {
                 appendExtra(message.extra, to: &object, include: include, path: path, warnings: &warnings)
@@ -401,6 +429,12 @@ enum ChatEncode {
             output.append(.object(object))
         }
         if message.role == .tool { return output }
+        if message.role == .item {
+            if !rest.isEmpty || !reasoning.isEmpty || !refusals.isEmpty || !calls.isEmpty {
+                warnings.append(WireWarning(.droppedContent, "role-less item cannot be carried by Chat", path: path))
+            }
+            return output
+        }
         let hasMain = !rest.isEmpty || !reasoning.isEmpty || !refusals.isEmpty || !calls.isEmpty
         if !results.isEmpty, !hasMain { return output }
 
@@ -414,7 +448,8 @@ enum ChatEncode {
             object["content"] = content
         }
         if !reasoning.isEmpty {
-            let key = reasoning.first?.sourceKey.flatMap { chatReasoningKeys.contains($0) ? $0 : nil } ?? "reasoning_content"
+            let sourceKey = include ? reasoning.first?.sourceKey : nil
+            let key = sourceKey.flatMap { chatReasoningKeys.contains($0) ? $0 : nil } ?? "reasoning_content"
             let keyPath = WirePath.key(path, key)
             object[key] = .string(reasoning.map(\.text).joined())
             if reasoning.count > 1 {
@@ -455,8 +490,9 @@ enum ChatFinish {
         return WireFinishReason(unified, raw: raw)
     }
 
+    /// A missing reason is written as `"stop"`, the same in replies and streams.
     static func encode(_ reason: WireFinishReason?, sameProtocol: Bool) -> JSONValue {
-        guard let reason else { return .null }
+        guard let reason else { return "stop" }
         if sameProtocol, let raw = reason.raw { return .string(raw) }
         return switch reason.unified {
         case .stop, .error, .other: "stop"
@@ -502,10 +538,13 @@ enum ChatUsage {
             object["total_tokens"] = .number(JSONNumber(input + output))
         }
         let inputExtra = include ? usage.inputDetailsExtra : nil
-        if usage.cachedInputTokens != nil || usage.cacheWriteTokens != nil || inputExtra != nil {
+        // `cache_write_tokens` is OpenRouter's, not OpenAI's: written back
+        // only to the Chat dialect it came from.
+        let cacheWrite = include ? usage.cacheWriteTokens : nil
+        if usage.cachedInputTokens != nil || cacheWrite != nil || inputExtra != nil {
             var details = JSONObject()
             if let value = usage.cachedInputTokens { details["cached_tokens"] = .number(JSONNumber(value)) }
-            if let value = usage.cacheWriteTokens { details["cache_write_tokens"] = .number(JSONNumber(value)) }
+            if let value = cacheWrite { details["cache_write_tokens"] = .number(JSONNumber(value)) }
             appendExtra(inputExtra ?? [:], to: &details, include: true, path: path, warnings: &warnings)
             object["prompt_tokens_details"] = .object(details)
         }

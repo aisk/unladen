@@ -24,7 +24,7 @@ enum Fixtures {
 
     static func sse(_ path: String) throws -> [SSEElement] {
         var parser = SSEParser()
-        let elements = parser.parse(try bytes(path))
+        let elements = try parser.parse(try bytes(path))
         parser.finish()
         return elements
     }
@@ -78,15 +78,15 @@ func checkEventSequence(_ events: [WireEvent]) -> [String] {
         case .responseMetadata:
             metadataCount += 1
             if !seen.isEmpty { problems.append("metadata after content") }
-        case .textStart(let id): start(id, .text)
+        case .textStart(let id, _): start(id, .text)
         case .textDelta(let id, _): delta(id, .text)
-        case .textEnd(let id): end(id, .text)
+        case .textEnd(let id, _): end(id, .text)
         case .reasoningStart(let id, _): start(id, .reasoning)
         case .reasoningDelta(let id, _), .reasoningSignatureDelta(let id, _): delta(id, .reasoning)
         case .reasoningEnd(let id, _): end(id, .reasoning)
-        case .refusalStart(let id): start(id, .refusal)
+        case .refusalStart(let id, _): start(id, .refusal)
         case .refusalDelta(let id, _): delta(id, .refusal)
-        case .refusalEnd(let id): end(id, .refusal)
+        case .refusalEnd(let id, _): end(id, .refusal)
         case .toolInputStart(let id, let call):
             start(id, .tool)
             if !call.arguments.isEmpty { problems.append("tool start \(id) carries arguments") }
@@ -136,7 +136,8 @@ func checkChatStream(_ elements: [SSEElement]) -> [String] {
                 }
                 if index == nextIndex {
                     nextIndex += 1
-                    if call["id"]?.stringValue == nil || call["function"]?["name"]?.stringValue == nil {
+                    let isFunction = call["type"] == nil || call["type"] == "function"
+                    if call["id"]?.stringValue == nil || (isFunction && call["function"]?["name"]?.stringValue == nil) {
                         problems.append("tool call \(index) starts without id and name")
                     }
                 } else if index > nextIndex {

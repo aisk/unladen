@@ -133,6 +133,31 @@ struct AsyncHTTPClientTransportTests {
         }
     }
 
+    /// Dropping the body, without cancelling any task, must release the
+    /// upstream request (``HTTPTransport`` contract).
+    @Test(arguments: [0, 2])
+    func droppingBodyCancelsUpstream(eventsReadFirst: Int) async throws {
+        let probe = StreamProbe()
+        try await makeApplication(probe: probe).test(.live) { client in
+            let port = try #require(client.port)
+            let transport = AsyncHTTPClientTransport()
+            do {
+                let response = try await transport.send(request(.get, "/stream", port: port), body: nil)
+                #expect(response.status == .ok)
+                if eventsReadFirst > 0 {
+                    var iterator = response.body.sseElements().makeAsyncIterator()
+                    for _ in 0..<eventsReadFirst { _ = try await iterator.next() }
+                }
+                // response, its body and any iterator go out of scope here.
+            }
+            let clock = ContinuousClock()
+            let droppedAt = clock.now
+            // The server's write loop only ends when the connection goes away.
+            await probe.waitForEnd()
+            #expect(clock.now - droppedAt < .seconds(5))
+        }
+    }
+
     @Test func cancellingWhileAwaitingHeadThrows() async throws {
         try await makeApplication(probe: StreamProbe()).test(.live) { client in
             let port = try #require(client.port)

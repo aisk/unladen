@@ -12,14 +12,27 @@
 ///   alone (empty value) are accepted; unknown fields are ignored.
 /// - Multiple `data` lines are joined with `\n`.
 /// - A blank line dispatches the event; a block without any `data` field is
-///   not dispatched.
+///   not dispatched. A block whose only data line is empty (`data:` then a
+///   blank line) *is* dispatched with empty data: WHATWG appends a LF per
+///   data line, so its data buffer is `"\n"`, not empty, and dispatches
+///   after the final LF is removed.
 /// - An `id` containing U+0000 is ignored; `retry` must be ASCII digits.
 /// - At end of stream an incomplete line or undispatched block is discarded.
 /// - Text is decoded as UTF-8 with replacement of invalid sequences.
 ///
 /// Additions: comments and `retry` are surfaced as ``SSEElement`` values
 /// rather than swallowed.
+///
+/// Memory is bounded: a line, or the data of one event, longer than
+/// ``maxBufferSize`` bytes throws ``SSEParserError``. After a throw the
+/// parser state is unspecified; call ``finish()`` before reusing it.
 public struct SSEParser: Sendable {
+    /// Default limit for ``maxBufferSize``: 16 MiB.
+    public static let defaultMaxBufferSize = 16 << 20
+
+    /// The longest line and the largest event data accepted, in bytes.
+    public let maxBufferSize: Int
+
     /// The EventSource "last event ID buffer": the most recent `id` value,
     /// persisting across events (an empty `id` resets it to `""`).
     public private(set) var lastEventID: String = ""
@@ -36,10 +49,15 @@ public struct SSEParser: Sendable {
 
     private static let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
 
-    public init() {}
+    public init(maxBufferSize: Int = SSEParser.defaultMaxBufferSize) {
+        self.maxBufferSize = maxBufferSize
+    }
 
     /// Parses a chunk, calling `emit` for each element completed by it.
-    public mutating func parse(_ chunk: some Sequence<UInt8>, into emit: (SSEElement) -> Void) {
+    public mutating func parse(
+        _ chunk: some Sequence<UInt8>,
+        into emit: (SSEElement) -> Void,
+    ) throws(SSEParserError) {
         for byte in chunk {
             if let matched = bomMatched {
                 if byte == Self.bom[matched] {
@@ -48,16 +66,16 @@ public struct SSEParser: Sendable {
                 }
                 // Not a BOM: replay the partial match as ordinary bytes.
                 bomMatched = nil
-                for b in Self.bom[0..<matched] { consume(b, emit) }
+                for b in Self.bom[0..<matched] { try consume(b, emit) }
             }
-            consume(byte, emit)
+            try consume(byte, emit)
         }
     }
 
     /// Parses a chunk and returns the completed elements.
-    public mutating func parse(_ chunk: some Sequence<UInt8>) -> [SSEElement] {
+    public mutating func parse(_ chunk: some Sequence<UInt8>) throws(SSEParserError) -> [SSEElement] {
         var elements: [SSEElement] = []
-        parse(chunk) { elements.append($0) }
+        try parse(chunk) { elements.append($0) }
         return elements
     }
 
@@ -70,24 +88,25 @@ public struct SSEParser: Sendable {
         resetBlock()
     }
 
-    private mutating func consume(_ byte: UInt8, _ emit: (SSEElement) -> Void) {
+    private mutating func consume(_ byte: UInt8, _ emit: (SSEElement) -> Void) throws(SSEParserError) {
         switch byte {
         case 0x0A:
             if sawCR {
                 sawCR = false // second half of CRLF
             } else {
-                processLine(emit)
+                try processLine(emit)
             }
         case 0x0D:
             sawCR = true
-            processLine(emit)
+            try processLine(emit)
         default:
             sawCR = false
+            guard line.count < maxBufferSize else { throw SSEParserError(maxBufferSize: maxBufferSize) }
             line.append(byte)
         }
     }
 
-    private mutating func processLine(_ emit: (SSEElement) -> Void) {
+    private mutating func processLine(_ emit: (SSEElement) -> Void) throws(SSEParserError) {
         defer { line.removeAll(keepingCapacity: true) }
 
         if line.isEmpty {
@@ -107,6 +126,9 @@ public struct SSEParser: Sendable {
         case "event":
             eventType = Self.decode(value)
         case "data":
+            guard dataBuffer.count + (hasData ? 1 : 0) + value.count <= maxBufferSize else {
+                throw SSEParserError(maxBufferSize: maxBufferSize)
+            }
             if hasData { dataBuffer.append(0x0A) }
             dataBuffer.append(contentsOf: value)
             hasData = true
@@ -149,28 +171,41 @@ public struct SSEParser: Sendable {
     }
 }
 
+/// Thrown when a line or an event's data exceeds ``SSEParser/maxBufferSize``.
+public struct SSEParserError: Error, Hashable, Sendable {
+    public var maxBufferSize: Int
+
+    public init(maxBufferSize: Int) {
+        self.maxBufferSize = maxBufferSize
+    }
+}
+
 /// Parses an async sequence of byte chunks into ``SSEElement`` values.
 ///
-/// Errors from the base sequence are rethrown. Cancellation is whatever the
-/// base sequence does; dropping the iterator drops the base iterator.
+/// Errors from the base sequence and ``SSEParserError`` are rethrown; after
+/// a throw the sequence ends (`next()` returns `nil`). Cancellation is
+/// whatever the base sequence does; dropping the iterator drops the base
+/// iterator.
 public struct SSEElementSequence<Base: AsyncSequence>: AsyncSequence
     where Base.Element: Sequence, Base.Element.Element == UInt8
 {
     public typealias Element = SSEElement
 
     let base: Base
+    let maxBufferSize: Int
 
-    public init(_ base: Base) {
+    public init(_ base: Base, maxBufferSize: Int = SSEParser.defaultMaxBufferSize) {
         self.base = base
+        self.maxBufferSize = maxBufferSize
     }
 
     public func makeAsyncIterator() -> AsyncIterator {
-        AsyncIterator(base: base.makeAsyncIterator())
+        AsyncIterator(base: base.makeAsyncIterator(), parser: SSEParser(maxBufferSize: maxBufferSize))
     }
 
     public struct AsyncIterator: AsyncIteratorProtocol {
         var base: Base.AsyncIterator
-        var parser = SSEParser()
+        var parser: SSEParser
         var pending: [SSEElement] = []
         var pendingIndex = 0
         var finished = false
@@ -184,12 +219,18 @@ public struct SSEElementSequence<Base: AsyncSequence>: AsyncSequence
                 guard !finished else { return nil }
                 pending.removeAll(keepingCapacity: true)
                 pendingIndex = 0
-                guard let chunk = try await base.next(isolation: #isolation) else {
+                do {
+                    guard let chunk = try await base.next(isolation: #isolation) else {
+                        finished = true
+                        parser.finish()
+                        return nil
+                    }
+                    try parser.parse(chunk) { pending.append($0) }
+                } catch {
                     finished = true
-                    parser.finish()
-                    return nil
+                    pending.removeAll()
+                    throw error
                 }
-                parser.parse(chunk) { pending.append($0) }
             }
         }
     }
@@ -199,7 +240,7 @@ extension SSEElementSequence: Sendable where Base: Sendable {}
 
 extension AsyncSequence where Element: Sequence, Element.Element == UInt8 {
     /// Interprets this sequence of byte chunks as a `text/event-stream`.
-    public func sseElements() -> SSEElementSequence<Self> {
-        SSEElementSequence(self)
+    public func sseElements(maxBufferSize: Int = SSEParser.defaultMaxBufferSize) -> SSEElementSequence<Self> {
+        SSEElementSequence(self, maxBufferSize: maxBufferSize)
     }
 }

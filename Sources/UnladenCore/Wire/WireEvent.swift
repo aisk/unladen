@@ -11,12 +11,19 @@
     /// Reply id/model/creation time, sent once as soon as known.
     case responseMetadata(WireResponseMetadata)
 
-    case textStart(id: String)
+    /// `text` carries metadata known at start (Responses item id, origin,
+    /// bag); its `text` is empty and content follows as deltas.
+    case textStart(id: String, text: WireText)
     case textDelta(id: String, delta: String)
-    case textEnd(id: String)
+    /// `text`, when non-nil, carries metadata learned at the end (Gemini's
+    /// `thoughtSignature`, which arrives with the last chunk); its non-nil
+    /// fields replace the start's. Its `text` is ignored.
+    case textEnd(id: String, text: WireText?)
 
     /// `reasoning` carries fidelity metadata known at start (item id,
-    /// origin, Anthropic redacted data, source spelling); its `text` is empty.
+    /// summary index, origin, Anthropic redacted data, source spelling); its
+    /// `text` is empty. A new Responses summary part is a new block with the
+    /// same item id and the next ``WireReasoning/summaryIndex``.
     case reasoningStart(id: String, reasoning: WireReasoning)
     case reasoningDelta(id: String, delta: String)
     /// A piece of the block's signature (appended to the previous pieces).
@@ -25,9 +32,11 @@
     /// (Responses `encrypted_content`); its non-nil fields replace the start's.
     case reasoningEnd(id: String, reasoning: WireReasoning?)
 
-    case refusalStart(id: String)
+    /// As ``textStart(id:text:)``: metadata only, the text follows as deltas.
+    case refusalStart(id: String, refusal: WireRefusal)
     case refusalDelta(id: String, delta: String)
-    case refusalEnd(id: String)
+    /// As ``textEnd(id:text:)``: late metadata, if any.
+    case refusalEnd(id: String, refusal: WireRefusal?)
 
     /// `call.arguments` is empty here; arguments follow as deltas.
     case toolInputStart(id: String, call: WireToolCall)
@@ -55,6 +64,9 @@
     public var id: String?
     public var model: String?
     public var created: Int?
+    /// Usage known at the start (Anthropic `message_start` input tokens).
+    /// The usage in ``WireFinish`` is the final word.
+    public var usage: WireUsage?
     /// Unknown top-level keys of the first chunk (`system_fingerprint`…).
     public var extra: JSONObject
 
@@ -62,6 +74,7 @@
         id: String? = nil,
         model: String? = nil,
         created: Int? = nil,
+        usage: WireUsage? = nil,
         extra: JSONObject = [:],
         source: WireProtocol? = nil,
     ) {
@@ -69,6 +82,7 @@
         self.id = id
         self.model = model
         self.created = created
+        self.usage = usage
         self.extra = extra
     }
 }
@@ -76,10 +90,15 @@
 @_spi(Wire) public struct WireFinish: Hashable, Sendable {
     public var reason: WireFinishReason?
     public var usage: WireUsage?
+    /// Unknown keys that came with the finish (Chat: keys of the choice in
+    /// the `finish_reason` chunk, e.g. OpenRouter `native_finish_reason`;
+    /// Anthropic: `message_delta.delta` keys). Same protocol only.
+    public var extra: JSONObject
 
-    public init(reason: WireFinishReason? = nil, usage: WireUsage? = nil) {
+    public init(reason: WireFinishReason? = nil, usage: WireUsage? = nil, extra: JSONObject = [:]) {
         self.reason = reason
         self.usage = usage
+        self.extra = extra
     }
 }
 
@@ -143,9 +162,16 @@
                 guard !finished else { return nil }
                 pending.removeAll(keepingCapacity: true)
                 pendingIndex = 0
-                if let element = try await base.next(isolation: #isolation) {
-                    pending = try decoder.decode(element)
-                } else {
+                // A throw (from the base or the decoder) ends the sequence.
+                let element: SSEElement?
+                do {
+                    element = try await base.next(isolation: #isolation)
+                    if let element { pending = try decoder.decode(element) }
+                } catch {
+                    finished = true
+                    throw error
+                }
+                if element == nil {
                     finished = true
                     pending = decoder.finish()
                 }
