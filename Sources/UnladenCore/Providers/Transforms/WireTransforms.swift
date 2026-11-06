@@ -205,6 +205,15 @@
     /// See ``ProfileTransform/replayReasoningContent``. A turn continues
     /// after a tool result until the next user message.
     public static func replayReasoningContent(_ request: inout WireRequest) {
+        // The upstream reads `reasoning_content` only: another Chat vendor's
+        // spelling (OpenRouter's `reasoning`) would go unread.
+        for i in request.messages.indices where request.messages[i].role == .assistant {
+            for p in request.messages[i].parts.indices {
+                guard case .reasoning(var reasoning) = request.messages[i].parts[p], reasoning.sourceKey != nil else { continue }
+                reasoning.sourceKey = nil
+                request.messages[i].parts[p] = .reasoning(reasoning)
+            }
+        }
         forEachAssistantTurn(&request, afterToolResets: { message in
             if message.parts.contains(where: isResult) { return true }
             return message.role == .user ? false : nil

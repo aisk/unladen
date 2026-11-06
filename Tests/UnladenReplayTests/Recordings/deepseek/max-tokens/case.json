@@ -1,0 +1,32 @@
+{
+  "id": "deepseek/max-tokens",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_deepseek/test_deepseek_max_tokens_limits_output.yaml",
+    "interaction": 0
+  },
+  "vendor": "deepseek",
+  "protocol": "chat",
+  "status": 200,
+  "target": "deepseek/deepseek-v4-flash",
+  "model": "deepseek-v4-flash",
+  "host": "api.deepseek.com",
+  "path": "/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "Every night, old Elias climbed the ",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "length",
+    "usage": {
+      "input": 15,
+      "output": 8
+    }
+  }
+}

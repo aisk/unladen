@@ -1,0 +1,32 @@
+{
+  "id": "gemini-openai/vertex-thoughts-stream",
+  "source": {
+    "repo": "github.com/yetone/magpie",
+    "licence": "MIT",
+    "commit": "cd9c52c16",
+    "path": "internal/gateway/testdata/vertex_openai_thoughts.sse"
+  },
+  "vendor": "gemini-openai",
+  "protocol": "chat",
+  "status": 200,
+  "model": "google/gemini-3.8-flash",
+  "expect": {
+    "knownIssues": {
+      "facts.text": "Gemini OpenAI-compatible `extra_content.google.thought` is not read: thought text is decoded as answer text.",
+      "facts.reasoning": "Gemini OpenAI-compatible `extra_content.google.thought` is not read: thought text is decoded as answer text.",
+      "decodeWarnings": "Chat stream decoder drops delta-level `extra_content`."
+    }
+  },
+  "stream": true,
+  "facts": {
+    "text": "你好！很高兴与你交流。请问有什么我可以帮你的吗？",
+    "reasoning": "**Acknowledging Greeting**\n\nI'm recognizing a simple, friendly \"hello\" in Chinese. My processing confirms it's a standard greeting, initiating interaction with politeness. I'm ready to proceed based on this acknowledgment.\n\n",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 1,
+      "output": 16
+    }
+  }
+}

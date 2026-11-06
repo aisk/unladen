@@ -1,0 +1,12 @@
+{
+  "createTime": "2026-05-27T16:53:45.443719Z",
+  "modelVersion": "gemini-2.5-flash",
+  "promptFeedback": {
+    "blockReason": "MODEL_ARMOR",
+    "blockReasonMessage": "The prompt violated Prompt Injection and Jailbreak filters."
+  },
+  "responseId": "mSEXaseKG-P51PIPwv66qQs",
+  "usageMetadata": {
+    "trafficType": "ON_DEMAND"
+  }
+}

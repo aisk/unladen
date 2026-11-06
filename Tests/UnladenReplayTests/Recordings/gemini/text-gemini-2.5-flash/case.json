@@ -1,0 +1,37 @@
+{
+  "id": "gemini/text-gemini-2.5-flash",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_google/test_google_model_max_tokens.yaml",
+    "interaction": 0
+  },
+  "vendor": "gemini",
+  "protocol": "gemini",
+  "status": 200,
+  "target": "gemini/gemini-2.5-flash",
+  "expect": {
+    "knownIssues": {
+      "roundTrip": "Gemini reply decoder drops `candidates[0].index`, so a same-protocol reply loses it."
+    }
+  },
+  "model": "gemini-2.5-flash",
+  "host": "generativelanguage.googleapis.com",
+  "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+  "headers": {
+    "content-type": "application/json; charset=UTF-8"
+  },
+  "stream": false,
+  "facts": {
+    "text": "The capital of France is",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "MAX_TOKENS",
+    "usage": {
+      "input": 15,
+      "output": 5
+    }
+  }
+}

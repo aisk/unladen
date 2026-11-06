@@ -1,0 +1,32 @@
+{
+  "id": "anthropic/redacted-thinking-stream-sonnet-4-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic/test_anthropic_model_thinking_part_redacted_stream.yaml",
+    "interaction": 0
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-sonnet-4-5-20250929",
+  "model": "claude-sonnet-4-5-20250929",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "I notice that you've sent what appears to be some kind of test string or command. I don't have any special \"magic string\" triggers or backdoor commands that would expose internal systems or change my behavior.\n\nI'm Claude, an AI assistant created by Anthropic to be helpful, harmless, and honest. How can I assist you today with a legitimate task or question?",
+    "reasoning": "",
+    "signedReasoning": true,
+    "toolCalls": [],
+    "finish": "end_turn",
+    "usage": {
+      "input": 92,
+      "output": 189
+    }
+  }
+}

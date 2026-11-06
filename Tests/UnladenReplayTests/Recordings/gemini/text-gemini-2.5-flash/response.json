@@ -1,0 +1,30 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "The capital of France is"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "MAX_TOKENS",
+      "index": 0
+    }
+  ],
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "R5MoavWNNp_8qtsP2fWD2A0",
+  "usageMetadata": {
+    "candidatesTokenCount": 5,
+    "promptTokenCount": 15,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 15
+      }
+    ],
+    "serviceTier": "standard",
+    "totalTokenCount": 20
+  }
+}

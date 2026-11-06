@@ -1,0 +1,22 @@
+{
+  "messages": [
+    {
+      "content": [
+        {
+          "text": "What is the name of this fruit?",
+          "type": "text"
+        },
+        {
+          "image_url": {
+            "url": "https://t3.ftcdn.net/jpg/00/85/79/92/360_F_85799278_0BBGV9OAdQDTLnKwAPBCcg1J7QtiieJY.jpg"
+          },
+          "type": "image_url"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+  "n": 1,
+  "stream": false
+}

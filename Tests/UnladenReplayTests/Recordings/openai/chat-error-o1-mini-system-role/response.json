@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "unsupported_value",
+    "message": "Unsupported value: 'messages[0].role' does not support 'developer' with this model.",
+    "param": "messages[0].role",
+    "type": "invalid_request_error"
+  }
+}

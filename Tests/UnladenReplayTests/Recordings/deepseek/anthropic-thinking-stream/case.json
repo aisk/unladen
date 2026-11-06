@@ -1,0 +1,26 @@
+{
+  "id": "deepseek/anthropic-thinking-stream",
+  "source": {
+    "repo": "github.com/yetone/magpie",
+    "licence": "MIT",
+    "commit": "cd9c52c16",
+    "path": "internal/gateway/testdata/reasoning-uncounted-deepseek-anthropic.sse"
+  },
+  "vendor": "deepseek",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "deepseek/deepseek-v4-pro",
+  "model": "deepseek-v4-pro",
+  "stream": true,
+  "facts": {
+    "text": "391",
+    "reasoning": "We need answer number only 17*23. Compute: 17*20=340, 17*3=51 total 391. Answer \"391\".",
+    "signedReasoning": true,
+    "toolCalls": [],
+    "finish": "end_turn",
+    "usage": {
+      "input": 96,
+      "output": 35
+    }
+  }
+}

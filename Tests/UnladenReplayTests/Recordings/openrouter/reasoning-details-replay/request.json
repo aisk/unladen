@@ -1,0 +1,18 @@
+{
+  "messages": [
+    {
+      "content": "Hello!",
+      "role": "user"
+    },
+    {
+      "content": "Hello! How can I help you today?",
+      "role": "assistant"
+    },
+    {
+      "content": "What was the impact of Voltaire's writings on modern french culture?",
+      "role": "user"
+    }
+  ],
+  "model": "openai/gpt-5-mini",
+  "stream": false
+}

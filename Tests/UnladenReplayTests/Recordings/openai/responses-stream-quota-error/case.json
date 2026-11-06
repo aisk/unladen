@@ -1,0 +1,24 @@
+{
+  "id": "openai/responses-stream-quota-error",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/openai/src/responses/__fixtures__/openai-error.1.chunks.txt",
+    "note": "one JSON payload per line in the source; SSE framing added by the importer"
+  },
+  "vendor": "openai",
+  "protocol": "responses",
+  "status": 200,
+  "target": "openai/gpt-5",
+  "model": null,
+  "stream": true,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "failed",
+    "error": "You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors."
+  }
+}

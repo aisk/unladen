@@ -1,0 +1,27 @@
+{
+  "id": "deepseek/reasoning-stream",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/deepseek/src/chat/__fixtures__/deepseek-reasoning.chunks.txt",
+    "note": "one JSON payload per line in the source; SSE framing added by the importer"
+  },
+  "vendor": "deepseek",
+  "protocol": "chat",
+  "status": 200,
+  "target": "deepseek/deepseek-reasoner",
+  "model": null,
+  "stream": true,
+  "facts": {
+    "text": "The word \"strawberry\" contains three \"r\"s.",
+    "reasoning": "We need to count the number of the letter \"r\" in the word \"strawberry\". The word is spelled: s-t-r-a-w-b-e-r-r-y. Let's list the letters and count the \"r\"s:\n\nPosition 1: s\n2: t\n3: r (first r)\n4: a\n5: w\n6: b\n7: e\n8: r (second r)\n9: r (third r)\n10: y\n\nSo there are three \"r\"s. But wait, let's double-check: \"strawberry\" indeed has three \"r\"s: one after \"t\", and then two consecutive \"r\"s before \"y\". So the answer is 3.\n\nThe question is straightforward. However, sometimes people might miscount. Let's ensure: The word has 10 letters. The \"r\"s are at positions 3, 8, and 9. So yes, 3.\n\nThus, the answer is 3.",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 18,
+      "output": 219
+    }
+  }
+}

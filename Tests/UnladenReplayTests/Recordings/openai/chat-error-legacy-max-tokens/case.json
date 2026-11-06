@@ -1,0 +1,18 @@
+{
+  "id": "openai/chat-error-legacy-max-tokens",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/openai/src/chat/__fixtures__/reasoning-model-legacy-parameter-error.json"
+  },
+  "vendor": "openai",
+  "protocol": "chat",
+  "status": 400,
+  "target": "openai/o3-mini",
+  "model": null,
+  "stream": false,
+  "facts": {
+    "error": "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."
+  }
+}

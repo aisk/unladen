@@ -1,0 +1,26 @@
+{
+  "conversation": "conv_010000000000000000000000000000000000000000000000",
+  "input": [
+    {
+      "content": "Call get_conversation_code and reply with only the returned code.",
+      "role": "user"
+    }
+  ],
+  "instructions": "Use the provided tool when the user asks for the conversation code.",
+  "model": "gpt-4.1",
+  "stream": false,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "description": null,
+      "name": "get_conversation_code",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    }
+  ]
+}

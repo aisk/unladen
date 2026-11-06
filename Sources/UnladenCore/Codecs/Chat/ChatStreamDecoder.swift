@@ -190,8 +190,22 @@
         switch delta["content"] {
         case .string(let text)?:
             if !text.isEmpty { appendText(.text, text, sourceKey: nil, into: &events) }
-        case .array?:
-            warnOnce("content-array", WireWarning(.unsupportedValue, "array content in a stream delta is not carried", path: "choices[].delta.content"))
+        case .array(let parts)?:
+            // Mistral streams typed parts (Magistral, and GLM on
+            // api.mistral.ai): text parts, and `thinking` parts that hold
+            // the thought as a list of text parts. Both go on as text.
+            for part in parts {
+                switch part["type"]?.stringValue {
+                case "text":
+                    if case .string(let text)? = part["text"], !text.isEmpty { appendText(.text, text, sourceKey: nil, into: &events) }
+                case "thinking":
+                    for inner in part["thinking"]?.arrayValue ?? [] where inner["type"] == "text" {
+                        if case .string(let text)? = inner["text"], !text.isEmpty { appendText(.reasoning, text, sourceKey: nil, into: &events) }
+                    }
+                default:
+                    warnOnce("content-array", WireWarning(.unsupportedValue, "a stream delta content part other than text or thinking is not carried", path: "choices[].delta.content"))
+                }
+            }
         default:
             break
         }

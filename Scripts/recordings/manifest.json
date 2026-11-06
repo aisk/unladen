@@ -1,0 +1,806 @@
+{
+  "cases": [
+    {
+      "id": "openai/chat-text-gpt-4o",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_extra_headers.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openai/gpt-4o"
+    },
+    {
+      "id": "openai/chat-max-completion-tokens-o3-mini",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_max_completion_tokens[o3-mini].yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openai/o3-mini"
+    },
+    {
+      "id": "openai/chat-gpt-5-temperature-dropped",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_openai_model_settings_temperature_ignored_on_gpt_5.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openai/gpt-5"
+    },
+    {
+      "id": "openai/chat-tool-calls-gpt-4o-mini",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_multiple_agent_tool_calls.yaml",
+      "interaction": 2,
+      "protocol": "chat",
+      "target": "openai/gpt-4o-mini"
+    },
+    {
+      "id": "openai/chat-tool-result-turn-gpt-4o-mini",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_multiple_agent_tool_calls.yaml",
+      "interaction": 3,
+      "protocol": "chat",
+      "target": "openai/gpt-4o-mini"
+    },
+    {
+      "id": "openai/chat-length-stream-gpt-4.1-mini",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_openai_native_output_cut_off_by_max_tokens[True].yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openai/gpt-4.1-mini"
+    },
+    {
+      "id": "openai/chat-error-o1-mini-system-role",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_openai_o1_mini_system_role[developer].yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openai/o1-mini"
+    },
+    {
+      "id": "openai/chat-refusal",
+      "source": "vercel-ai",
+      "path": "packages/openai/src/chat/__fixtures__/openai-refusal.json",
+      "kind": "json",
+      "protocol": "chat",
+      "target": "openai/gpt-4o"
+    },
+    {
+      "id": "openai/chat-refusal-stream",
+      "source": "vercel-ai",
+      "path": "packages/openai/src/chat/__fixtures__/openai-refusal.chunks.txt",
+      "kind": "chunks",
+      "protocol": "chat",
+      "target": "openai/gpt-4o"
+    },
+    {
+      "id": "openai/chat-error-legacy-max-tokens",
+      "source": "vercel-ai",
+      "path": "packages/openai/src/chat/__fixtures__/reasoning-model-legacy-parameter-error.json",
+      "kind": "json",
+      "protocol": "chat",
+      "status": 400,
+      "target": "openai/o3-mini"
+    },
+    {
+      "id": "openai/responses-reasoning-gpt-5-mini",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai_responses/test_openai_responses_always_reasoning_model_resolves_to_accepted_effort[gpt-5-thinking-false].yaml",
+      "interaction": 0,
+      "protocol": "responses",
+      "target": "openai/gpt-5-mini"
+    },
+    {
+      "id": "openai/responses-reasoning-turn1-gpt-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai_responses/test_openai_responses_thinking_with_modified_history.yaml",
+      "interaction": 0,
+      "protocol": "responses",
+      "target": "openai/gpt-5"
+    },
+    {
+      "id": "openai/responses-error-orphan-reasoning",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai_responses/test_openai_responses_thinking_with_modified_history.yaml",
+      "interaction": 1,
+      "protocol": "responses",
+      "target": "openai/gpt-5"
+    },
+    {
+      "id": "openai/responses-stream-annotations-gpt-5.2",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai_responses/test_openai_include_raw_annotations_streaming.yaml",
+      "interaction": 2,
+      "protocol": "responses",
+      "target": "openai/gpt-5.2"
+    },
+    {
+      "id": "openai/responses-tool-call-gpt-4.1",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai_responses/test_openai_conversation_id_tool_call_continuation.yaml",
+      "interaction": 1,
+      "protocol": "responses",
+      "target": "openai/gpt-4.1"
+    },
+    {
+      "id": "openai/responses-error-http",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai_responses/test_openai_responses_model_http_error.yaml",
+      "interaction": 0,
+      "protocol": "responses",
+      "target": "openai/gpt-4o"
+    },
+    {
+      "id": "openai/responses-stream-quota-error",
+      "source": "vercel-ai",
+      "path": "packages/openai/src/responses/__fixtures__/openai-error.1.chunks.txt",
+      "kind": "chunks",
+      "protocol": "responses",
+      "target": "openai/gpt-5"
+    },
+    {
+      "id": "anthropic/thinking-stream-sonnet-5-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_anthropic_model_thinking_part_stream.yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-5-5"
+    },
+    {
+      "id": "anthropic/tool-thinking-turn1-sonnet-5-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_anthropic_tool_with_thinking.yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-5-5"
+    },
+    {
+      "id": "anthropic/tool-thinking-turn2-sonnet-5-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_anthropic_tool_with_thinking.yaml",
+      "interaction": 1,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-5-5"
+    },
+    {
+      "id": "anthropic/parallel-tools-turn1-haiku-5-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_multiple_parallel_tool_calls.yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-haiku-5-5"
+    },
+    {
+      "id": "anthropic/parallel-tools-turn2-haiku-5-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_multiple_parallel_tool_calls.yaml",
+      "interaction": 1,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-haiku-5-5"
+    },
+    {
+      "id": "anthropic/redacted-thinking-stream-sonnet-4-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_anthropic_model_thinking_part_redacted_stream.yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-4-5-20250929"
+    },
+    {
+      "id": "anthropic/cache-read-sonnet-5-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_anthropic_cache_real_api.yaml",
+      "interaction": 1,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-5-5"
+    },
+    {
+      "id": "anthropic/effort-opus-5-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_anthropic_opus_5_5_features.yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-opus-5-5"
+    },
+    {
+      "id": "anthropic/error-effort-xhigh-opus-4-6",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic/test_anthropic_explicit_effort_xhigh_unsupported_model_errors.yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-opus-4-6"
+    },
+    {
+      "id": "anthropic/error-stale-thinking-sonnet-5-5",
+      "source": "pydantic-ai",
+      "path": "tests/models/anthropic/cassettes/test_thinking_block_binding/test_anthropic_explicit_error_rejects_a_stale_thinking_block_on_binding_models[claude-sonnet-5-5-True].yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-5-5"
+    },
+    {
+      "id": "anthropic/error-unknown-model",
+      "source": "pydantic-ai",
+      "path": "tests/cassettes/test_model_name_suggestions/test_model_name_suggestion[anthropic].yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonet-5-5"
+    },
+    {
+      "id": "anthropic/refusal",
+      "source": "vercel-ai",
+      "path": "packages/anthropic/src/__fixtures__/anthropic-refusal.json",
+      "kind": "json",
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-4-5"
+    },
+    {
+      "id": "anthropic/tool-no-args-stream",
+      "source": "vercel-ai",
+      "path": "packages/anthropic/src/__fixtures__/anthropic-tool-no-args.chunks.txt",
+      "kind": "chunks",
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-4-5"
+    },
+    {
+      "id": "anthropic/message-delta-input-tokens-stream",
+      "source": "vercel-ai",
+      "path": "packages/anthropic/src/__fixtures__/anthropic-message-delta-input-tokens.chunks.txt",
+      "kind": "chunks",
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-4-5"
+    },
+    {
+      "id": "anthropic/inline-system-message",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_anthropic_mid_conversation_system/test_mid_conversation_system_prompt[inline-system-supported].yaml",
+      "interaction": 0,
+      "protocol": "anthropic",
+      "target": "anthropic/claude-opus-5-5",
+      "notes": "Anthropic accepts role `system` inside `messages` (Claude Code sends one)."
+    },
+    {
+      "id": "anthropic/error-overloaded-529",
+      "source": "vercel-ai",
+      "path": "packages/anthropic/src/anthropic-error.test.ts",
+      "kind": "inline",
+      "protocol": "anthropic",
+      "target": "anthropic/claude-sonnet-5-5",
+      "status": 529,
+      "headers": {
+        "retry-after": "30"
+      },
+      "body": {
+        "type": "error",
+        "error": {
+          "details": null,
+          "type": "overloaded_error",
+          "message": "Overloaded"
+        }
+      },
+      "notes": "Body as quoted in the source's tests; status 529 and Retry-After per Anthropic's documented overloaded reply. Not a live capture."
+    },
+    {
+      "id": "gemini/text-gemini-2.5-flash",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_google/test_google_model_max_tokens.yaml",
+      "interaction": 0,
+      "protocol": "gemini",
+      "target": "gemini/gemini-2.5-flash",
+      "expect": {
+        "knownIssues": {
+          "roundTrip": "Gemini reply decoder drops `candidates[0].index`, so a same-protocol reply loses it."
+        }
+      }
+    },
+    {
+      "id": "gemini/stream-text",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_google/test_google_model_stream.yaml",
+      "interaction": 0,
+      "protocol": "gemini",
+      "target": "gemini/gemini-2.0-flash-exp"
+    },
+    {
+      "id": "gemini/thinking-part",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_google/test_google_model_thinking_part.yaml",
+      "interaction": 0,
+      "protocol": "gemini",
+      "target": "gemini/gemini-3-pro-preview",
+      "expect": {
+        "knownIssues": {
+          "roundTrip": "Gemini reply decoder drops `candidates[0].index`, so a same-protocol reply loses it."
+        }
+      }
+    },
+    {
+      "id": "gemini/thinking-max-tokens-empty",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_google/test_google_model_max_tokens_thinking_model_empty_response.yaml",
+      "interaction": 0,
+      "protocol": "gemini",
+      "target": "gemini/gemini-2.5-pro",
+      "expect": {
+        "knownIssues": {
+          "roundTrip": "Gemini reply decoder drops `candidates[0].index`; content without `parts` is written back with `parts: []`."
+        }
+      }
+    },
+    {
+      "id": "gemini/prompt-blocked",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_google/test_google_model_armor_prompt_template_text_gets_blocked.yaml",
+      "interaction": 0,
+      "protocol": "gemini",
+      "target": "gemini/gemini-2.5-flash"
+    },
+    {
+      "id": "gemini/3-signature-stream-turn1",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_google/test_google_streaming_tool_call_thought_signature.yaml",
+      "interaction": 0,
+      "protocol": "gemini",
+      "target": "gemini/gemini-3-pro-preview"
+    },
+    {
+      "id": "gemini/3-signature-stream-turn2",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_google/test_google_streaming_tool_call_thought_signature.yaml",
+      "interaction": 1,
+      "protocol": "gemini",
+      "target": "gemini/gemini-3-pro-preview",
+      "expect": {
+        "requestChanges": {
+          "$.contents[*].parts[*].functionResponse.response.output": "a library tool result is text: Unladen sends {\"output\": text} (its documented Gemini form) where pydantic-ai sent its own {\"return_value\": …} object",
+          "$.contents[*].parts[*].functionResponse.response.return_value": "see `output`"
+        }
+      }
+    },
+    {
+      "id": "gemini/3-reasoning-stream",
+      "source": "vercel-ai",
+      "path": "packages/google/src/__fixtures__/google-reasoning-gemini3.chunks.txt",
+      "kind": "chunks",
+      "protocol": "gemini",
+      "target": "gemini/gemini-3-pro-preview"
+    },
+    {
+      "id": "gemini/3-tool-call-stream",
+      "source": "vercel-ai",
+      "path": "packages/google/src/__fixtures__/google-tool-call-gemini3.chunks.txt",
+      "kind": "chunks",
+      "protocol": "gemini",
+      "target": "gemini/gemini-3-pro-preview"
+    },
+    {
+      "id": "gemini/error-429-retry-info",
+      "source": "vercel-ai",
+      "path": "packages/google/src/__fixtures__/google-429-retry-info.json",
+      "kind": "json",
+      "protocol": "gemini",
+      "target": "gemini/gemini-2.5-flash",
+      "status": 429
+    },
+    {
+      "id": "deepseek/thinking-part",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_deepseek/test_deepseek_model_thinking_part.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "deepseek/deepseek-v4-flash"
+    },
+    {
+      "id": "deepseek/reasoning-replay-earlier-turn",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_deepseek/test_deepseek_field_mode_thinking_backfill[earlier_turn].yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "deepseek/deepseek-v4-flash",
+      "expect": {
+        "requestChanges": {
+          "$.messages[*].reasoning_content": "replayReasoningContent writes a space for empty reasoning (DeepSeek's Responses API rejects an empty string); the Chat API also took the empty string recorded here"
+        }
+      }
+    },
+    {
+      "id": "deepseek/reasoning-replay-current-turn",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_deepseek/test_deepseek_field_mode_thinking_backfill[current_turn].yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "deepseek/deepseek-v4-flash",
+      "expect": {
+        "requestChanges": {
+          "$.messages[*].reasoning_content": "replayReasoningContent writes a space for empty reasoning (DeepSeek's Responses API rejects an empty string); the Chat API also took the empty string recorded here"
+        }
+      }
+    },
+    {
+      "id": "deepseek/max-tokens",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_deepseek/test_deepseek_max_tokens_limits_output.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "deepseek/deepseek-v4-flash"
+    },
+    {
+      "id": "deepseek/reasoning-stream",
+      "source": "vercel-ai",
+      "path": "packages/deepseek/src/chat/__fixtures__/deepseek-reasoning.chunks.txt",
+      "kind": "chunks",
+      "protocol": "chat",
+      "target": "deepseek/deepseek-reasoner"
+    },
+    {
+      "id": "deepseek/tool-call-stream",
+      "source": "vercel-ai",
+      "path": "packages/deepseek/src/chat/__fixtures__/deepseek-tool-call.chunks.txt",
+      "kind": "chunks",
+      "protocol": "chat",
+      "target": "deepseek/deepseek-reasoner"
+    },
+    {
+      "id": "deepseek/anthropic-thinking-stream",
+      "source": "magpie",
+      "path": "internal/gateway/testdata/reasoning-uncounted-deepseek-anthropic.sse",
+      "kind": "sse",
+      "protocol": "anthropic",
+      "model": "deepseek-v4-pro",
+      "target": "deepseek/deepseek-v4-pro"
+    },
+    {
+      "id": "mistral/magistral-thinking",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_mistral/test_mistral_model_thinking_part.yaml",
+      "interaction": 1,
+      "protocol": "chat",
+      "target": "mistral/magistral-medium-latest",
+      "expect": {
+        "knownIssues": {
+          "facts.reasoning": "Non-streaming Mistral `thinking` content parts stay opaque: kept for Chat clients, but not reasoning for other protocols (streams are decoded)."
+        },
+        "requestChanges": {
+          "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+          "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+          "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+        }
+      }
+    },
+    {
+      "id": "mistral/parallel-tools-stream",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_mistral/test_mistral_stream_parallel_tool_calls[mistral-small-latest].yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "mistral/mistral-small-latest",
+      "expect": {
+        "requestChanges": {
+          "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+          "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+          "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+        }
+      }
+    },
+    {
+      "id": "mistral/parallel-tools-turn2-stream",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_mistral/test_mistral_stream_parallel_tool_calls[mistral-small-latest].yaml",
+      "interaction": 1,
+      "protocol": "chat",
+      "target": "mistral/mistral-small-latest",
+      "expect": {
+        "requestChanges": {
+          "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+          "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+          "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+        }
+      }
+    },
+    {
+      "id": "mistral/glm-thinking-parts-stream",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_mistral/test_mistral_stream_parallel_tool_calls[zai-glm-5-3].yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "mistral/zai-glm-5-3",
+      "expect": {
+        "accepted": {
+          "decodeWarnings": "GLM on api.mistral.ai repeats the choice `index` inside `delta`; the warning is for that key, nothing is lost.",
+          "streamRoundTrip": "Mistral thinking parts are re-encoded as `reasoning_content` (what Chat clients read), so the re-decoded reasoning has that source key."
+        },
+        "requestChanges": {
+          "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+          "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+          "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+        }
+      }
+    },
+    {
+      "id": "mistral/foreign-tool-ids",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_mistral/test_mistral_foreign_tool_call_ids_are_rewritten.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "mistral/voxtral-small-latest",
+      "expect": {
+        "requestChanges": {
+          "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+          "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+          "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+          "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+        }
+      }
+    },
+    {
+      "id": "mistral/reasoning-stream",
+      "source": "vercel-ai",
+      "path": "packages/mistral/src/__fixtures__/mistral-reasoning.chunks.txt",
+      "kind": "chunks",
+      "protocol": "chat",
+      "expect": {
+        "accepted": {
+          "streamRoundTrip": "Mistral thinking parts are re-encoded as `reasoning_content` (what Chat clients read), so the re-decoded reasoning has that source key."
+        }
+      },
+      "target": "mistral/magistral-small-latest"
+    },
+    {
+      "id": "groq/thinking-part",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_groq/test_groq_model_thinking_part.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "groq/deepseek-r1-distill-llama-70b"
+    },
+    {
+      "id": "groq/error-tool-use-failed",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_groq/test_tool_use_failed_error.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "groq/openai/gpt-oss-120b"
+    },
+    {
+      "id": "groq/image-input-llama-4",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_groq/test_image_url_input.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+    },
+    {
+      "id": "groq/tool-call-stream",
+      "source": "vercel-ai",
+      "path": "packages/groq/src/__fixtures__/groq-tool-call.chunks.txt",
+      "kind": "chunks",
+      "protocol": "chat",
+      "target": "groq/openai/gpt-oss-20b"
+    },
+    {
+      "id": "groq/reasoning",
+      "source": "vercel-ai",
+      "path": "packages/groq/src/__fixtures__/groq-reasoning.json",
+      "kind": "json",
+      "protocol": "chat",
+      "target": "groq/openai/gpt-oss-20b"
+    },
+    {
+      "id": "openrouter/claude-reasoning-stream",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openrouter/test_openrouter_streaming_reasoning.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openrouter/anthropic/claude-sonnet-5",
+      "expect": {
+        "knownIssues": {
+          "decodeWarnings": "OpenRouter `reasoning_details` in stream deltas are dropped, so Claude's signature cannot be replayed after a streamed turn."
+        }
+      }
+    },
+    {
+      "id": "openrouter/reasoning-details-replay",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openrouter/test_openrouter_preserve_reasoning_block.yaml",
+      "interaction": 1,
+      "protocol": "chat",
+      "target": "openrouter/openai/gpt-5-mini"
+    },
+    {
+      "id": "openrouter/error-429-upstream",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openrouter/test_openrouter_errors_raised.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openrouter/google/gemini-2.0-flash-exp:free"
+    },
+    {
+      "id": "openrouter/stream-error-minimax",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openrouter/test_openrouter_stream_error.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openrouter/minimax/minimax-m2:free",
+      "expect": {
+        "knownIssues": {
+          "decodeWarnings": "OpenRouter `reasoning_details` in stream deltas are dropped, so a streamed turn's structured (signed) reasoning cannot be replayed."
+        },
+        "accepted": {
+          "streamRoundTrip": "OpenRouter sent finish_reason `length` and then an error chunk; re-encoded, the error ends the stream and the earlier finish reason is not written again."
+        }
+      }
+    },
+    {
+      "id": "openrouter/tool-calling-mistral",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openrouter/test_openrouter_tool_calling.yaml",
+      "interaction": 0,
+      "protocol": "chat",
+      "target": "openrouter/mistralai/mistral-small"
+    },
+    {
+      "id": "xai/chat-text-stream",
+      "source": "vercel-ai",
+      "path": "packages/xai/src/__fixtures__/xai-text.chunks.txt",
+      "kind": "chunks",
+      "protocol": "chat",
+      "target": "xai/grok-4"
+    },
+    {
+      "id": "xai/chat-tool-call",
+      "source": "vercel-ai",
+      "path": "packages/xai/src/__fixtures__/xai-tool-call.json",
+      "kind": "json",
+      "protocol": "chat",
+      "target": "xai/grok-4"
+    },
+    {
+      "id": "xai/responses-reasoning-then-call",
+      "source": "magpie",
+      "path": "internal/gateway/testdata/grok_reasoning_then_call.sse",
+      "kind": "sse",
+      "protocol": "responses",
+      "model": "grok-4.6-build",
+      "target": "xai/grok-4.6-build"
+    },
+    {
+      "id": "moonshot/text",
+      "source": "vercel-ai",
+      "path": "packages/moonshotai/src/__fixtures__/moonshotai-text.json",
+      "kind": "json",
+      "protocol": "chat",
+      "target": "moonshot/kimi-k2-0905-preview"
+    },
+    {
+      "id": "moonshot/reasoning",
+      "source": "vercel-ai",
+      "path": "packages/moonshotai/src/__fixtures__/moonshotai-reasoning.json",
+      "kind": "json",
+      "protocol": "chat",
+      "target": "moonshot/kimi-k2-thinking"
+    },
+    {
+      "id": "moonshot/tool-call-stream",
+      "source": "vercel-ai",
+      "path": "packages/moonshotai/src/__fixtures__/moonshotai-tool-call.chunks.txt",
+      "kind": "chunks",
+      "protocol": "chat",
+      "target": "moonshot/kimi-k2-0905-preview"
+    },
+    {
+      "id": "moonshot/indexless-tool-calls-stream",
+      "source": "vercel-ai",
+      "path": "packages/moonshotai/src/__fixtures__/moonshotai-stream-indexless-tool-calls.chunks.txt",
+      "kind": "chunks",
+      "protocol": "chat",
+      "target": "moonshot/kimi-k2-0905-preview"
+    },
+    {
+      "id": "moonshot/error-invalid-part",
+      "source": "vercel-ai",
+      "path": "packages/moonshotai/src/__fixtures__/moonshotai-error.json",
+      "kind": "json",
+      "protocol": "chat",
+      "status": 400,
+      "target": "moonshot/kimi-k2-0905-preview"
+    },
+    {
+      "id": "gemini-openai/signature-stream-turn1",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_compatible_api_gemini_3_tool_call_thought_signature[True].yaml",
+      "interaction": 0,
+      "protocol": "chat"
+    },
+    {
+      "id": "gemini-openai/signature-stream-turn2",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_openai/test_compatible_api_gemini_3_tool_call_thought_signature[True].yaml",
+      "interaction": 1,
+      "protocol": "chat",
+      "expect": {
+        "knownIssues": {
+          "decodeWarnings": "Chat stream decoder drops delta-level `extra_content` (Gemini's OpenAI-compatible API puts thought signatures and the thought marker there)."
+        }
+      }
+    },
+    {
+      "id": "gemini-openai/vertex-thoughts-stream",
+      "source": "magpie",
+      "path": "internal/gateway/testdata/vertex_openai_thoughts.sse",
+      "kind": "sse",
+      "protocol": "chat",
+      "model": "google/gemini-3.8-flash",
+      "expect": {
+        "knownIssues": {
+          "facts.text": "Gemini OpenAI-compatible `extra_content.google.thought` is not read: thought text is decoded as answer text.",
+          "facts.reasoning": "Gemini OpenAI-compatible `extra_content.google.thought` is not read: thought text is decoded as answer text.",
+          "decodeWarnings": "Chat stream decoder drops delta-level `extra_content`."
+        }
+      }
+    },
+    {
+      "id": "copilot/gemini-thinking-stream",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_github_copilot/test_github_copilot_gemini_thinking_stream.yaml",
+      "interaction": 0,
+      "protocol": "chat"
+    },
+    {
+      "id": "cerebras/zai-reasoning",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_cerebras/test_cerebras_zai_reasoning_replayed_as_think_tags.yaml",
+      "interaction": 0,
+      "protocol": "chat"
+    },
+    {
+      "id": "huggingface/deepseek-r1",
+      "source": "pydantic-ai",
+      "path": "tests/models/cassettes/test_huggingface/test_simple_completion.yaml",
+      "interaction": 0,
+      "protocol": "chat"
+    },
+    {
+      "id": "clients/claude-code",
+      "source": "magpie",
+      "path": "internal/gateway/testdata/workdir/claude-code-2.1.296.json",
+      "kind": "request",
+      "protocol": "anthropic",
+      "client": "claude-code",
+      "scrubClientIDs": true,
+      "notes": "A Claude Code 2.1.296 first turn as it reached magpie."
+    },
+    {
+      "id": "clients/codex",
+      "source": "magpie",
+      "path": "internal/gateway/testdata/workdir/codex-0.162.0.json",
+      "kind": "request",
+      "protocol": "responses",
+      "client": "codex",
+      "scrubClientIDs": true,
+      "notes": "A Codex 0.162.0 first turn as it reached magpie."
+    },
+    {
+      "id": "clients/opencode-chat",
+      "source": "magpie",
+      "path": "internal/gateway/testdata/opencode2_chat_tools.json",
+      "kind": "request",
+      "protocol": "chat",
+      "client": "opencode",
+      "scrubClientIDs": true,
+      "notes": "OpenCode (Vercel AI SDK, OpenAI-compatible Chat) with its tools."
+    }
+  ]
+}

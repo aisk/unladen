@@ -1,0 +1,24 @@
+{
+  "id": "anthropic/error-unknown-model",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/cassettes/test_model_name_suggestions/test_model_name_suggestion[anthropic].yaml",
+    "interaction": 0
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 404,
+  "target": "anthropic/claude-sonet-5-5",
+  "model": "claude-sonet-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "error": "model: claude-sonet-5-5"
+  }
+}

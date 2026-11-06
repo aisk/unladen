@@ -1,0 +1,32 @@
+{
+  "id": "openai/chat-length-stream-gpt-4.1-mini",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openai/test_openai_native_output_cut_off_by_max_tokens[True].yaml",
+    "interaction": 0
+  },
+  "vendor": "openai",
+  "protocol": "chat",
+  "status": 200,
+  "target": "openai/gpt-4.1-mini",
+  "model": "gpt-4.1-mini",
+  "host": "api.openai.com",
+  "path": "/v1/chat/completions",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "{\"cities\":[{\"name\":\"Tokyo\",\"country\":\"Japan\"},{\"name\":\"Delhi\",\"country\":\"India\"},{\"",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "length",
+    "usage": {
+      "input": 83,
+      "output": 20
+    }
+  }
+}

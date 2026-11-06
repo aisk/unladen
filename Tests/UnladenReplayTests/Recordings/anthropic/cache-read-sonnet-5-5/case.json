@@ -1,0 +1,32 @@
+{
+  "id": "anthropic/cache-read-sonnet-5-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic/test_anthropic_cache_real_api.yaml",
+    "interaction": 1
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-sonnet-5-5",
+  "model": "claude-sonnet-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "Python is a readable, versatile, open-source programming language widely used for data science, AI, web development, automation, and scripting thanks to its simple syntax and vast library ecosystem.",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "end_turn",
+    "usage": {
+      "input": 2490,
+      "output": 59
+    }
+  }
+}

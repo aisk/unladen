@@ -1,0 +1,42 @@
+{
+  "id": "mistral/foreign-tool-ids",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_mistral/test_mistral_foreign_tool_call_ids_are_rewritten.yaml",
+    "interaction": 0
+  },
+  "vendor": "mistral",
+  "protocol": "chat",
+  "status": 200,
+  "target": "mistral/voxtral-small-latest",
+  "expect": {
+    "requestChanges": {
+      "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+      "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+      "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+    }
+  },
+  "model": "voxtral-small-latest",
+  "host": "api.mistral.ai",
+  "path": "/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "The weather in Paris is sunny and 21C, in London it is rainy and 12C, and in Berlin it is cloudy and 15C.",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 300,
+      "output": 37
+    }
+  }
+}

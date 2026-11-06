@@ -1,0 +1,23 @@
+{
+  "max_tokens": 128000,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "How do I cross the street?",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "model": "claude-sonnet-5-5",
+  "output_config": {
+    "effort": "max"
+  },
+  "stream": true,
+  "thinking": {
+    "type": "adaptive",
+    "display": "summarized"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "moonshot/reasoning",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/moonshotai/src/__fixtures__/moonshotai-reasoning.json"
+  },
+  "vendor": "moonshot",
+  "protocol": "chat",
+  "status": 200,
+  "target": "moonshot/kimi-k2-thinking",
+  "model": null,
+  "stream": false,
+  "facts": {
+    "text": "There are three.",
+    "reasoning": "Let me count the letters carefully.",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 20,
+      "output": 30
+    }
+  }
+}

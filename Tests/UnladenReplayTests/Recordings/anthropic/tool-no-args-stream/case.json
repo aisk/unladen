@@ -1,0 +1,32 @@
+{
+  "id": "anthropic/tool-no-args-stream",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/anthropic/src/__fixtures__/anthropic-tool-no-args.chunks.txt",
+    "note": "one JSON payload per line in the source; SSE framing added by the importer"
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-sonnet-4-5",
+  "model": null,
+  "stream": true,
+  "facts": {
+    "text": "I'll update the issue list for you.",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [
+      {
+        "name": "updateIssueList",
+        "arguments": {}
+      }
+    ],
+    "finish": "tool_use",
+    "usage": {
+      "input": 565,
+      "output": 48
+    }
+  }
+}

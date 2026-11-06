@@ -1,0 +1,51 @@
+{
+  "max_tokens": 128000,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "Think it through, then say what 4817 * 2963 is.",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "thinking": "",
+          "signature": "CAQS9AUKEAgSGAI4AUIIdGhpbmtpbmcSDNjU1yYUrlnITymIYBoMwIZuwaHyTe/SURiLIjC5l7vGqkrpX2wPuRnvWDV0blsQWlHUrEGKz2U78EygAGTgZsVU75OzhtlX3tdl6ZEqkQXW1mf1N11PBuYT/HQ7JM+mbN14YW7zQbl/EJHuk8cCrPyHVfIhQTl7BUbxyqcCFjwy0ZgN3bOuY78nA/2BbUhd1SJlu5TkHnzKBw7yqBTuHE3zjLS0KhaOmIlZyFFU0KzTwiK9Rqsr1oF4XD3IvPz/ACEGpWidDxoIuMmF21n9nlbY8Qs/bZVpXMqzaM3+oRe9Z47wk2Etawwt+78gzk4dd4gIdniQDHBGDpSt7DfAC3N3nFv5pLMjBP8X7oimb7YH8xO9z/AJPHssWrIZIshH5CF7pP9y4zxE2SF1AfNvpGr+rtApxgYduqcxFjATlgpC7quZUhw5FnBxTqRzJloSlaMdo1gc4P3J2A6hvjsONLtEBIlfeJJA4VMQDXNoR4WUPhLSOoOjUHaWJBJ6Vm96mKnsc+XMLBmDr1Om1kC+SkJMKQ63xkcBcg2WK9CWPUYScZOd5/AsJAb6cy561Fry7PKj6qWSx4wzcgUXTtKjOOfvQ4v/Wrux5ecHl/kVg9H+MylMzwkqfjVkOWjfWqxPVv/FMLWkmUzPf/Z9wKrD8RU2CLm4RPNPAPFAl+GIF79zHD+0dgNRr7qdcO8QX/VezZEIkmRyB3e2hM8gMa9TCY3bPD72bf4A4p/wKj3LhSPjIzMCxcUpQ1lUOhfRl1RdZBkdEapcirWocZQPp+gEmZ3v6cOZcbwrfq3x84RBalewGDvvh+M7jw3IP0+uGXrF7p7AueFugTmeAp8mwVa4J5nTiY5gFFKdqxcNAcjzcjaS7+aLo6rQi/c8aWusQV/FpIMY1gRZNgJKzsfI/vJ51pyHm/9y099zP91V8s8FO/7zxu0XTKSSl3x6PzR55dK6fc4LE4l7WWQ5qF8ZM2AdTKwYAQ==",
+          "type": "thinking"
+        },
+        {
+          "text": "**4817 × 2963 = 14,272,771**\n\nMethod: 4817 × 3000 = 14,451,000, and 4817 × 37 = 178,229. Subtracting gives 14,451,000 − 178,229 = 14,272,771.",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "And times two?",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "model": "claude-sonnet-5-5",
+  "stream": true,
+  "system": [
+    {
+      "type": "text",
+      "text": "You are a helpful assistant. Answer briefly. Today is 2026-09-01."
+    }
+  ],
+  "thinking": {
+    "type": "adaptive",
+    "block_binding": {
+      "prefix_mismatch_behavior": "error"
+    }
+  }
+}

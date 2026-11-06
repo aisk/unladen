@@ -1,0 +1,65 @@
+{
+  "id": "mistral/glm-thinking-parts-stream",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_mistral/test_mistral_stream_parallel_tool_calls[zai-glm-5-3].yaml",
+    "interaction": 0
+  },
+  "vendor": "mistral",
+  "protocol": "chat",
+  "status": 200,
+  "target": "mistral/zai-glm-5-3",
+  "expect": {
+    "accepted": {
+      "decodeWarnings": "GLM on api.mistral.ai repeats the choice `index` inside `delta`; the warning is for that key, nothing is lost.",
+      "streamRoundTrip": "Mistral thinking parts are re-encoded as `reasoning_content` (what Chat clients read), so the re-decoded reasoning has that source key."
+    },
+    "requestChanges": {
+      "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+      "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+      "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+    }
+  },
+  "model": "zai-glm-5-3",
+  "host": "api.mistral.ai",
+  "path": "/v1/chat/completions#stream",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "I'll make all three calls at once since they're independent of each other.",
+    "reasoning": "The user wants me to call three tools at once: get_weather for Paris, get_weather for London, and get_time for UTC. These are all independent calls, so I should make them all in the same function_calls block.",
+    "signedReasoning": false,
+    "toolCalls": [
+      {
+        "name": "get_weather",
+        "arguments": {
+          "city": "Paris"
+        }
+      },
+      {
+        "name": "get_weather",
+        "arguments": {
+          "city": "London"
+        }
+      },
+      {
+        "name": "get_time",
+        "arguments": {
+          "tz": "UTC"
+        }
+      }
+    ],
+    "finish": "tool_calls",
+    "usage": {
+      "input": 222,
+      "output": 94
+    }
+  }
+}

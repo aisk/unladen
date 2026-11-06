@@ -136,8 +136,9 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
             request.maxOutputTokens = cap
             outcome.warnings.append(WireWarning(.adjusted, "max output tokens \(asked) lowered to the model's \(cap)", path: "max_tokens"))
         }
-        if profile.strictUnknownFields == true, request.source == wire {
-            WireTransforms.stripUnknownFields(&request, warnings: &outcome.warnings)
+        if profile.strictUnknownFields == true {
+            WireTransforms.stripOpenAIPlatformFields(&request, warnings: &outcome.warnings)
+            if request.source == wire { WireTransforms.stripUnknownFields(&request, warnings: &outcome.warnings) }
         }
 
         let streams = switch profile.streaming {

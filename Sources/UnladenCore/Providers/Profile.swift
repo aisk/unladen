@@ -41,7 +41,8 @@ public struct Profile: Hashable, Sendable {
     public var maxTokensField: MaxTokensField?
     /// The upstream rejects fields it does not know (Mistral, Gemini's
     /// OpenAI-compatible API): unknown-field bags are dropped with a warning
-    /// instead of being written back.
+    /// instead of being written back, and so are fields only OpenAI's
+    /// platform defines (`store`, `service_tier`, ...).
     public var strictUnknownFields: Bool?
     /// The model is always called through this protocol, whatever the
     /// caller prefers (e.g. Claude on OpenRouter through Messages, for cache

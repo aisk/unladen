@@ -1,0 +1,26 @@
+{
+  "id": "anthropic/refusal",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/anthropic/src/__fixtures__/anthropic-refusal.json"
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-sonnet-4-5",
+  "model": null,
+  "stream": false,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "refusal",
+    "usage": {
+      "input": 18,
+      "output": 5
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "input": [
+    {
+      "content": "What is the meaning of life?",
+      "role": "user"
+    }
+  ],
+  "model": "gpt-5",
+  "reasoning": {
+    "effort": "low",
+    "summary": "detailed"
+  },
+  "stream": false
+}

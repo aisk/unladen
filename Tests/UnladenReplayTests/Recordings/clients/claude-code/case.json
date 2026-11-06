@@ -1,0 +1,16 @@
+{
+  "id": "clients/claude-code",
+  "source": {
+    "repo": "github.com/yetone/magpie",
+    "licence": "MIT",
+    "commit": "cd9c52c16",
+    "path": "internal/gateway/testdata/workdir/claude-code-2.1.296.json"
+  },
+  "vendor": "clients",
+  "protocol": "anthropic",
+  "status": 200,
+  "notes": "A Claude Code 2.1.296 first turn as it reached magpie.",
+  "client": "claude-code",
+  "model": "claude-opus-5-5",
+  "stream": false
+}

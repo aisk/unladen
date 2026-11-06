@@ -1,0 +1,32 @@
+{
+  "id": "mistral/reasoning-stream",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/mistral/src/__fixtures__/mistral-reasoning.chunks.txt",
+    "note": "one JSON payload per line in the source; SSE framing added by the importer"
+  },
+  "vendor": "mistral",
+  "protocol": "chat",
+  "status": 200,
+  "target": "mistral/magistral-small-latest",
+  "expect": {
+    "accepted": {
+      "streamRoundTrip": "Mistral thinking parts are re-encoded as `reasoning_content` (what Chat clients read), so the re-decoded reasoning has that source key."
+    }
+  },
+  "model": null,
+  "stream": true,
+  "facts": {
+    "text": "2 + 2 = 4",
+    "reasoning": "The user is asking for 2+2. This is basic arithmetic. 2+2=4.",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 10,
+      "output": 46
+    }
+  }
+}

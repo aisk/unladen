@@ -1,0 +1,8 @@
+data: {"choices":[{"delta":{"content":"The","role":"assistant"},"index":0}],"created":1791940063,"id":"39XOasL2F8n5qtsP8qaXqQ4","model":"gemini-3.1-flash-lite","object":"chat.completion.chunk","usage":{"completion_tokens":1,"prompt_tokens":149,"total_tokens":150}}
+
+data: {"choices":[{"delta":{"content":" weather is currently sunny and 28°C in both Taipei and Kaohsiung.","role":"assistant"},"index":0}],"created":1791940064,"id":"39XOasL2F8n5qtsP8qaXqQ4","model":"gemini-3.1-flash-lite","object":"chat.completion.chunk","usage":{"completion_tokens":20,"prompt_tokens":149,"total_tokens":169}}
+
+data: {"choices":[{"delta":{"extra_content":{"google":{"thought_signature":"EnMKcQFpFH0TooUxicUhUJrdb7Ji0ykKm3vsdX8IvQcZ0GHLql9pRmMYQjMSKgnaDwf4iARSElYfwuuPoA8AjrgZ0HHtqP/uBZ5oR3AW+H8YCiRxKnn3rGL9PkVl3U/dLz0mMOnyCxE2oKf2q2VSxDl3mT3U"}},"role":"assistant"},"finish_reason":"stop","index":0}],"created":1791940064,"id":"39XOasL2F8n5qtsP8qaXqQ4","model":"gemini-3.1-flash-lite","object":"chat.completion.chunk","usage":{"completion_tokens":20,"prompt_tokens":149,"total_tokens":169}}
+
+data: [DONE]
+

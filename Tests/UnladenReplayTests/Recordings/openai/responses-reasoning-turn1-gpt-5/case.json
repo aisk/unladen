@@ -1,0 +1,32 @@
+{
+  "id": "openai/responses-reasoning-turn1-gpt-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openai_responses/test_openai_responses_thinking_with_modified_history.yaml",
+    "interaction": 0
+  },
+  "vendor": "openai",
+  "protocol": "responses",
+  "status": 200,
+  "target": "openai/gpt-5",
+  "model": "gpt-5",
+  "host": "api.openai.com",
+  "path": "/v1/responses",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "A single, final answer doesn’t exist—it depends on perspective.\n\n- Biological: survive and reproduce.\n- Philosophical (existentialist): life has no preset meaning; we create it through choices.\n- Humanist: meaning comes from relationships, growth, and contributing to others.\n- Religious/spiritual: meaning is grounded in a relationship with the divine, virtue, or transcendence.\n- Narrative: we build meaning by crafting a story we’re proud to live.\n\nA practical way to “make” meaning:\n1) Clarify values (what matters most to you).\n2) Use strengths in service of something beyond yourself.\n3) Invest in relationships and community.\n4) Keep learning and creating.\n5) Notice beauty and gratitude.\n6) Face hardship with purpose.\n\nIf you want, tell me what matters to you, and I’ll help you shape a personal meaning statement or plan.",
+    "reasoning": "**Considering perspectives on meaning**\n\nI need to keep my response succinct since this topic is philosophical and subjective. I'll provide various perspectives, such as biological, philosophical, personal constructs, and religious views. A practical approach might involve creating meaning through relationships, contribution, growth, experiences, and values. I should avoid being overly verbose and consider a short actionable framework focusing on values, strengths, service, wonder, and connection. Also, encouraging the user to share their thoughts would be great!",
+    "signedReasoning": true,
+    "toolCalls": [],
+    "finish": "completed",
+    "usage": {
+      "input": 13,
+      "output": 248
+    }
+  }
+}

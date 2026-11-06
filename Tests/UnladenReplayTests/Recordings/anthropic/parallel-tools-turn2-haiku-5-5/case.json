@@ -1,0 +1,32 @@
+{
+  "id": "anthropic/parallel-tools-turn2-haiku-5-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic/test_multiple_parallel_tool_calls.yaml",
+    "interaction": 1
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-haiku-5-5",
+  "model": "claude-haiku-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "**Daisy** is the youngest.\n\nThe lookup shows that Daisy is Charlie's younger sister, so Charlie is older than her. Alice and Bob are Charlie's parents, so they are older than any of their children. That leaves Daisy as the youngest.",
+    "reasoning": "",
+    "signedReasoning": true,
+    "toolCalls": [],
+    "finish": "end_turn",
+    "usage": {
+      "input": 892,
+      "output": 334
+    }
+  }
+}

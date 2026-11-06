@@ -1,0 +1,73 @@
+{
+  "max_tokens": 128000,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "What is the largest city in the user country?",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "thinking": "I need to find the user's country first before I can determine its largest city, so I'll use the function to get that information.\n\n",
+          "signature": "CAQSxgUKEAgTGAI4AUIIdGhpbmtpbmcSDEOXdivn5hhZerWqEhoMG3hq2hJ19UDzFibgIjDp4KHgxfZhR1fE7myn4D0nm+tAdf/3Jd9h2UMfvHVeAtGli/YSPQQuM/GnGO7r8vMq4wR8Gk9dTumwsdK6dPn0P1JmbpcHn+zGTcL3TlCPRcdk79xo7xwzcxDSyodCYkh9/rSBD47SHV8Gzke2U7Id35qrgf0h4xMtUH+0UXwKaXlpVC6qzYC462bjuYOmRd4b1A+8Oi4tBfRiNFNVGajx20q7vSWuXiIA9EIveVLh50NLZYMkdjRQc0dF3gnoXTaEzS0JB3iibtOCdHWy3hpgWbS6tMTWnaD7GDvnRitYYlWqxPCFzLqrbaSynbvuMmbLcxpCvzkZWLNHmqVvqTNyLctSAiROqjuBMTUEDiaeGVlbW7CCdKhuM6AqWfWla9QRBjAlNZHBEQYpeWESsQH5FNqN/recCFTK3t7D0JfPt+wiS+4IPycXviVoM2zZAFyIeX8eNEVaS4aj4L+TD4GW7KdHxExFM65f5/GZE/zeTaZ3iMygrVTLEQUL5Oj36O6cAPXLa4wUpuT+rFZUidbxCdJ7gfV5nTmG6j74uaOwpwuHpTTpUzJU3VEt1p3d66BiK+ksIdzcLYG2+mWSiw6gt07c35RQz986SvDlBJYistRokcUCz6BETbewV7V9klI2CDAJQK8ENEC+eW1tsj5dBo6+tiwhWAF5lVpeBGIbmcG0a9G6P9V1kXj5ckDbQazXoB/fn8XDSQ0Rjospazn6haAaZHpHPkcUojy35ESU0kEOTuH4CwWsDYjYO5xgtFTTKYF10+Y0TMTFziAzjzmiIM0K5j14y7Ve7nGfyiB343UHsm4y1ptUdBWbzDK4wvcew1rAD+3UFDdmUuoAPy8H5VDwWdI29K82JsySK3n1B5tc1pRkKRgB",
+          "type": "thinking"
+        },
+        {
+          "text": "I'll start by looking up your country.",
+          "type": "text"
+        },
+        {
+          "id": "toolu_01ScR64hSDRHQDUX7JwLinxz",
+          "type": "tool_use",
+          "name": "get_user_country",
+          "input": {}
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01ScR64hSDRHQDUX7JwLinxz",
+          "type": "tool_result",
+          "content": [
+            {
+              "text": "Mexico",
+              "type": "text"
+            }
+          ],
+          "is_error": false
+        }
+      ]
+    }
+  ],
+  "model": "claude-sonnet-5-5",
+  "output_config": {
+    "effort": "max"
+  },
+  "stream": true,
+  "thinking": {
+    "type": "adaptive",
+    "display": "summarized"
+  },
+  "tool_choice": {
+    "type": "auto"
+  },
+  "tools": [
+    {
+      "name": "get_user_country",
+      "description": "",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    }
+  ]
+}

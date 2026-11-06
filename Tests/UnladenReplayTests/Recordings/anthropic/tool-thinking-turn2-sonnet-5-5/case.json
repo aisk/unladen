@@ -1,0 +1,32 @@
+{
+  "id": "anthropic/tool-thinking-turn2-sonnet-5-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic/test_anthropic_tool_with_thinking.yaml",
+    "interaction": 1
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-sonnet-5-5",
+  "model": "claude-sonnet-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "The largest city in Mexico is **Mexico City** (Ciudad de México), which is also the capital.\n\n- **City proper:** about 9.2 million people (2020 census).\n- **Metropolitan area:** about 21–22 million people. This makes it one of the largest urban areas in the Western Hemisphere.\n\nIt sits in the Valley of Mexico at an elevation of about 2,240 meters (7,350 feet). It was built on the site of the Aztec capital, Tenochtitlan.",
+    "reasoning": "Mexico City is the largest city, with about 9.2 million people in the city proper and roughly 21-22 million in the greater metropolitan area.\n\n",
+    "signedReasoning": true,
+    "toolCalls": [],
+    "finish": "end_turn",
+    "usage": {
+      "input": 434,
+      "output": 270
+    }
+  }
+}

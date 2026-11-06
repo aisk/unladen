@@ -1,0 +1,45 @@
+{
+  "messages": [
+    {
+      "content": "What is 123 / 456?",
+      "role": "user"
+    }
+  ],
+  "model": "mistralai/mistral-small",
+  "stream": false,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "function": {
+        "description": "Divide two numbers.",
+        "name": "divide",
+        "parameters": {
+          "additionalProperties": false,
+          "description": "Divide two numbers.",
+          "properties": {
+            "denominator": {
+              "type": "number"
+            },
+            "numerator": {
+              "type": "number"
+            },
+            "on_inf": {
+              "default": "infinity",
+              "enum": [
+                "error",
+                "infinity"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ]
+}

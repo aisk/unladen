@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": null,
+    "message": "Item 'rs_68c42de022c881948db7ed1cc2529f2e0202c9ad459e0d23' of type 'reasoning' was provided without its required following item.",
+    "param": "input",
+    "type": "invalid_request_error"
+  }
+}

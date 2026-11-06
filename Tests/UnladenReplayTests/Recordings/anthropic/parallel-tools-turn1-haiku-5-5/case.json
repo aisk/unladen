@@ -1,0 +1,57 @@
+{
+  "id": "anthropic/parallel-tools-turn1-haiku-5-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic/test_multiple_parallel_tool_calls.yaml",
+    "interaction": 0
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-haiku-5-5",
+  "model": "claude-haiku-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [
+      {
+        "name": "retrieve_entity_info",
+        "arguments": {
+          "name": "Alice"
+        }
+      },
+      {
+        "name": "retrieve_entity_info",
+        "arguments": {
+          "name": "Bob"
+        }
+      },
+      {
+        "name": "retrieve_entity_info",
+        "arguments": {
+          "name": "Charlie"
+        }
+      },
+      {
+        "name": "retrieve_entity_info",
+        "arguments": {
+          "name": "Daisy"
+        }
+      }
+    ],
+    "finish": "tool_use",
+    "usage": {
+      "input": 506,
+      "output": 213
+    }
+  }
+}

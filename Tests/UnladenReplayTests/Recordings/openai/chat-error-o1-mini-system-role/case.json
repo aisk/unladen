@@ -1,0 +1,24 @@
+{
+  "id": "openai/chat-error-o1-mini-system-role",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openai/test_openai_o1_mini_system_role[developer].yaml",
+    "interaction": 0
+  },
+  "vendor": "openai",
+  "protocol": "chat",
+  "status": 400,
+  "target": "openai/o1-mini",
+  "model": "o1-mini",
+  "host": "api.openai.com",
+  "path": "/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "error": "Unsupported value: 'messages[0].role' does not support 'developer' with this model."
+  }
+}

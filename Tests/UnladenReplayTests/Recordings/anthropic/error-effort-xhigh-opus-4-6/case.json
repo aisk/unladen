@@ -1,0 +1,24 @@
+{
+  "id": "anthropic/error-effort-xhigh-opus-4-6",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic/test_anthropic_explicit_effort_xhigh_unsupported_model_errors.yaml",
+    "interaction": 0
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 400,
+  "target": "anthropic/claude-opus-4-6",
+  "model": "claude-opus-4-6",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "error": "This model does not support effort level 'xhigh'. Supported levels: high, low, max, medium."
+  }
+}

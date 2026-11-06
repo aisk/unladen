@@ -1,0 +1,16 @@
+{
+  "id": "clients/codex",
+  "source": {
+    "repo": "github.com/yetone/magpie",
+    "licence": "MIT",
+    "commit": "cd9c52c16",
+    "path": "internal/gateway/testdata/workdir/codex-0.162.0.json"
+  },
+  "vendor": "clients",
+  "protocol": "responses",
+  "status": 200,
+  "notes": "A Codex 0.162.0 first turn as it reached magpie.",
+  "client": "codex",
+  "model": "gpt-5",
+  "stream": false
+}

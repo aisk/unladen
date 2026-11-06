@@ -2,8 +2,9 @@
 // response directions.
 
 /// The reasoning fields Chat-compatible APIs use on assistant messages and
-/// stream deltas: DeepSeek's `reasoning_content`, OpenRouter's `reasoning`.
-let chatReasoningKeys = ["reasoning_content", "reasoning"]
+/// stream deltas: DeepSeek's `reasoning_content`, OpenRouter's `reasoning`,
+/// GitHub Copilot's `reasoning_text`.
+let chatReasoningKeys = ["reasoning_content", "reasoning", "reasoning_text"]
 
 // MARK: - Decoding
 

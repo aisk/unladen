@@ -1,0 +1,13 @@
+{
+  "messages": [
+    {
+      "content": "hello",
+      "name": null,
+      "role": "user",
+      "tool_calls": null
+    }
+  ],
+  "model": "deepseek-ai/DeepSeek-R1",
+  "stream": false,
+  "tools": []
+}

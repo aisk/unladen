@@ -1,0 +1,12 @@
+{
+  "input": [
+    {
+      "content": "What is the capital of France?",
+      "role": "user"
+    }
+  ],
+  "instructions": "",
+  "model": "gpt-4o",
+  "stream": true,
+  "temperature": -1
+}

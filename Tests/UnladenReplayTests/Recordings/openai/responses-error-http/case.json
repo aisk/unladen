@@ -1,0 +1,24 @@
+{
+  "id": "openai/responses-error-http",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openai_responses/test_openai_responses_model_http_error.yaml",
+    "interaction": 0
+  },
+  "vendor": "openai",
+  "protocol": "responses",
+  "status": 400,
+  "target": "openai/gpt-4o",
+  "model": "gpt-4o",
+  "host": "api.openai.com",
+  "path": "/v1/responses",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "error": "Invalid 'temperature': decimal below minimum value. Expected a value >= 0, but got -1 instead."
+  }
+}

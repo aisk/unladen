@@ -1,0 +1,32 @@
+{
+  "id": "huggingface/deepseek-r1",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_huggingface/test_simple_completion.yaml",
+    "interaction": 0
+  },
+  "vendor": "huggingface",
+  "protocol": "chat",
+  "status": 200,
+  "model": "deepseek-ai/DeepSeek-R1",
+  "host": "router.huggingface.co",
+  "path": "/together/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "retry-after": "30"
+  },
+  "stream": false,
+  "facts": {
+    "text": "<think>\nHmm, the user just said \"hello\". That's a simple greeting, but I need to figure out how to respond appropriately.  \n\nFirst, I should acknowledge their greeting warmly since starting friendly sets a positive tone. Maybe \"Hello!\" with an exclamation to show enthusiasm.  \n\nI wonder if this is just a test message or if they have something specific in mind. The message is very short, so they might be:  \n- Checking if I'm active  \n- Unsure how to start  \n- Or just being polite before asking something else  \n\nSince they didn't follow up immediately, I'll keep it open-ended. Adding \"How can I help you today?\" invites them to share their actual need without pressure.  \n\nAlso, no emojis yet--they didn't use any, so I'll match that tone unless they show preference later. Keeping it simple but friendly feels right here.\n</think>\nHello! 👋 How can I help you today?",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 4,
+      "output": 197
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "gemini/prompt-blocked",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_google/test_google_model_armor_prompt_template_text_gets_blocked.yaml",
+    "interaction": 0
+  },
+  "vendor": "gemini",
+  "protocol": "gemini",
+  "status": 200,
+  "target": "gemini/gemini-2.5-flash",
+  "model": "gemini-2.5-flash",
+  "host": "europe-west4-aiplatform.googleapis.com",
+  "path": "/v1beta1/projects/pydantic-ai/locations/europe-west4/publishers/google/models/gemini-2.5-flash:generateContent",
+  "headers": {
+    "content-type": "application/json; charset=UTF-8"
+  },
+  "stream": false,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "blocked": "MODEL_ARMOR"
+  }
+}

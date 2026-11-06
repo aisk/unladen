@@ -1,0 +1,26 @@
+{
+  "contents": [
+    {
+      "parts": [
+        {
+          "text": "What is the capital of France?"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "generationConfig": {
+    "maxOutputTokens": 5,
+    "responseModalities": [
+      "TEXT"
+    ]
+  },
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are a helpful chatbot."
+      }
+    ],
+    "role": "user"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": "openai/chat-text-gpt-4o",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openai/test_extra_headers.yaml",
+    "interaction": 0
+  },
+  "vendor": "openai",
+  "protocol": "chat",
+  "status": 200,
+  "target": "openai/gpt-4o",
+  "model": "gpt-4o",
+  "host": "api.openai.com",
+  "path": "/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "Hello! How can I assist you today?",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 8,
+      "output": 10
+    }
+  }
+}

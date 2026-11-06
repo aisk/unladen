@@ -1,0 +1,18 @@
+{
+  "id": "gemini/error-429-retry-info",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/google/src/__fixtures__/google-429-retry-info.json"
+  },
+  "vendor": "gemini",
+  "protocol": "gemini",
+  "status": 429,
+  "target": "gemini/gemini-2.5-flash",
+  "model": null,
+  "stream": false,
+  "facts": {
+    "error": "You exceeded your current quota, please check your plan."
+  }
+}

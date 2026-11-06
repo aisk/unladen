@@ -1,0 +1,31 @@
+{
+  "id": "copilot/gemini-thinking-stream",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_github_copilot/test_github_copilot_gemini_thinking_stream.yaml",
+    "interaction": 0
+  },
+  "vendor": "copilot",
+  "protocol": "chat",
+  "status": 200,
+  "model": "gemini-3.8-flash",
+  "host": "api.githubcopilot.com",
+  "path": "/chat/completions",
+  "headers": {
+    "content-type": "text/event-stream"
+  },
+  "stream": true,
+  "facts": {
+    "text": "120",
+    "reasoning": "**Factoring N**\n\nI've identified the target number, $N = 3599$. My current focus is on a factorization trick, recognizing its proximity to $3600 = 60^2$. This allows me to express $3599$ as a difference of squares: $60^2 - 1^2$.\n\n",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 19,
+      "output": 3
+    }
+  }
+}

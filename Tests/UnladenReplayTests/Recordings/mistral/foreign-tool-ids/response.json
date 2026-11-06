@@ -1,0 +1,26 @@
+{
+  "id": "94f1cd377ff94cc7b65d33599af684d0",
+  "created": 1792188719,
+  "model": "voxtral-small-latest",
+  "usage": {
+    "prompt_tokens": 300,
+    "total_tokens": 337,
+    "completion_tokens": 37,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "service_tier": "standard"
+  },
+  "object": "chat.completion",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "tool_calls": null,
+        "content": "The weather in Paris is sunny and 21C, in London it is rainy and 12C, and in Berlin it is cloudy and 15C."
+      }
+    }
+  ]
+}

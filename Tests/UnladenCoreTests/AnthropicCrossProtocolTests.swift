@@ -1,5 +1,6 @@
 import Testing
 @_spi(Wire) import UnladenCore
+import UnladenTestSupport
 
 @Suite struct ChatToAnthropicRequestTests {
     @Test func toolResultsAreRegroupedIntoUserTurns() throws {

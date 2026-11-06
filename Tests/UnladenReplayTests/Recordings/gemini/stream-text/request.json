@@ -1,0 +1,23 @@
+{
+  "contents": [
+    {
+      "parts": [
+        {
+          "text": "What is the capital of France?"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "generationConfig": {
+    "temperature": 0.0
+  },
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are a helpful chatbot."
+      }
+    ],
+    "role": "user"
+  }
+}

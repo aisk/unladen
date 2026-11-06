@@ -1,0 +1,45 @@
+{
+  "id": "mistral/magistral-thinking",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_mistral/test_mistral_model_thinking_part.yaml",
+    "interaction": 1
+  },
+  "vendor": "mistral",
+  "protocol": "chat",
+  "status": 200,
+  "target": "mistral/magistral-medium-latest",
+  "expect": {
+    "knownIssues": {
+      "facts.reasoning": "Non-streaming Mistral `thinking` content parts stay opaque: kept for Chat clients, but not reasoning for other protocols (streams are decoded)."
+    },
+    "requestChanges": {
+      "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+      "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+      "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+    }
+  },
+  "model": "magistral-medium-latest",
+  "host": "api.mistral.ai",
+  "path": "/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "Crossing a river is quite different from crossing a street, but the principle of assessing safety and taking precautions still applies. Here are some guidelines to help you cross a river safely:\n\n1. **Assess the River**: Check the depth, current, and any potential hazards like rocks or debris. If the river is too deep or fast-moving, it might be unsafe to cross on foot.\n\n2. **Find a Suitable Crossing Point**: Look for areas where the river is shallow and the current is slower. Bridges or designated crossing points are ideal if available.\n\n3. **Prepare Appropriately**: Wear sturdy footwear with good grip and consider using a walking stick for balance. If the river is deep or fast, use a life jacket and possibly a rope for safety.\n\n4. **Cross Carefully**: Face upstream and shuffle your feet to maintain balance. Move diagonally downstream to counteract the current.\n\n5. **Be Cautious**: Always be prepared to turn back if conditions become unsafe. If you're unsure about the river's conditions, it's best to seek local advice or assistance.\n\nRemember, rivers can be dangerous, and it's important to prioritize safety. If you're not experienced with river crossings, consider seeking guidance from someone who is familiar with the area and the river's conditions. Stay safe!",
+    "reasoning": "**Analogizing crossing a river**\n\nThe user is asking about crossing a river, and they mention that the street-crossing instructions were helpful. I need to think about how to safely cross a river, which is different from crossing a street but shares similarities in terms of assessing safety and taking precautions.\n\n**Safety considerations for crossing a river:**\n\n1. **Assess the river conditions**: Just as you look both ways before crossing a street, you should check the river's depth, current, and any potential hazards.\n2. **Find a safe crossing point**: Look for shallow areas, bridges, or designated crossing points, similar to using a crosswalk.\n3. **Use appropriate gear**: Depending on the river's conditions, you might need special equipment like a rope, life jacket, or even a boat.\n4. **Check for hazards**: Be aware of rocks, strong currents, or other dangers, much like watching for traffic when crossing a street.\n5. **Cross carefully**: Move slowly and steadily, keeping your balance and being ready to react to changes in the river's flow.\n\n**Providing instructions for crossing a river:**\n\nGiven these considerations, I can provide some general guidelines for crossing a river safely. However, it's important to note that rivers can be dangerous, and the best approach depends on the specific conditions and your experience level.\n\nHere are some steps to consider:\n\n1. **Evaluate the river**: Check the depth, current, and any visible hazards. If the river is too deep or fast-moving, it might be unsafe to cross on foot.\n2. **Find a suitable crossing point**: Look for areas where the river is shallow and the current is slower. Bridges or designated crossing points are ideal.\n3. **Prepare appropriately**: Wear sturdy footwear with good grip and consider using a walking stick for balance. If the river is deep or fast, use a life jacket and possibly a rope for safety.\n4. **Cross carefully**: Face upstream and shuffle your feet to maintain balance. Move diagonally downstream to counteract the current.\n5. **Be cautious**: Always be prepared to turn back if conditions become unsafe.\n\n**Final thoughts:**\n\nWhile crossing a river shares some similarities with crossing a street, it involves different risks and requires different precautions. Always prioritize safety and consider seeking local advice or assistance if you're unsure about the conditions.",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 664,
+      "output": 747
+    }
+  }
+}

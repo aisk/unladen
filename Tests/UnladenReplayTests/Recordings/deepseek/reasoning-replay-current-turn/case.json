@@ -1,0 +1,37 @@
+{
+  "id": "deepseek/reasoning-replay-current-turn",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_deepseek/test_deepseek_field_mode_thinking_backfill[current_turn].yaml",
+    "interaction": 0
+  },
+  "vendor": "deepseek",
+  "protocol": "chat",
+  "status": 200,
+  "target": "deepseek/deepseek-v4-flash",
+  "expect": {
+    "requestChanges": {
+      "$.messages[*].reasoning_content": "replayReasoningContent writes a space for empty reasoning (DeepSeek's Responses API rejects an empty string); the Chat API also took the empty string recorded here"
+    }
+  },
+  "model": "deepseek-v4-flash",
+  "host": "api.deepseek.com",
+  "path": "/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "The weather in Paris is sunny.",
+    "reasoning": "The tool returned \"sunny\". Answer in one short sentence.",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 369,
+      "output": 21
+    }
+  }
+}

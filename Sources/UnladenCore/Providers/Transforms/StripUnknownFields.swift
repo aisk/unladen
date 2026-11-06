@@ -55,4 +55,22 @@ extension WireTransforms {
         if request.reasoning != nil { clear(&request.reasoning!.extra, "reasoning") }
         if request.responseFormat != nil { clear(&request.responseFormat!.extra, "response_format") }
     }
+
+    /// Drops the modelled fields only OpenAI's platform defines (`store`,
+    /// `service_tier`, `prompt_cache_key`, `safety_identifier`, `verbosity`),
+    /// one warning each, whatever protocol the request came in. For a Profile
+    /// with ``Profile/strictUnknownFields``: Mistral answers OpenCode's
+    /// `store: false` with 422 `extra_forbidden` (magpie #393).
+    public static func stripOpenAIPlatformFields(_ request: inout WireRequest, warnings: inout [WireWarning]) {
+        func drop<Value>(_ field: inout Value?, _ name: String) {
+            guard field != nil else { return }
+            field = nil
+            warnings.append(WireWarning(.droppedField, "upstream rejects unknown fields; dropped `\(name)`", path: name))
+        }
+        drop(&request.store, "store")
+        drop(&request.serviceTier, "service_tier")
+        drop(&request.promptCacheKey, "prompt_cache_key")
+        drop(&request.safetyIdentifier, "safety_identifier")
+        drop(&request.verbosity, "verbosity")
+    }
 }

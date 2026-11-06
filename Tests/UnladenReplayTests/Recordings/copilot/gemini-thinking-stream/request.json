@@ -1,0 +1,18 @@
+{
+  "messages": [
+    {
+      "content": "Be concise.",
+      "role": "system"
+    },
+    {
+      "content": "Factor 3599 into two primes, then show only their sum.",
+      "role": "user"
+    }
+  ],
+  "model": "gemini-3.8-flash",
+  "reasoning_effort": "medium",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  }
+}

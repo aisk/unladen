@@ -1,0 +1,33 @@
+{
+  "id": "xai/chat-tool-call",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/xai/src/__fixtures__/xai-tool-call.json"
+  },
+  "vendor": "xai",
+  "protocol": "chat",
+  "status": 200,
+  "target": "xai/grok-4",
+  "model": null,
+  "stream": false,
+  "facts": {
+    "text": "",
+    "reasoning": "First, the user is asking about the weather in San Francisco. I have a function available called \"weather\" that gets the weather for a location.\n\nThe function requires a parameter: \"location\", which is a string. The user has provided \"San Francisco\" as the location, so that's clear and inferable.\n\nI should call this function to advance the user's request.",
+    "signedReasoning": false,
+    "toolCalls": [
+      {
+        "name": "weather",
+        "arguments": {
+          "location": "San Francisco"
+        }
+      }
+    ],
+    "finish": "tool_calls",
+    "usage": {
+      "input": 291,
+      "output": 26
+    }
+  }
+}

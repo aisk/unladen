@@ -1,0 +1,156 @@
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-sonnet-5-5","id":"msg_011CgPEd2kcpRBqjmq1z9DTU","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":434,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8,"service_tier":"standard","inference_geo":"global","speed":"standard"},"diagnostics":null} }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}        }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Mexico City"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" is the largest city,"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" with about 9.2 million"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" people in the city proper and ro"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"ughly 21-22 million"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" in the gre"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"ater metropolitan area."}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"\n\n"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"CAQSvwcKEAgTGAI4AUIIdGhpbmtpbmcSDBVvNGNLucRDci0UaxoMB828BXpZ38w1HFv4IjCSFGOX5/PwBrlYXKwqLjipoXG5M/sH+hZwHUczfdviNnDYw4N4VRoDd8Uuf9OMsgYq3AaaQq1M6xxocLZ4sDaj+Magq5skZ3GI7GWzM0zcwWHltUxyuUpUr5EjnmK3qJ+OBxi/whlnuoTtUrbRgi7yho4GaiBGHcUgMMKVarqojiuzt9tvFN+nuJh9wqvEU3Pp/AtgtkEk1cor3zcxBYMV3utCvLnwRx54YnHbDUD8UMsSbXhV3HcHjLUCRX6ALpJiVFoeshZk/TBfJZ7s/5A6Mq6EAUqpjR+c4EDo0QJwENPOQgAKFzcs8lUVgY971fr69OtH7i8PbuPSxr6+MBLd69IcBG5K1Mnh1ULm9sm02UMuPptTd4SnV+ZeXEuMtpQqnm9Q+Poi3rPAjQFzkooETOtxmg1joBKWQyH8HgBBP/aAjHrMcrWuJ131xUHStmVtTKpJimuyoeUHz2gtbQdOF/khRjhwA0h8wIZrT4yho71gsvyii6v4KUMAGOOHhOfu/Agq1SQ4G5s5Y+TLiOTPQ24Ayy8ARxxswSXwY8hgm0D4cmxPxVCibncZoPs2aVT1g/rxVlWtlgegjSFFBZyvOz1wBEQn7nPGvGlKraWtEbfEmCj3/uwJbmkc5aO2FLj+xwvM9D7BHNh9qPBwzsIJZKu+mCHuYNy7suyxle/C1RWyYfBxJMT0HnmUEJgiMaFw/jwyr51LvEQnWR4JP7WflTSdKYA9b3+Epj3WG4AdpKE9JGF6yIZc7qYJXVsu7vbpwA2SlBca/cfMKWzXk/GZb+QV5MMfPjhWNXH3nBrPlo56HY1p0bY8XNL4aSEPco1OtGf/gzsLPTdMel7z6WCmdo2ZSfxGlUsmFdMczg4o3oeWAb6fOphCqP/hgRldOO9tuFrsh2CqpdqLA7i40c8v2t/uBpigC55AueCNI0PnRIFLPq96RGM3HE8Zs0/Mql3A6/N28JlOKl7Ifb18ky+EB3XkRFXh0Xa2ACMNTC+TX4EJzApSLl/6Vwhf/e9IkkGR2WO15KlqiaOJUyoepIocUcfIPEfoN/j3XD3o/KKFy1ibVDCQAxh2+ze9jGKqdmJZzgs3ZO4ZcgCHzX5NC9BZ5rzjhEpYPrxD9YMvY8uIDnK/OrnUo4piBGWGrbxm/wgDqp5yZOIyU52AjIX6yFEXINtCw5VHG2cMLgySmIqnKH2SKpfgXAVCKl+7i4sIVhgB"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0          }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"The larg"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"est city in Mexico is"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" **Mexico City**"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" (Ciudad de México"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"),"}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" which"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" is also the cap"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ital.\n\n- **City proper"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":":** about"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 9.2 million people ("}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"2020 census).\n- **"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Metropolitan area:"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"** about 21–22 million"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" people."}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" This"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" makes it one of the largest"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" ur"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ban areas in the"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Western"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Hemisphere."}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n\nIt s"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"its in"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" the"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Valley"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" of Mexico at an"}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" el"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"evation of about 2,240"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" me"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ters (7,350"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" fe"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"et). It was built on the site"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" of the Aztec cap"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ital,"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Tenochtitlan"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"."}           }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1         }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":434,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":270,"output_tokens_details":{"thinking_tokens":108}}               }
+
+event: message_stop
+data: {"type":"message_stop"}
+

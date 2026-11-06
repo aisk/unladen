@@ -1,0 +1,36 @@
+{
+  "id": "gemini-openai/signature-stream-turn2",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openai/test_compatible_api_gemini_3_tool_call_thought_signature[True].yaml",
+    "interaction": 1
+  },
+  "vendor": "gemini-openai",
+  "protocol": "chat",
+  "status": 200,
+  "expect": {
+    "knownIssues": {
+      "decodeWarnings": "Chat stream decoder drops delta-level `extra_content` (Gemini's OpenAI-compatible API puts thought signatures and the thought marker there)."
+    }
+  },
+  "model": "gemini-3.1-flash-lite",
+  "host": "generativelanguage.googleapis.com",
+  "path": "/v1beta/openai/chat/completions",
+  "headers": {
+    "content-type": "text/event-stream"
+  },
+  "stream": true,
+  "facts": {
+    "text": "The weather is currently sunny and 28°C in both Taipei and Kaohsiung.",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 149,
+      "output": 20
+    }
+  }
+}

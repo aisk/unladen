@@ -1,0 +1,22 @@
+{
+  "id": "anthropic/error-overloaded-529",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/anthropic/src/anthropic-error.test.ts"
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 529,
+  "target": "anthropic/claude-sonnet-5-5",
+  "notes": "Body as quoted in the source's tests; status 529 and Retry-After per Anthropic's documented overloaded reply. Not a live capture.",
+  "model": null,
+  "headers": {
+    "retry-after": "30"
+  },
+  "stream": false,
+  "facts": {
+    "error": "Overloaded"
+  }
+}

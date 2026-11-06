@@ -1,0 +1,27 @@
+{
+  "id": "openai/chat-refusal",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/openai/src/chat/__fixtures__/openai-refusal.json"
+  },
+  "vendor": "openai",
+  "protocol": "chat",
+  "status": 200,
+  "target": "openai/gpt-4o",
+  "model": null,
+  "stream": false,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "refusal": "I'm very sorry, but I can't assist with that request.",
+    "finish": "stop",
+    "usage": {
+      "input": 74,
+      "output": 13
+    }
+  }
+}

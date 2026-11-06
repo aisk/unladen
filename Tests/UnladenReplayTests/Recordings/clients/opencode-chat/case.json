@@ -1,0 +1,16 @@
+{
+  "id": "clients/opencode-chat",
+  "source": {
+    "repo": "github.com/yetone/magpie",
+    "licence": "MIT",
+    "commit": "cd9c52c16",
+    "path": "internal/gateway/testdata/opencode2_chat_tools.json"
+  },
+  "vendor": "clients",
+  "protocol": "chat",
+  "status": 200,
+  "notes": "OpenCode (Vercel AI SDK, OpenAI-compatible Chat) with its tools.",
+  "client": "opencode",
+  "model": "m1",
+  "stream": false
+}

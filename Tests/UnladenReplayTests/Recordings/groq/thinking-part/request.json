@@ -1,0 +1,16 @@
+{
+  "messages": [
+    {
+      "content": "You are a chef.",
+      "role": "system"
+    },
+    {
+      "content": "I want a recipe to cook Uruguayan alfajores.",
+      "role": "user"
+    }
+  ],
+  "model": "deepseek-r1-distill-llama-70b",
+  "n": 1,
+  "reasoning_format": "raw",
+  "stream": false
+}

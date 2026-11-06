@@ -1,0 +1,16 @@
+{
+  "model": "gpt-5-mini",
+  "stream": false,
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "input": [
+    {
+      "role": "user",
+      "content": "What is the capital of France? Answer in one word."
+    }
+  ],
+  "reasoning": {
+    "effort": "minimal"
+  }
+}

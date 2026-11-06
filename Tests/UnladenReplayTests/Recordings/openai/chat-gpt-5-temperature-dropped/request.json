@@ -1,0 +1,10 @@
+{
+  "messages": [
+    {
+      "content": "What is the capital of France?",
+      "role": "user"
+    }
+  ],
+  "model": "gpt-5",
+  "stream": false
+}

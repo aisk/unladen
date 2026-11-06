@@ -1,0 +1,34 @@
+{
+  "id": "deepseek/tool-call-stream",
+  "source": {
+    "repo": "github.com/vercel/ai",
+    "licence": "Apache-2.0",
+    "commit": "6737c7721b",
+    "path": "packages/deepseek/src/chat/__fixtures__/deepseek-tool-call.chunks.txt",
+    "note": "one JSON payload per line in the source; SSE framing added by the importer"
+  },
+  "vendor": "deepseek",
+  "protocol": "chat",
+  "status": 200,
+  "target": "deepseek/deepseek-reasoner",
+  "model": null,
+  "stream": true,
+  "facts": {
+    "text": "",
+    "reasoning": "The user is asking for the weather in San Francisco. I need to use the weather tool to get this information. Let me invoke the weather tool with the location parameter set to \"San Francisco\".",
+    "signedReasoning": false,
+    "toolCalls": [
+      {
+        "name": "weather",
+        "arguments": {
+          "location": "San Francisco"
+        }
+      }
+    ],
+    "finish": "tool_calls",
+    "usage": {
+      "input": 339,
+      "output": 83
+    }
+  }
+}

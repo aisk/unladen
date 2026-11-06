@@ -1,0 +1,37 @@
+{
+  "id": "openrouter/stream-error-minimax",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openrouter/test_openrouter_stream_error.yaml",
+    "interaction": 0
+  },
+  "vendor": "openrouter",
+  "protocol": "chat",
+  "status": 200,
+  "target": "openrouter/minimax/minimax-m2:free",
+  "expect": {
+    "knownIssues": {
+      "decodeWarnings": "OpenRouter `reasoning_details` in stream deltas are dropped, so a streamed turn's structured (signed) reasoning cannot be replayed."
+    },
+    "accepted": {
+      "streamRoundTrip": "OpenRouter sent finish_reason `length` and then an error chunk; re-encoded, the error ends the stream and the earlier finish reason is not written again."
+    }
+  },
+  "model": "minimax/minimax-m2:free",
+  "host": "openrouter.ai",
+  "path": "/api/v1/chat/completions",
+  "headers": {
+    "content-type": "text/event-stream"
+  },
+  "stream": true,
+  "facts": {
+    "text": "",
+    "reasoning": "We need to respond to a greeting. The user",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "length",
+    "error": "Token limit reached"
+  }
+}

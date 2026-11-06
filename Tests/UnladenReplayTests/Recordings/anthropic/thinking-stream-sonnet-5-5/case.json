@@ -1,0 +1,32 @@
+{
+  "id": "anthropic/thinking-stream-sonnet-5-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic/test_anthropic_model_thinking_part_stream.yaml",
+    "interaction": 0
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-sonnet-5-5",
+  "model": "claude-sonnet-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "# How to Cross the Street Safely\n\n## Basic steps\n1. **Choose a safe spot.** Use a crosswalk or intersection with a signal if you can. Avoid crossing near curves, hills, or parked vehicles that block your view.\n2. **Stop at the curb.** Stand a step back from the edge.\n3. **Check the signal.** If there's a button, press it and wait for the \"walk\" symbol (usually a white walking figure).\n4. **Look and listen.** Look left, right, then left again. In countries where traffic drives on the left (UK, Japan, Australia), check right, left, then right. Watch for turning cars, bikes, and scooters.\n5. **Make eye contact with drivers.** Don't assume they see you.\n6. **Walk, don't run.** Go straight across at a steady pace and keep scanning for traffic.\n7. **Finish crossing.** If the signal starts flashing while you're already in the street, keep going. If it's flashing before you step out, wait for the next one.\n\n## Extra safety tips\n- **Put your phone away** and keep headphone volume low.\n- **Be visible.** Wear bright or reflective items at night, or carry a light.\n- **On multi-lane roads,** make sure every lane has stopped. A stopped car can block your view of another car that isn't stopping.\n- **With no crosswalk,** pick a spot with a clear view in both directions, wait for a big gap, and cross straight rather than diagonally.\n- **With children,** hold their hand and model good habits.\n\nIf you have a specific situation in mind, like a busy road with no crosswalk, teaching a child, or accessibility needs, tell me and I can give more tailored advice.",
+    "reasoning": "This is a straightforward safety question, so I'll give a clear, step-by-step answer covering crosswalks, signals, looking both ways, avoiding distractions, and special cases like missing crosswalks or multi-lane roads, keeping it concise but thorough, possibly noting country-specific traffic direction differences.\n\nI should add other practical tips too: staying visible with bright clothing at night, being extra careful on multi-lane roads where one stopped car can hide another approaching one, crossing straight rather than diagonally if there's no crosswalk, and holding a child's hand. I'll close by offering to tailor the advice if they have a specific scenario in mind, and keep the overall response moderate in length.\n\n",
+    "signedReasoning": true,
+    "toolCalls": [],
+    "finish": "end_turn",
+    "usage": {
+      "input": 16,
+      "output": 1257
+    }
+  }
+}

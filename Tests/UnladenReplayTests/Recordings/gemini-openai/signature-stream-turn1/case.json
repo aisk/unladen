@@ -1,0 +1,44 @@
+{
+  "id": "gemini-openai/signature-stream-turn1",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openai/test_compatible_api_gemini_3_tool_call_thought_signature[True].yaml",
+    "interaction": 0
+  },
+  "vendor": "gemini-openai",
+  "protocol": "chat",
+  "status": 200,
+  "model": "gemini-3.1-flash-lite",
+  "host": "generativelanguage.googleapis.com",
+  "path": "/v1beta/openai/chat/completions",
+  "headers": {
+    "content-type": "text/event-stream"
+  },
+  "stream": true,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [
+      {
+        "name": "get_weather",
+        "arguments": {
+          "city": "Taipei"
+        }
+      },
+      {
+        "name": "get_weather",
+        "arguments": {
+          "city": "Kaohsiung"
+        }
+      }
+    ],
+    "finish": "stop",
+    "usage": {
+      "input": 74,
+      "output": 36
+    }
+  }
+}

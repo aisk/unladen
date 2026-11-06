@@ -1,0 +1,28 @@
+{
+  "id": "fb9d9afe-386b-4d96-99df-bec7d845a36c",
+  "object": "chat.completion",
+  "created": 1793743868,
+  "model": "deepseek-flash",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Every night, old Elias climbed the "
+      },
+      "logprobs": null,
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 8,
+    "total_tokens": 23,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 15
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+}

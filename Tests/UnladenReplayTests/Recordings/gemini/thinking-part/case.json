@@ -1,0 +1,37 @@
+{
+  "id": "gemini/thinking-part",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_google/test_google_model_thinking_part.yaml",
+    "interaction": 0
+  },
+  "vendor": "gemini",
+  "protocol": "gemini",
+  "status": 200,
+  "target": "gemini/gemini-3-pro-preview",
+  "expect": {
+    "knownIssues": {
+      "roundTrip": "Gemini reply decoder drops `candidates[0].index`, so a same-protocol reply loses it."
+    }
+  },
+  "model": "gemini-3-pro-preview",
+  "host": "generativelanguage.googleapis.com",
+  "path": "/v1beta/models/gemini-3-pro-preview:generateContent",
+  "headers": {
+    "content-type": "application/json; charset=UTF-8"
+  },
+  "stream": false,
+  "facts": {
+    "text": "Crossing the street safely is a fundamental skill that requires awareness and patience. Here is a step-by-step guide to doing it correctly.\n\n### 1. Find a Safe Place to Cross\n*   **Crosswalks/Intersections:** Always try to cross at a designated crosswalk (zebra crossing) or an intersection with traffic lights. This is where drivers expect to see pedestrians.\n*   **Good Visibility:** If there is no crosswalk, find a spot where you have a clear view of the road in both directions and where drivers can clearly see you.\n*   **Avoid:** Do not cross near a sharp curve, the crest of a hill, or between parked cars, as these block vision.\n\n### 2. Stop at the Edge\n*   Stop at the curb or the edge of the road. Do not step into the street yet.\n*   If there are parked cars blocking your view, step out to the edge of the cars carefully to see down the street, but stay ready to pull back instantly.\n\n### 3. The \"Left-Right-Left\" Rule\nBefore stepping off the curb, follow this pattern (assuming you are in a country where cars drive on the right side of the road, like the US or most of Europe):\n1.  **Look Left:** This is the direction traffic will be coming from in the lane closest to you.\n2.  **Look Right:** Check the traffic coming from the other direction.\n3.  **Look Left Again:** Re-check the first lane to make sure a car hasn’t appeared while you were looking right.\n\n*(Note: If you are in the UK, Australia, or Japan, look **Right-Left-Right**).*\n\n### 4. Listen and Evaluate\n*   **Listen:** Take your headphones off or turn the volume down. You can often hear a car or motorcycle speeding around a corner before you see it. Listen for sirens.\n*   **Eye Contact:** If a car is stopped, make eye contact with the driver to ensure they see you and are letting you pass. Never assume a car will stop just because you are there.\n\n### 5. Follow Traffic Signals\n*   **\"Walk\" Signal (White figure or Green man):** It is safe to look and cross.\n*   **Flashing Hand (or countdown timer):** Do **not** start crossing. If you are already in the middle of the street, keep walking to finish crossing.\n*   **Solid Hand (or Red man):** Do not cross. Wait for the next cycle.\n\n### 6. Cross Safely\n*   **Walk, Don't Run:** Walk briskly but do not run. Running increases the chance of tripping and falling in the path of a vehicle.\n*   **Keep Looking:** Continue scanning left and right as you walk across the street.\n*   **Walk Straight:** Cross at a right angle (straight across), not diagonally. It is the shortest distance to the other side.\n\n### Important Safety Tips\n*   **Put the Phone Away:** Do not text or scroll social media while crossing. \"Distracted walking\" is a major cause of accidents.\n*   **Night Crossing:** If crossing at night, try to do so under a street lamp. Wear light-colored or reflective clothing if possible.\n*   **Turning Cars:** Even if you have the \"Walk\" signal, watch out for cars turning left or right across the crosswalk. They may be looking at traffic lights rather than looking for you.",
+    "reasoning": "**A Safe Street-Crossing Guide: My Thought Process**\n\nAlright, let's break this down. My goal is to craft a guide on safe street crossing. I need to be comprehensive, clear, and universally applicable, but I've got to consider regional differences.\n\nFirst, I identify the core principles: **visibility, awareness, rules, and patience**. These are the pillars of pedestrian safety. I'll need to structure the guide logically: introduce the importance of safety, then detail the step-by-step process of finding a safe spot, the \"Stop, Look, Listen\" routine, interpreting signals, crossing without signals, and addressing special scenarios.\n\nMy initial drafting starts with the universally recognized \"Stop, Look, Listen\" mantra. I'll explain where the best places to cross are – crosswalks, intersections, away from obstructions – and the basic procedure: stop at the curb, then look left-right-left (or right-left-right for countries with left-hand traffic, I'll specify that), and listen for traffic. Eye contact with drivers is key.\n\nFor traffic signals, I'll explain what the \"Walk\" and \"Don't Walk\" signs mean, and how to deal with flashing signals. Even while crossing, I should be mindful of staying safe - walking, not running, keeping looking, and putting the phone away.\n\nI'll address special scenarios: crossing between parked cars is dangerous; nighttime requires bright clothing or a flashlight. Roundabouts need special attention, and I'll emphasize those safe crossings.\n\nAs I refine, I'll check for clarity, a helpful tone, and effective formatting with bolding and bullet points. I should also address edge cases. What about visually impaired individuals? Tactile paving and audio signals need a mention. If there are no crosswalks, I'll include advice on safe jaywalking.\n\nFinally, the guide structure is the most important output. The final response will have that critical structure: find a safe spot, stop, look and listen, and then cross safely.\n\nI'll confirm the advice aligns with standard pedestrian safety guidelines. I'll also add a crucial note about the \"Left-Right-Left\" sequence. In countries with left-hand traffic, it's \"Right-Left-Right.\" This is crucial.\n\nThen, I'm ready to produce the final response.\n\n\n",
+    "signedReasoning": true,
+    "toolCalls": [],
+    "finish": "STOP",
+    "usage": {
+      "input": 29,
+      "output": 1737
+    }
+  }
+}

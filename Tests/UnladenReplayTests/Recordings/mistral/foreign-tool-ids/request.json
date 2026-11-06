@@ -1,0 +1,121 @@
+{
+  "model": "voxtral-small-latest",
+  "messages": [
+    {
+      "content": "What is the weather in Paris, London and Berlin?",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": [],
+      "tool_calls": [
+        {
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          },
+          "id": "2pESUE4jw",
+          "type": "function",
+          "index": 0
+        },
+        {
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Londres\"}"
+          },
+          "id": "l4LUGq9qS",
+          "type": "function",
+          "index": 0
+        },
+        {
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Berlin\"}"
+          },
+          "id": "9qOPVjwIC",
+          "type": "function",
+          "index": 0
+        }
+      ],
+      "prefix": false
+    },
+    {
+      "content": "Sunny, 21C",
+      "role": "tool",
+      "tool_call_id": "2pESUE4jw"
+    },
+    {
+      "content": "Use the English city name.\n\nFix the errors and try again.",
+      "role": "tool",
+      "tool_call_id": "l4LUGq9qS"
+    },
+    {
+      "content": "Cloudy, 15C",
+      "role": "tool",
+      "tool_call_id": "9qOPVjwIC"
+    },
+    {
+      "role": "assistant",
+      "content": [],
+      "tool_calls": [
+        {
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"London\"}"
+          },
+          "id": "aB3dE5gH9",
+          "type": "function",
+          "index": 0
+        }
+      ],
+      "prefix": false
+    },
+    {
+      "content": "Rainy, 12C",
+      "role": "tool",
+      "tool_call_id": "aB3dE5gH9"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "OK",
+          "type": "text"
+        }
+      ],
+      "prefix": false
+    },
+    {
+      "content": "Summarize the weather in those three cities in one sentence, without calling tools.",
+      "role": "user"
+    }
+  ],
+  "top_p": 1.0,
+  "stream": false,
+  "stop": null,
+  "tools": [
+    {
+      "function": {
+        "name": "get_weather",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "type": "object"
+        },
+        "description": ""
+      },
+      "type": "function"
+    }
+  ],
+  "tool_choice": "auto",
+  "presence_penalty": null,
+  "frequency_penalty": null,
+  "n": 1
+}

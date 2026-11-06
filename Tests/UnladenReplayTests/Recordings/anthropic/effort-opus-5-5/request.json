@@ -1,0 +1,23 @@
+{
+  "max_tokens": 128000,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "What is 2+2?",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "model": "claude-opus-5-5",
+  "output_config": {
+    "effort": "xhigh"
+  },
+  "stream": true,
+  "thinking": {
+    "type": "adaptive",
+    "display": "summarized"
+  }
+}

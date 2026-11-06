@@ -1,0 +1,14 @@
+{
+  "max_completion_tokens": 10,
+  "messages": [
+    {
+      "content": "Hello there",
+      "role": "user"
+    }
+  ],
+  "model": "minimax/minimax-m2:free",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  }
+}

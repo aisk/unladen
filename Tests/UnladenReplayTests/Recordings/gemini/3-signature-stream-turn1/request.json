@@ -1,0 +1,32 @@
+{
+  "contents": [
+    {
+      "parts": [
+        {
+          "text": "What is the capital of the user country? Call the tool"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "generationConfig": {
+    "responseModalities": [
+      "TEXT"
+    ]
+  },
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "description": "",
+          "name": "get_country",
+          "parameters_json_schema": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ]
+}

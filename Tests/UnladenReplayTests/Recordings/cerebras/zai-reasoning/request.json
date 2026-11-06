@@ -1,0 +1,10 @@
+{
+  "messages": [
+    {
+      "content": "What is 25 * 4? Think briefly first.",
+      "role": "user"
+    }
+  ],
+  "model": "zai-glm-4.7",
+  "stream": false
+}

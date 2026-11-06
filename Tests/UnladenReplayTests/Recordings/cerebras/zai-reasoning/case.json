@@ -1,0 +1,31 @@
+{
+  "id": "cerebras/zai-reasoning",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_cerebras/test_cerebras_zai_reasoning_replayed_as_think_tags.yaml",
+    "interaction": 0
+  },
+  "vendor": "cerebras",
+  "protocol": "chat",
+  "status": 200,
+  "model": "zai-glm-4.7",
+  "host": "api.cerebras.ai",
+  "path": "/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "25 * 4 = 100.",
+    "reasoning": "The user wants me to solve the multiplication problem: \"25 * 4\".\n\n1.  **Analyze the request:**\n    *   Operation: Multiplication.\n    *   Operands: 25 and 4.\n    *   Constraint: \"Think briefly first.\" (This suggests I should perform the calculation mentally or break it down simply before providing the final answer).\n\n2.  **Mental Calculation:**\n    *   Method 1: Standard multiplication.\n        *   $5 * 4 = 20$ (write down 0, carry over 2).\n        *   $2 * 4 = 8$.\n        *   Add the carried over 2: $8 + 2 = 10$.\n        *   Result: 100.\n    *   Method 2: Distributive property.\n        *   $25 = 20 + 5$.\n        *   $20 * 4 = 80$.\n        *   $5 * 4 = 20$.\n        *   $80 + 20 = 100$.\n    *   Method 3: Recognizing the quarter relationship.\n        *   25 is one-quarter of 100.\n        *   There are four quarters in a whole.\n        *   So, $4 * 25$ equals 100.\n\n3.  **Formulate the output:**\n    *   State the final answer clearly.\n    *   (Optional based on \"Think briefly\") Should I show the work? The prompt asks *me* to think briefly, not necessarily to show all my thinking, but usually, a simple confirmation or a short breakdown is helpful. However, for such a simple calculation, just the answer is often best. I will provide the answer directly.\n\n4.  **Final Check:**\n    *   $25 * 4 = 100$. Correct.\n\n5.  **Construct Response:**\n    *   \"25 multiplied by 4 is 100.\"",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 17,
+      "output": 415
+    }
+  }
+}

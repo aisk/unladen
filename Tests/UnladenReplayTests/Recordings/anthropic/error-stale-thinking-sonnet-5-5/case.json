@@ -1,0 +1,24 @@
+{
+  "id": "anthropic/error-stale-thinking-sonnet-5-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/anthropic/cassettes/test_thinking_block_binding/test_anthropic_explicit_error_rejects_a_stale_thinking_block_on_binding_models[claude-sonnet-5-5-True].yaml",
+    "interaction": 0
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 400,
+  "target": "anthropic/claude-sonnet-5-5",
+  "model": "claude-sonnet-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "error": "messages.1.content.0: Invalid `signature` in `thinking` block. The block is bound to a different conversation. Remove the block, or set `thinking.block_binding.prefix_mismatch_behavior` to \"drop_block\". The `system` prompt differs from the one this block was created with."
+  }
+}

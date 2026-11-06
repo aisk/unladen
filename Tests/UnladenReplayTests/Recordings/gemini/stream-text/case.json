@@ -1,0 +1,32 @@
+{
+  "id": "gemini/stream-text",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_google/test_google_model_stream.yaml",
+    "interaction": 0
+  },
+  "vendor": "gemini",
+  "protocol": "gemini",
+  "status": 200,
+  "target": "gemini/gemini-2.0-flash-exp",
+  "model": "gemini-2.0-flash-exp",
+  "host": "generativelanguage.googleapis.com",
+  "path": "/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?alt=sse",
+  "headers": {
+    "content-type": "text/event-stream"
+  },
+  "stream": true,
+  "facts": {
+    "text": "The capital of France is Paris.\n",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "STOP",
+    "usage": {
+      "input": 13,
+      "output": 8
+    }
+  }
+}

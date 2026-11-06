@@ -1,0 +1,6 @@
+data: {"id":"8ba30f07ee22440ea3b52df81fad3686","object":"chat.completion.chunk","created":1793745181,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"8ba30f07ee22440ea3b52df81fad3686","object":"chat.completion.chunk","created":1793745181,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"tool_calls":[{"id":"Fi65w8Plu","type":"function","function":{"name":"get_weather","arguments":"{\"city\": \"Paris\"}"},"index":0},{"id":"NpJQUR1bV","type":"function","function":{"name":"get_weather","arguments":"{\"city\": \"London\"}"},"index":1},{"id":"lPaisIfGU","type":"function","function":{"name":"get_time","arguments":"{\"tz\": \"UTC\"}"},"index":2}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":155,"total_tokens":188,"completion_tokens":33,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0},"service_tier":"standard"},"p":"abcdefghijkl"}
+
+data: [DONE]
+

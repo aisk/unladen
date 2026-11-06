@@ -1,0 +1,32 @@
+{
+  "id": "openai/chat-gpt-5-temperature-dropped",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openai/test_openai_model_settings_temperature_ignored_on_gpt_5.yaml",
+    "interaction": 0
+  },
+  "vendor": "openai",
+  "protocol": "chat",
+  "status": 200,
+  "target": "openai/gpt-5",
+  "model": "gpt-5",
+  "host": "api.openai.com",
+  "path": "/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "Paris.",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 13,
+      "output": 11
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": "groq/image-input-llama-4",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_groq/test_image_url_input.yaml",
+    "interaction": 0
+  },
+  "vendor": "groq",
+  "protocol": "chat",
+  "status": 200,
+  "target": "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+  "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+  "host": "api.groq.com",
+  "path": "/openai/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "The fruit depicted in the image is a potato. Although commonly mistaken as a vegetable, potatoes are technically fruits because they are the edible, ripened ovary of a flower, containing seeds. However, in culinary and everyday contexts, potatoes are often referred to as a vegetable due to their savory flavor and uses in dishes. The botanical classification of a potato as a fruit comes from its origin as the tuberous part of the Solanum tuberosum plant, which produces flowers and subsequently the potato as a fruit that grows underground.",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "stop",
+    "usage": {
+      "input": 749,
+      "output": 107
+    }
+  }
+}

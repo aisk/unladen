@@ -1,0 +1,12 @@
+{
+  "model": "deepseek-v4-flash",
+  "stream": false,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a 150-word story about a lighthouse keeper."
+    }
+  ],
+  "max_tokens": 8,
+  "reasoning_effort": "none"
+}

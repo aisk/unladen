@@ -1,0 +1,37 @@
+{
+  "id": "gemini/3-signature-stream-turn1",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_google/test_google_streaming_tool_call_thought_signature.yaml",
+    "interaction": 0
+  },
+  "vendor": "gemini",
+  "protocol": "gemini",
+  "status": 200,
+  "target": "gemini/gemini-3-pro-preview",
+  "model": "gemini-3-pro-preview",
+  "host": "generativelanguage.googleapis.com",
+  "path": "/v1beta/models/gemini-3-pro-preview:streamGenerateContent?alt=sse",
+  "headers": {
+    "content-type": "text/event-stream"
+  },
+  "stream": true,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": true,
+    "toolCalls": [
+      {
+        "name": "get_country",
+        "arguments": {}
+      }
+    ],
+    "finish": "STOP",
+    "usage": {
+      "input": 29,
+      "output": 212
+    }
+  }
+}

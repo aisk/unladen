@@ -1,5 +1,6 @@
 import Testing
 @_spi(Wire) import UnladenCore
+import UnladenTestSupport
 
 // Regression tests for the phase-3 acceptance review (gateway probes).
 // Each test names its finding.

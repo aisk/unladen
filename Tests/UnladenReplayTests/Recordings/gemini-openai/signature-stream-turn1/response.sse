@@ -1,0 +1,8 @@
+data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"extra_content":{"google":{"thought_signature":"EnMKcQFpFH0TIaBpCgUoiel1l979A/ggroUdUyRmOpyfS+5TUg0vmY7fsA2gEWzxqODH/Zhy6XN+nqQkm5JNSMwqC4aaaV/IXcMiCpz5U9Ww5i1FSF30n+acBVxOODUQ2yLaMC9ZhwGxnHBTYVeItVGdcnDp"}},"function":{"arguments":"{\"city\":\"Taipei\"}","name":"get_weather"},"id":"call_108766","type":"function"}]},"index":0}],"created":1791940062,"id":"3tXOasW2I-2KmtkPrtulEA","model":"gemini-3.1-flash-lite","object":"chat.completion.chunk","usage":{"completion_tokens":17,"prompt_tokens":74,"total_tokens":91}}
+
+data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"{\"city\":\"Kaohsiung\"}","name":"get_weather"},"id":"call_108772","type":"function"}]},"index":0}],"created":1791940063,"id":"3tXOasW2I-2KmtkPrtulEA","model":"gemini-3.1-flash-lite","object":"chat.completion.chunk","usage":{"completion_tokens":36,"prompt_tokens":74,"total_tokens":110}}
+
+data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":"stop","index":0}],"created":1791940063,"id":"3tXOasW2I-2KmtkPrtulEA","model":"gemini-3.1-flash-lite","object":"chat.completion.chunk","usage":{"completion_tokens":36,"prompt_tokens":74,"total_tokens":110}}
+
+data: [DONE]
+

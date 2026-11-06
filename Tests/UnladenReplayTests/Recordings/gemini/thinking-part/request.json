@@ -1,0 +1,43 @@
+{
+  "contents": [
+    {
+      "parts": [
+        {
+          "text": "How do I cross the street?"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "generationConfig": {
+    "responseModalities": [
+      "TEXT"
+    ],
+    "thinkingConfig": {
+      "include_thoughts": true
+    }
+  },
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are a helpful assistant."
+      }
+    ],
+    "role": "user"
+  },
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "description": "",
+          "name": "dummy",
+          "parameters_json_schema": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ]
+}

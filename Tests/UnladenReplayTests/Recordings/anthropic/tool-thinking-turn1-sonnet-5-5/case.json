@@ -1,0 +1,37 @@
+{
+  "id": "anthropic/tool-thinking-turn1-sonnet-5-5",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic/test_anthropic_tool_with_thinking.yaml",
+    "interaction": 0
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-sonnet-5-5",
+  "model": "claude-sonnet-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "I'll start by looking up your country.",
+    "reasoning": "I need to find the user's country first before I can determine its largest city, so I'll use the function to get that information.\n\n",
+    "signedReasoning": true,
+    "toolCalls": [
+      {
+        "name": "get_user_country",
+        "arguments": {}
+      }
+    ],
+    "finish": "tool_use",
+    "usage": {
+      "input": 354,
+      "output": 71
+    }
+  }
+}

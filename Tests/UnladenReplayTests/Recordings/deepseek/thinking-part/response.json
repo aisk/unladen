@@ -1,0 +1,32 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "logprobs": null,
+      "message": {
+        "content": "Look both ways before you step off the curb:\n\n1. Stop at the edge of the sidewalk or curb.\n2. Look left, right, and left again.\n3. Use a crosswalk or traffic signal if available.\n4. Wait for the walk signal, or make sure traffic has cleared.\n5. Keep looking both ways while crossing.\n6. Don't use your phone or wear headphones--stay alert.\n\nWhen in doubt, wait. Cars can be fast and quiet, so make eye contact with drivers if possible.",
+        "reasoning_content": "We need answer user. Need maybe simple instructions. Need consider safety. User asks \"How do I cross the street?\" Could be literal. Need provide general pedestrian safety steps. Maybe mention look left-right-left, use crosswalk, wait for signal, avoid distractions, etc. Need be concise.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1786656310,
+  "id": "32beb152-2946-409a-8986-7f0e1e351ed2",
+  "model": "deepseek-v4-flash",
+  "object": "chat.completion",
+  "system_fingerprint": "a26a7955944dc5c60445bff77fac9c8e",
+  "usage": {
+    "completion_tokens": 166,
+    "completion_tokens_details": {
+      "reasoning_tokens": 59
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 90,
+    "prompt_tokens": 90,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_tokens": 256
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "max_tokens": 128000,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "What is the largest city in the user country?",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "model": "claude-sonnet-5-5",
+  "output_config": {
+    "effort": "max"
+  },
+  "stream": true,
+  "thinking": {
+    "type": "adaptive",
+    "display": "summarized"
+  },
+  "tool_choice": {
+    "type": "auto"
+  },
+  "tools": [
+    {
+      "name": "get_user_country",
+      "description": "",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "input": [
+    {
+      "content": "What is 2+2?",
+      "role": "user"
+    }
+  ],
+  "instructions": "Answer directly.",
+  "model": "gpt-5.2",
+  "stream": true
+}

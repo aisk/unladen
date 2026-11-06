@@ -74,9 +74,17 @@ let package = Package(
             ],
             swiftSettings: swiftSettings,
         ),
+        // Checks shared by the test targets (stream well-formedness, JSON
+        // canonical form). Not a product.
+        .target(
+            name: "UnladenTestSupport",
+            dependencies: ["UnladenCore"],
+            path: "Tests/UnladenTestSupport",
+            swiftSettings: swiftSettings,
+        ),
         .testTarget(
             name: "UnladenCoreTests",
-            dependencies: ["UnladenCore"],
+            dependencies: ["UnladenCore", "UnladenTestSupport"],
             resources: [.copy("Fixtures")],
             swiftSettings: swiftSettings,
         ),
@@ -114,6 +122,23 @@ let package = Package(
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
             ],
+            swiftSettings: swiftSettings,
+        ),
+        // Replays of real vendor traffic (see Scripts/recordings) through
+        // every layer: codecs, upstream calls, the library and the gateway.
+        .testTarget(
+            name: "UnladenReplayTests",
+            dependencies: [
+                "Unladen",
+                "UnladenCore",
+                "UnladenServer",
+                "UnladenTestSupport",
+                .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "HummingbirdTesting", package: "hummingbird"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "NIOCore", package: "swift-nio"),
+            ],
+            resources: [.copy("Recordings")],
             swiftSettings: swiftSettings,
         ),
     ]

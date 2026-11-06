@@ -1,0 +1,25 @@
+{
+  "id": "openrouter/error-429-upstream",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openrouter/test_openrouter_errors_raised.yaml",
+    "interaction": 0
+  },
+  "vendor": "openrouter",
+  "protocol": "chat",
+  "status": 429,
+  "target": "openrouter/google/gemini-2.0-flash-exp:free",
+  "model": "google/gemini-2.0-flash-exp:free",
+  "host": "openrouter.ai",
+  "path": "/api/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "scrubbed": 1,
+  "facts": {
+    "error": "Provider returned error"
+  }
+}

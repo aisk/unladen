@@ -1,0 +1,38 @@
+{
+  "id": "gemini/3-signature-stream-turn2",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_google/test_google_streaming_tool_call_thought_signature.yaml",
+    "interaction": 1
+  },
+  "vendor": "gemini",
+  "protocol": "gemini",
+  "status": 200,
+  "target": "gemini/gemini-3-pro-preview",
+  "expect": {
+    "requestChanges": {
+      "$.contents[*].parts[*].functionResponse.response.output": "a library tool result is text: Unladen sends {\"output\": text} (its documented Gemini form) where pydantic-ai sent its own {\"return_value\": …} object",
+      "$.contents[*].parts[*].functionResponse.response.return_value": "see `output`"
+    }
+  },
+  "model": "gemini-3-pro-preview",
+  "host": "generativelanguage.googleapis.com",
+  "path": "/v1beta/models/gemini-3-pro-preview:streamGenerateContent?alt=sse",
+  "headers": {
+    "content-type": "text/event-stream"
+  },
+  "stream": true,
+  "facts": {
+    "text": "The capital of Mexico is Mexico City.",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [],
+    "finish": "STOP",
+    "usage": {
+      "input": 257,
+      "output": 8
+    }
+  }
+}

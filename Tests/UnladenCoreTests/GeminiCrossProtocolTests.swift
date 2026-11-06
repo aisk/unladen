@@ -1,5 +1,6 @@
 import Testing
 @_spi(Wire) import UnladenCore
+import UnladenTestSupport
 
 private func toolCalls(_ parts: [WirePart]) -> [WireToolCall] {
     parts.compactMap { part in

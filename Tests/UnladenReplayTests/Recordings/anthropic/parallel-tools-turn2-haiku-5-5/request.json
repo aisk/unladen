@@ -1,0 +1,124 @@
+{
+  "max_tokens": 128000,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "Alice, Bob, Charlie and Daisy are a family. Who is the youngest?",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "id": "toolu_01UcHow86i6dYpgz3AZZvtWT",
+          "type": "tool_use",
+          "name": "retrieve_entity_info",
+          "input": {
+            "name": "Alice"
+          }
+        },
+        {
+          "id": "toolu_01PKQiNejLUoFLmBDVBFpmVt",
+          "type": "tool_use",
+          "name": "retrieve_entity_info",
+          "input": {
+            "name": "Bob"
+          }
+        },
+        {
+          "id": "toolu_01ArP7HEVuisMf5BUYbvY3g7",
+          "type": "tool_use",
+          "name": "retrieve_entity_info",
+          "input": {
+            "name": "Charlie"
+          }
+        },
+        {
+          "id": "toolu_01JhrSFZD8xrVApp1AGf9GYY",
+          "type": "tool_use",
+          "name": "retrieve_entity_info",
+          "input": {
+            "name": "Daisy"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01UcHow86i6dYpgz3AZZvtWT",
+          "type": "tool_result",
+          "content": [
+            {
+              "text": "alice is bob's wife",
+              "type": "text"
+            }
+          ],
+          "is_error": false
+        },
+        {
+          "tool_use_id": "toolu_01PKQiNejLUoFLmBDVBFpmVt",
+          "type": "tool_result",
+          "content": [
+            {
+              "text": "bob is alice's husband",
+              "type": "text"
+            }
+          ],
+          "is_error": false
+        },
+        {
+          "tool_use_id": "toolu_01ArP7HEVuisMf5BUYbvY3g7",
+          "type": "tool_result",
+          "content": [
+            {
+              "text": "charlie is alice's son",
+              "type": "text"
+            }
+          ],
+          "is_error": false
+        },
+        {
+          "tool_use_id": "toolu_01JhrSFZD8xrVApp1AGf9GYY",
+          "type": "tool_result",
+          "content": [
+            {
+              "text": "daisy is bob's daughter and charlie's younger sister",
+              "type": "text"
+            }
+          ],
+          "is_error": false
+        }
+      ]
+    }
+  ],
+  "model": "claude-haiku-5-5",
+  "stream": true,
+  "system": "\n    Use the `retrieve_entity_info` tool to get information about a specific person.\n    If you need to use `retrieve_entity_info` to get information about multiple people, try\n    to call them in parallel as much as possible.\n    Think step by step and then provide a single most probable concise answer.",
+  "tool_choice": {
+    "type": "auto"
+  },
+  "tools": [
+    {
+      "name": "retrieve_entity_info",
+      "description": "Get the knowledge about the given entity.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

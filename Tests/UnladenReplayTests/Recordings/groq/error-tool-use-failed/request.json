@@ -1,0 +1,37 @@
+{
+  "messages": [
+    {
+      "content": "Be concise. Never use pretty double quotes, just regular ones.",
+      "role": "system"
+    },
+    {
+      "content": "Please call the \"get_something_by_name\" tool with non-existent parameters to test error handling; on the second try you can use valid args",
+      "role": "user"
+    }
+  ],
+  "model": "openai/gpt-oss-120b",
+  "n": 1,
+  "stream": false,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "function": {
+        "description": "",
+        "name": "get_something_by_name",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ]
+}

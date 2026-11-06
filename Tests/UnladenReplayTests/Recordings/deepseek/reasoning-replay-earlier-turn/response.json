@@ -1,0 +1,32 @@
+{
+  "id": "317eda32-33d8-43f9-8ea8-ca42a0bf734e",
+  "object": "chat.completion",
+  "created": 1792096472,
+  "model": "deepseek-flash",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Sunny.",
+        "reasoning_content": ""
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 376,
+    "completion_tokens": 4,
+    "total_tokens": 380,
+    "prompt_tokens_details": {
+      "cached_tokens": 128
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_cache_hit_tokens": 128,
+    "prompt_cache_miss_tokens": 248
+  },
+  "system_fingerprint": "aeb56401ca74e127821c4f9126dcb669"
+}

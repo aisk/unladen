@@ -1,0 +1,10 @@
+{
+  "messages": [
+    {
+      "content": "How do I cross the street?",
+      "role": "user"
+    }
+  ],
+  "model": "deepseek-v4-flash",
+  "stream": false
+}

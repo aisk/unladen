@@ -1,0 +1,105 @@
+{
+  "model": "mistral-small-latest",
+  "messages": [
+    {
+      "content": "Call get_weather for Paris, get_weather for London, and get_time for UTC. Call all three tools at once.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": [],
+      "tool_calls": [
+        {
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          },
+          "id": "Fi65w8Plu",
+          "type": "function",
+          "index": 0
+        },
+        {
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"London\"}"
+          },
+          "id": "NpJQUR1bV",
+          "type": "function",
+          "index": 0
+        },
+        {
+          "function": {
+            "name": "get_time",
+            "arguments": "{\"tz\":\"UTC\"}"
+          },
+          "id": "lPaisIfGU",
+          "type": "function",
+          "index": 0
+        }
+      ],
+      "prefix": false
+    },
+    {
+      "content": "Sunny in Paris.",
+      "role": "tool",
+      "tool_call_id": "Fi65w8Plu"
+    },
+    {
+      "content": "Sunny in London.",
+      "role": "tool",
+      "tool_call_id": "NpJQUR1bV"
+    },
+    {
+      "content": "12:00 in UTC.",
+      "role": "tool",
+      "tool_call_id": "lPaisIfGU"
+    }
+  ],
+  "top_p": 1.0,
+  "stream": true,
+  "stop": null,
+  "tools": [
+    {
+      "function": {
+        "name": "get_weather",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "type": "object"
+        },
+        "description": ""
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "name": "get_time",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "tz": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tz"
+          ],
+          "type": "object"
+        },
+        "description": ""
+      },
+      "type": "function"
+    }
+  ],
+  "tool_choice": "auto",
+  "presence_penalty": null,
+  "frequency_penalty": null,
+  "n": 1
+}

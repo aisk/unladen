@@ -1,0 +1,33 @@
+{
+  "id": "anthropic/inline-system-message",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_anthropic_mid_conversation_system/test_mid_conversation_system_prompt[inline-system-supported].yaml",
+    "interaction": 0
+  },
+  "vendor": "anthropic",
+  "protocol": "anthropic",
+  "status": 200,
+  "target": "anthropic/claude-opus-5-5",
+  "notes": "Anthropic accepts role `system` inside `messages` (Claude Code sends one).",
+  "model": "claude-opus-5-5",
+  "host": "api.anthropic.com",
+  "path": "/v1/messages?beta=true",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "# Review: `def add(a, b): return a + b`\n\nThe function works, but there are a few things worth improving.\n\n## Issues\n\n**1. No type annotations**\nBecause `+` is polymorphic in Python, this function will silently accept things you probably don't intend:\n\n```python\nadd(1, 2)        # 3\nadd(\"1\", \"2\")    # \"12\"  (string concatenation)\nadd([1], [2])    # [1, 2] (list concatenation)\nadd(1, \"2\")      # TypeError at runtime\n```\n\nAnnotations make the intent explicit and let tools like `mypy` or `pyright` catch misuse before runtime.\n\n**2. One-line definition**\nPutting the body on the same line as `def` is legal but discouraged by PEP 8. It hurts readability and makes diffs noisier when the body grows.\n\n**3. No docstring**\nFor a function this simple it's optional, but in a shared codebase a short docstring helps.\n\n## Suggested Revisions\n\n**Option A: Numeric only (most common intent)**\n```python\ndef add(a: float, b: float) -> float:\n    \"\"\"Return the sum of a and b.\"\"\"\n    return a + b\n```\nNote: per PEP 484, `float` also accepts `int`, so `add(1, 2)` type-checks fine.\n\n**Option B: Preserve the input type (e.g., int in, int out)**\n```python\nfrom typing import TypeVar\n\nT = TypeVar(\"T\", int, float, complex)\n\ndef add(a: T, b: T) -> T:\n    \"\"\"Return the sum of a and b, preserving the numeric type.\"\"\"\n    return a + b\n```\n\n**Option C: Intentionally generic (anything supporting `+`)**\n```python\nfrom typing import Protocol, TypeVar\n\nclass SupportsAdd(Protocol):\n    def __add__(self: \"T_co\", other: \"T_co\", /) -> \"T_co\": ...\n\nT_co = TypeVar(\"T_co\", bound=SupportsAdd)\n\ndef add(a: T_co, b: T_co) -> T_co:\n    \"\"\"Return a + b for any type that supports addition with itself.\"\"\"\n    return a + b\n```\n\n## Recommendation\nUse **Option A** unless you have a specific reason to support non-numeric types. It's simple, readable, and catches the most likely bugs.\n\nAlso, my earlier \"Looks fine\" was too brief. The function is correct, but these improvements are worth making.",
+    "reasoning": "",
+    "signedReasoning": true,
+    "toolCalls": [],
+    "finish": "end_turn",
+    "usage": {
+      "input": 69,
+      "output": 903
+    }
+  }
+}

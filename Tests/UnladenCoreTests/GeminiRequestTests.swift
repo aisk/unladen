@@ -1,5 +1,6 @@
 import Testing
 @_spi(Wire) import UnladenCore
+import UnladenTestSupport
 
 private let requestFixtures = (try? Fixtures.names("Gemini/requests", extension: "json")) ?? []
 

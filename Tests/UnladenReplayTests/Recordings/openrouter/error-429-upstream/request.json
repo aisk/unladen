@@ -1,0 +1,14 @@
+{
+  "messages": [
+    {
+      "content": "Be helpful.",
+      "role": "system"
+    },
+    {
+      "content": "Tell me a joke.",
+      "role": "user"
+    }
+  ],
+  "model": "google/gemini-2.0-flash-exp:free",
+  "stream": false
+}

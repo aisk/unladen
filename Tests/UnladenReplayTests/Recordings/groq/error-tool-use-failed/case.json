@@ -1,0 +1,24 @@
+{
+  "id": "groq/error-tool-use-failed",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_groq/test_tool_use_failed_error.yaml",
+    "interaction": 0
+  },
+  "vendor": "groq",
+  "protocol": "chat",
+  "status": 400,
+  "target": "groq/openai/gpt-oss-120b",
+  "model": "openai/gpt-oss-120b",
+  "host": "api.groq.com",
+  "path": "/openai/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "error": "Tool call validation failed: tool call validation failed: parameters for tool get_something_by_name did not match schema: errors: [missing properties: 'name', additionalProperties 'foo' not allowed]"
+  }
+}

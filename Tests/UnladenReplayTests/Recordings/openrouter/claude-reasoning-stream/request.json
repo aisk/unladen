@@ -1,0 +1,16 @@
+{
+  "model": "anthropic/claude-sonnet-5",
+  "stream": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": "How many prime numbers are there between 100 and 150? Reply with just the number."
+    }
+  ],
+  "stream_options": {
+    "include_usage": true
+  },
+  "reasoning": {
+    "enabled": true
+  }
+}

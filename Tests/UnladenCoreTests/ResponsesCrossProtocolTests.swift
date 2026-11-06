@@ -1,5 +1,6 @@
 import Testing
 @_spi(Wire) import UnladenCore
+import UnladenTestSupport
 
 /// The next request a Responses client (Codex) sends: the reply's output
 /// items echoed between two user turns.

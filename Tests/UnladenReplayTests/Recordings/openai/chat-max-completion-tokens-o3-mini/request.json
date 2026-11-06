@@ -1,0 +1,11 @@
+{
+  "max_completion_tokens": 100,
+  "messages": [
+    {
+      "content": "hello",
+      "role": "user"
+    }
+  ],
+  "model": "o3-mini",
+  "stream": false
+}

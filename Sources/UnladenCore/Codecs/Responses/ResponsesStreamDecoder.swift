@@ -154,6 +154,9 @@
             var error = object
             error["type"] = nil
             error["sequence_number"] = nil
+            // OpenAI sends the error object nested (`{"type":"error",
+            // "error":{…}}`), not at the top level as its reference shows.
+            if error["message"] == nil, case .object(let nested)? = error["error"] { error = nested }
             events.append(.error(ResponsesDecode.streamError(.object(error))))
             errored = true
         default:

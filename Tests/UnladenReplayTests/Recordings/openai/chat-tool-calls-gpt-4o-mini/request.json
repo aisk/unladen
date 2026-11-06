@@ -1,0 +1,60 @@
+{
+  "messages": [
+    {
+      "content": "What is the capital of France?",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"country\":\"France\"}",
+            "name": "get_capital"
+          },
+          "id": "pyd_ai_504f8147f83f44f3a5f14d87bfd01bda",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "content": "Paris",
+      "role": "tool",
+      "tool_call_id": "pyd_ai_504f8147f83f44f3a5f14d87bfd01bda"
+    },
+    {
+      "content": "The capital of France is Paris.\n",
+      "role": "assistant"
+    },
+    {
+      "content": "What is the capital of England?",
+      "role": "user"
+    }
+  ],
+  "model": "gpt-4o-mini",
+  "n": 1,
+  "stream": false,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "function": {
+        "description": "Get the capital of a country.",
+        "name": "get_capital",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "country": {
+              "description": "The country name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "country"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ]
+}

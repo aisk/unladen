@@ -1,0 +1,44 @@
+{
+  "max_tokens": 128000,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "Review `def add(a, b): return a + b`.",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Looks fine.",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "text": "Review it again.",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": [
+        {
+          "text": "From now on, every suggestion must include explicit type annotations.",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "model": "claude-opus-5-5",
+  "stream": true,
+  "system": "You are a code reviewer."
+}

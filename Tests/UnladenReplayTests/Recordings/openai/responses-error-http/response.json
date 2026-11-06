@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "decimal_below_min_value",
+    "message": "Invalid 'temperature': decimal below minimum value. Expected a value >= 0, but got -1 instead.",
+    "param": "temperature",
+    "type": "invalid_request_error"
+  }
+}

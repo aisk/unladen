@@ -255,7 +255,8 @@ extension AnthropicMessagesCodec {
     /// Anthropic. For another source the builder also restructures the
     /// conversation the way Anthropic requires:
     /// - leading `system`/`developer` messages join ``WireRequest/instructions``
-    ///   in `system`; later ones become user text (with a warning);
+    ///   in `system`; later ones become user text (with a warning) (an
+    ///   Anthropic-sourced inline `system` message is kept as it is);
     /// - tool results (Chat `tool` messages, Responses items) go into user
     ///   turns, first in their turn (a reorder produces a warning);
     /// - consecutive turns of the same role are merged (Anthropic merges them
@@ -281,7 +282,10 @@ extension AnthropicMessagesCodec {
         var leading = true
         for (i, message) in request.messages.enumerated() {
             let path = WirePath.index("messages", i)
-            if leading, message.role == .system || message.role == .developer {
+            // An Anthropic-sourced `system` message in `messages` is an
+            // inline system message (the API takes them anywhere, Claude
+            // Code sends them): it stays where it is.
+            if leading, message.role == .developer || (message.role == .system && !include) {
                 // One source keeps its form; several are blocks.
                 systemForm = systemParts == nil ? message.contentForm : .parts
                 systemParts = (systemParts ?? []) + message.parts
@@ -480,8 +484,8 @@ private struct AnthropicTurns {
 
     mutating func add(_ message: WireMessage, path: String, warnings: inout [WireWarning]) {
         let contentPath = WirePath.key(path, "content")
-        if context.include, ![.system, .developer, .tool, .item].contains(message.role) {
-            // Same protocol: as it came.
+        if context.include, ![.developer, .tool, .item].contains(message.role) {
+            // Same protocol: as it came (inline `system` messages included).
             let blocks = AnthropicEncode.blocks(message.parts, context: context, path: contentPath, warnings: &warnings)
             turns.append(Turn(role: message.role.rawValue, blocks: blocks, form: message.contentForm, extra: message.extra, path: path))
             return

@@ -1,0 +1,54 @@
+{
+  "model": "gpt-4.1-mini",
+  "stream": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": "List the 20 largest cities in the world."
+    }
+  ],
+  "max_completion_tokens": 20,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "Cities",
+      "schema": {
+        "properties": {
+          "cities": {
+            "items": {
+              "$ref": "#/$defs/City"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cities"
+        ],
+        "type": "object",
+        "additionalProperties": false,
+        "$defs": {
+          "City": {
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "country"
+            ],
+            "type": "object",
+            "additionalProperties": false
+          }
+        }
+      },
+      "strict": true
+    }
+  },
+  "stream_options": {
+    "include_usage": true
+  }
+}

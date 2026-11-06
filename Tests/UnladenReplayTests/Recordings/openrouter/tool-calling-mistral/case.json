@@ -1,0 +1,41 @@
+{
+  "id": "openrouter/tool-calling-mistral",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_openrouter/test_openrouter_tool_calling.yaml",
+    "interaction": 0
+  },
+  "vendor": "openrouter",
+  "protocol": "chat",
+  "status": 200,
+  "target": "openrouter/mistralai/mistral-small",
+  "model": "mistralai/mistral-small",
+  "host": "openrouter.ai",
+  "path": "/api/v1/chat/completions",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "stream": false,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [
+      {
+        "name": "divide",
+        "arguments": {
+          "numerator": 123,
+          "denominator": 456,
+          "on_inf": "infinity"
+        }
+      }
+    ],
+    "finish": "tool_calls",
+    "usage": {
+      "input": 134,
+      "output": 43
+    }
+  }
+}

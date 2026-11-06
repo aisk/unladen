@@ -1,0 +1,61 @@
+{
+  "id": "mistral/parallel-tools-stream",
+  "source": {
+    "repo": "github.com/pydantic/pydantic-ai",
+    "licence": "MIT",
+    "commit": "c833840",
+    "path": "tests/models/cassettes/test_mistral/test_mistral_stream_parallel_tool_calls[mistral-small-latest].yaml",
+    "interaction": 0
+  },
+  "vendor": "mistral",
+  "protocol": "chat",
+  "status": 200,
+  "target": "mistral/mistral-small-latest",
+  "expect": {
+    "requestChanges": {
+      "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.stop": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
+      "$.messages[*].prefix": "Mistral's `prefix` message flag is not modelled; strictUnknownFields strips it (`false` is the default)",
+      "$.messages[*].tool_calls[*].index": "`index` on request tool calls is a stream artifact the Mistral SDK echoes; not kept",
+      "$.messages[*].tool_calls": "an empty `tool_calls` array is left out"
+    }
+  },
+  "model": "mistral-small-latest",
+  "host": "api.mistral.ai",
+  "path": "/v1/chat/completions#stream",
+  "headers": {
+    "content-type": "text/event-stream; charset=utf-8"
+  },
+  "stream": true,
+  "facts": {
+    "text": "",
+    "reasoning": "",
+    "signedReasoning": false,
+    "toolCalls": [
+      {
+        "name": "get_weather",
+        "arguments": {
+          "city": "Paris"
+        }
+      },
+      {
+        "name": "get_weather",
+        "arguments": {
+          "city": "London"
+        }
+      },
+      {
+        "name": "get_time",
+        "arguments": {
+          "tz": "UTC"
+        }
+      }
+    ],
+    "finish": "tool_calls",
+    "usage": {
+      "input": 155,
+      "output": 33
+    }
+  }
+}

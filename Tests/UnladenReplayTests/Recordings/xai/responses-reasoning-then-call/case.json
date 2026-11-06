@@ -1,0 +1,33 @@
+{
+  "id": "xai/responses-reasoning-then-call",
+  "source": {
+    "repo": "github.com/yetone/magpie",
+    "licence": "MIT",
+    "commit": "cd9c52c16",
+    "path": "internal/gateway/testdata/grok_reasoning_then_call.sse"
+  },
+  "vendor": "xai",
+  "protocol": "responses",
+  "status": 200,
+  "target": "xai/grok-4.6-build",
+  "model": "grok-4.6-build",
+  "stream": true,
+  "facts": {
+    "text": "I'll create a short, descriptive session title from that request.",
+    "reasoning": "I will read a.txt and b.txt, sum all numbers, write the result to c.txt, and report the total.\n\nI am generating a session title for this task.\n\nI will generate a session title using the `session_title` tool. I do not need to read or write files.",
+    "signedReasoning": true,
+    "toolCalls": [
+      {
+        "name": "session_title",
+        "arguments": {
+          "session_title": "Sum a.txt and b.txt numbers into c.txt"
+        }
+      }
+    ],
+    "finish": "completed",
+    "usage": {
+      "input": 472,
+      "output": 373
+    }
+  }
+}
