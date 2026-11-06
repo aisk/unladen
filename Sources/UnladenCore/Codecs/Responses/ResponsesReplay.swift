@@ -127,3 +127,34 @@ enum ResponsesReplay {
         return .sealed(contents)
     }
 }
+
+/// Item ids the gateway makes up for a Responses client when the upstream
+/// gave none (a reply from another protocol): `<prefix>_unladen_<seed>_<n>`
+/// (`msg`, `rs`, `fc`, `ctc`), where the seed is the response id without
+/// its `resp_` prefix and `n` the output index.
+///
+/// They are valid Responses ids, so clients store and echo them, but no
+/// upstream knows them: the request parser clears them (as it clears the
+/// ids of sealed reasoning), so a later OpenAI upstream is never asked for
+/// an item it never made. Real upstream ids never contain the marker
+/// (OpenAI's are `<prefix>_<hex>`).
+@_spi(Wire) public enum ResponsesItemID {
+    public static let mark = "unladen_"
+
+    static func mint(prefix: String, responseID: String, index: Int) -> String {
+        let seed = responseID.hasPrefix("resp_") ? String(responseID.dropFirst(5)) : responseID
+        return "\(prefix)_\(mark)\(seed)_\(index)"
+    }
+
+    /// `true` for an id made by ``mint(prefix:responseID:index:)``.
+    public static func isMinted(_ id: String) -> Bool {
+        guard let underscore = id.firstIndex(of: "_") else { return false }
+        return id[id.index(after: underscore)...].hasPrefix(mark)
+    }
+
+    /// `id`, or `nil` if the gateway minted it.
+    static func upstream(_ id: String?) -> String? {
+        guard let id, !isMinted(id) else { return nil }
+        return id
+    }
+}

@@ -168,6 +168,7 @@ enum ResponsesDecode {
         if !content.isEmpty { _ = reader.raw("content") }
         var itemID = object["id"]?.stringValue
         if itemID != nil { _ = reader.raw("id") }
+        if context.isRequest { itemID = ResponsesItemID.upstream(itemID) }
         var origin = context.origin
         var signature: String?
         var encrypted: String?
@@ -233,8 +234,9 @@ enum ResponsesDecode {
               case .string(let arguments)? = object[argumentsKey] else { return nil }
         var reader = FieldReader(object, path: path)
         for key in ["type", "call_id", "name", argumentsKey] { _ = reader.raw(key) }
-        let itemID = object["id"]?.stringValue
+        var itemID = object["id"]?.stringValue
         if itemID != nil { _ = reader.raw("id") }
+        if context.isRequest { itemID = ResponsesItemID.upstream(itemID) }
         if !context.isRequest, object["status"]?.stringValue != nil { _ = reader.raw("status") }
         return WireToolCall(
             id: callID, name: name, arguments: arguments, itemType: custom ? "custom_tool_call" : nil,
@@ -260,7 +262,7 @@ enum ResponsesDecode {
         _ = reader.raw("type")
         _ = reader.raw("call_id")
         let output = try content(reader.raw("output"), path: reader.path("output"), itemID: nil, origin: nil, warnings: &warnings)
-        let itemID = try reader.string("id")
+        let itemID = ResponsesItemID.upstream(try reader.string("id"))
         return WireToolResult(
             callID: callID, content: output.parts, contentForm: output.form,
             itemType: type == "custom_tool_call_output" ? type : nil, itemID: itemID,
@@ -316,7 +318,8 @@ enum ResponsesDecode {
         var reader = FieldReader(object, path: path)
         _ = reader.raw("type")
         let role = WireRole(rawValue: try reader.requiredString("role"))
-        let id = object["id"]?.stringValue
+        let rawID = object["id"]?.stringValue
+        let id = ResponsesItemID.upstream(rawID)
         let content = try content(reader.raw("content"), path: reader.path("content"), itemID: id, origin: nil, warnings: &warnings)
         let hasTextParts = content.parts.contains { part in
             switch part {
@@ -324,7 +327,8 @@ enum ResponsesDecode {
             default: false
             }
         }
-        if id != nil, hasTextParts { _ = reader.raw("id") }
+        // A gateway-minted id is dropped, not kept in the bag.
+        if rawID != nil, hasTextParts || id == nil { _ = reader.raw("id") }
         return WireMessage(
             role: role, parts: content.parts, contentForm: content.form,
             extra: bag(reader, quiet: ["status", "id"], warnings: &warnings),
@@ -507,7 +511,8 @@ enum ResponsesEncode {
             if case .text(let text) = part, text.extra.isEmpty || !context.include { plain.append(text.text) }
         }
         if items.isEmpty {
-            return form == .parts ? .array([]) : ""
+            // Another protocol's empty array becomes the always-valid "".
+            return form == .parts && context.include ? .array([]) : ""
         }
         if form != .parts, items.count == 1, plain.count == 1 {
             return .string(plain[0])
@@ -577,10 +582,20 @@ enum ResponsesEncode {
         object["type"] = custom ? "custom_tool_call_output" : "function_call_output"
         if let id = context.acceptsID(result.itemID, origin: result.origin) { object["id"] = .string(id) }
         object["call_id"] = .string(result.callID)
-        object["output"] = content(
+        var output = content(
             result.content, form: result.contentForm, assistant: false, context: context,
             path: WirePath.key(path, "output"), warnings: &warnings,
         )
+        // Another protocol's text-only blocks (Anthropic's block-form
+        // tool_result): Responses clients and upstreams expect a string.
+        let texts = result.content.compactMap { part -> String? in if case .text(let text) = part { text.text } else { nil } }
+        if !context.include, case .array(let items) = output, !items.isEmpty, texts.count == result.content.count {
+            if texts.count > 1 {
+                warnings.append(WireWarning(.lossyConversion, "text parts joined into one string", path: WirePath.key(path, "output")))
+            }
+            output = .string(texts.joined(separator: "\n"))
+        }
+        object["output"] = output
         if result.isError == true {
             warnings.append(WireWarning(.lossyConversion, "Responses tool outputs cannot mark an error", path: path))
         }

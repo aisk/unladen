@@ -4,7 +4,11 @@
 /// - `data: [DONE]` (emits ``WireEvent/finish(_:)``);
 /// - tool-call fragments interleaved by `index` (each index is its own
 ///   block; a new `id` on a known index starts a new call, as some relays
-///   reuse indices); a call's block starts once its name is known;
+///   reuse indices); a call's block starts once its name is known. A call
+///   ends at index reuse, at `finish_reason`, or when answer text follows
+///   (fragments for it after that are dropped with a warning). Parallel
+///   calls are otherwise left open until the end: a fragment for a new
+///   index does not prove the previous call complete;
 /// - `reasoning_content` (DeepSeek) and `reasoning` (OpenRouter) deltas;
 /// - `refusal` deltas;
 /// - the usage-only final chunk of `stream_options.include_usage` (and
@@ -15,7 +19,8 @@
 ///   ``WireFinish/extra``). Content after it is still decoded, with a warning;
 /// - tool-call fragments without `index` (their position in the array is used)
 ///   and without `id` (a position-based id is synthesized, marked as such);
-/// - in-stream `{"error": …}` objects;
+/// - in-stream `{"error": …}` objects, and a stream cut short (see
+///   ``finish()``), as ``WireEvent/error(_:)``;
 /// - SSE comments as ``WireEvent/ping``.
 ///
 /// Only the first choice index seen is followed; others produce a warning.
@@ -139,12 +144,24 @@
 
     /// Ends the stream: closes open blocks and emits the finish event, unless
     /// `[DONE]` already did. A stream without `[DONE]` gets a warning.
+    ///
+    /// The terminal signal is a `finish_reason` (or an in-stream error), not
+    /// `[DONE]`: several Chat-compatible upstreams never send `[DONE]`, and
+    /// a reply with a finish reason is complete. A stream that started and
+    /// ends without either was cut short: an ``WireEvent/error(_:)``
+    /// precedes the finish, whose reason is ``WireFinishReason/Unified/error``.
     public mutating func finish() -> [WireEvent] {
         guard !done else { return [] }
+        var events: [WireEvent] = []
         if started {
             warnings.append(WireWarning(.malformedStream, "stream ended without [DONE]"))
+            if finishReason == nil {
+                closeAll(into: &events)
+                events.append(.error(.endedEarly(missing: "finish_reason")))
+                finishReason = WireFinishReason(.error)
+            }
         }
-        return finishEvents()
+        return events + finishEvents()
     }
 
     // MARK: Internals
@@ -195,6 +212,14 @@
     }
 
     private mutating func appendText(_ kind: TextKind, _ text: String, sourceKey: String?, into events: inout [WireEvent]) {
+        if kind == .text {
+            // Answer text after tool calls means they are complete; ending
+            // them now lets encoders that write one block at a time
+            // (Anthropic, Responses) stop buffering them.
+            for slot in tools.indices where !tools[slot].ended {
+                endTool(slot, into: &events)
+            }
+        }
         if let open, open.kind == kind, open.sourceKey == sourceKey {
             events.append(Self.delta(kind, open.block, text))
             return
@@ -258,6 +283,12 @@
             return
         }
 
+        if let slot = toolByIndex[index], tools[slot].ended, id == nil, name == nil {
+            // More arguments for a call already ended (by text that came
+            // between its fragments): too late to deliver.
+            warnOnce("late-arguments", WireWarning(.malformedStream, "arguments for an ended tool call at index \(index) dropped"))
+            return
+        }
         // A new call (new index, or a new id on a reused index).
         if let slot = toolByIndex[index], !tools[slot].ended {
             endTool(slot, into: &events)

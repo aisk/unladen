@@ -34,7 +34,12 @@ enum GeminiReplay {
 ///   position; a response without id gets its call's id, or its own
 ///   position when no call matches);
 /// - replies: `unladen_gc_<response id>_<n>` for the n-th call, so the ids a
-///   client stores stay unique across the turns of a conversation.
+///   client stores stay unique across the turns of a conversation. Without
+///   a `responseId` (some relays), `unladen_gc_h<hash>_<n>`, where the hash
+///   (64-bit FNV-1a, hex) covers the reply's parts up to and including the
+///   call: deterministic for a given reply, different across replies that
+///   differ in anything before the call (a reply that repeats an earlier
+///   one exactly, signatures included, repeats its ids).
 ///
 /// Gemini encoders omit an id that is marked synthesized *or* starts with
 /// ``mark``: a client of another protocol (Chat, Anthropic) echoes the id
@@ -47,8 +52,45 @@ enum GeminiReplay {
 
     static func request(content: Int, part: Int) -> String { "\(mark)\(content)_\(part)" }
 
-    static func reply(responseID: String?, call: Int) -> String {
-        guard let responseID, !responseID.isEmpty else { return "\(mark)\(call)" }
+    /// A running hash of a reply's parts, for ids of replies without a
+    /// `responseId`.
+    struct ReplySeed: Sendable {
+        private var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+
+        private mutating func mix(_ text: String) {
+            for byte in text.utf8 {
+                hash ^= UInt64(byte)
+                hash &*= 0x0000_0100_0000_01b3
+            }
+            hash ^= 0xff
+            hash &*= 0x0000_0100_0000_01b3
+        }
+
+        mutating func add(_ part: WirePart) {
+            switch part {
+            case .text(let text):
+                mix("t"); mix(text.text); mix(text.signature ?? "")
+            case .reasoning(let reasoning):
+                mix("r"); mix(reasoning.text); mix(reasoning.signature ?? "")
+            case .toolCall(let call):
+                mix("c"); mix(call.name); mix(call.arguments); mix(call.signature ?? "")
+            case .opaque(let opaque):
+                mix("o"); mix(String(decoding: opaque.value.encoded(), as: UTF8.self))
+            case .image, .file, .toolResult, .refusal:
+                mix("x")
+            }
+        }
+
+        var tag: String {
+            let hex = String(hash, radix: 16)
+            return String(repeating: "0", count: 16 - hex.count) + hex
+        }
+    }
+
+    /// The id of the `call`-th call of a reply; `seed` must include the
+    /// call's part.
+    static func reply(responseID: String?, call: Int, seed: ReplySeed) -> String {
+        guard let responseID, !responseID.isEmpty else { return "\(mark)h\(seed.tag)_\(call)" }
         let seed = String(responseID.unicodeScalars.map { scalar -> Character in
             switch scalar {
             case "a"..."z", "A"..."Z", "0"..."9", "-": Character(scalar)

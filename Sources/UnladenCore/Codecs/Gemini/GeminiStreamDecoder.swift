@@ -13,7 +13,8 @@
 ///   with no block open it is an empty text block of its own;
 /// - a `functionCall` arrives whole: start, one delta with the compact
 ///   `args`, end and ``WireEvent/toolCall(id:call:)``. Calls without `id`
-///   get `unladen_gc_<responseId>_<n>`, as from
+///   get `unladen_gc_<responseId>_<n>` (or a hash-based id without
+///   `responseId`, see ``GeminiToolID``), as from
 ///   ``GeminiCodec/parseResponse(_:origin:)``;
 /// - other parts (media, executable code) are ``WireEvent/opaque(_:)``;
 /// - `finishReason` (`STOP` with calls is
@@ -23,7 +24,8 @@
 ///   ``WireEvent/finish(_:)`` emitted by ``finish()``: Gemini has no end
 ///   event, the stream just ends;
 /// - a `{"error":{…}}` frame is ``WireEvent/error(_:)`` (the finish then has
-///   reason ``WireFinishReason/Unified/error``);
+///   reason ``WireFinishReason/Unified/error``), as is a stream cut short
+///   (see ``finish()``);
 /// - SSE comments are ``WireEvent/ping``.
 @_spi(Wire) public struct GeminiStreamDecoder: WireStreamDecoder {
     /// System id stamped on reasoning and on signatures.
@@ -44,6 +46,7 @@
     private var errored = false
     private var nextBlock = 0
     private var calls = 0
+    private var seed = GeminiToolID.ReplySeed()
     private var open: Block?
     private var responseID: String?
     private var usage: WireUsage?
@@ -108,9 +111,12 @@
         return events
     }
 
-    /// Ends the stream: closes the open block and emits the finish event. A
-    /// stream that ends without a `finishReason` (and without an error) gets
-    /// a warning. Idempotent.
+    /// Ends the stream: closes the open block and emits the finish event.
+    /// Gemini has no end event, so a `finishReason` (or a prompt
+    /// `blockReason`) is what marks a complete stream: one that started and
+    /// ends without it, and without an error, was cut short. It gets a
+    /// warning and an ``WireEvent/error(_:)`` before the finish, whose
+    /// reason is ``WireFinishReason/Unified/error``. Idempotent.
     public mutating func finish() -> [WireEvent] {
         guard !done else { return [] }
         var events: [WireEvent] = []
@@ -118,6 +124,9 @@
         done = true
         if started, finishReason == nil, !errored {
             warnings.append(WireWarning(.malformedStream, "stream ended without finishReason"))
+            events.append(.error(.endedEarly(missing: "finishReason")))
+            errored = true
+            finishReason = WireFinishReason(.error)
         }
         events.append(.finish(WireFinish(reason: finishReason, usage: usage, extra: finishExtra)))
         return events
@@ -139,6 +148,7 @@
     }
 
     private mutating func add(_ part: WirePart, into events: inout [WireEvent]) {
+        seed.add(part)
         switch part {
         case .text(let text):
             addText(.text, text: text.text, signature: text.signature, extra: text.extra, into: &events)
@@ -146,7 +156,7 @@
             addText(.reasoning, text: reasoning.text, signature: reasoning.signature, extra: reasoning.extra, into: &events)
         case .toolCall(var call):
             close(into: &events)
-            if call.idSynthesized { call.id = GeminiToolID.reply(responseID: responseID, call: calls) }
+            if call.idSynthesized { call.id = GeminiToolID.reply(responseID: responseID, call: calls, seed: seed) }
             calls += 1
             let id = newBlock("tool")
             let arguments = call.arguments

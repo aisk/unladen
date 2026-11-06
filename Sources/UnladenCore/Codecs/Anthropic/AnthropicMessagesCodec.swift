@@ -14,7 +14,8 @@
 ///   ``WireRequest/user`` (a `metadata` object with other keys stays in the
 ///   bag whole); `stop_sequences` → ``WireStop/multiple(_:)``;
 ///   `output_config.effort` → ``WireReasoningConfig/effort`` (likewise only
-///   when it is the object's sole key).
+///   when it is the object's sole key); another protocol's effort is
+///   mapped onto Anthropic's levels (see `encodeEffort`).
 /// - `thinking`: `enabled` + `budget_tokens` ↔ `enabled: true` + budget;
 ///   `adaptive` ↔ `enabled: true` without a budget; `disabled` ↔
 ///   `enabled: false`. Other keys of the object go to the reasoning bag.
@@ -246,7 +247,8 @@ extension AnthropicMessagesCodec {
     /// - tool results (Chat `tool` messages, Responses items) go into user
     ///   turns, first in their turn (a reorder produces a warning);
     /// - consecutive turns of the same role are merged (Anthropic merges them
-    ///   itself, so nothing is lost) and empty turns and text blocks dropped;
+    ///   itself, so nothing is lost) and empty turns and empty or
+///   whitespace-only text blocks dropped;
     /// - reasoning without an acceptable signature is dropped (see
     ///   ``AnthropicRequestOptions/trustedReasoningOrigins``).
     /// An Anthropic-sourced request is written as it came: no reordering.
@@ -287,7 +289,9 @@ extension AnthropicMessagesCodec {
         object["max_tokens"] = .number(JSONNumber(maxTokens))
 
         if let user = request.user { object["metadata"] = ["user_id": .string(user)] }
-        if let effort = request.reasoning?.effort { object["output_config"] = ["effort": .string(effort)] }
+        if let effort = request.reasoning?.effort, let value = encodeEffort(effort, include: include, warnings: &warnings) {
+            object["output_config"] = ["effort": .string(value)]
+        }
         if let value = request.serviceTier { object["service_tier"] = .string(value) }
         if let stop = request.stop { object["stop_sequences"] = .array(stop.sequences.map { .string($0) }) }
         if let value = request.stream { object["stream"] = .bool(value) }
@@ -344,6 +348,28 @@ extension AnthropicMessagesCodec {
         drop(request.verbosity != nil, "verbosity")
         // Anthropic streams always report usage; only unknown options matter.
         drop(!(request.streamOptions?.extra.isEmpty ?? true), "stream_options")
+    }
+
+    /// Anthropic's `output_config.effort` levels.
+    static let effortLevels: Set<String> = ["low", "medium", "high", "xhigh", "max"]
+
+    /// `output_config.effort`. Another protocol's level is mapped onto
+    /// Anthropic's: `minimal` is `low`; `none` (no reasoning) has no level
+    /// and is left out; unknown levels are left out with a warning.
+    private static func encodeEffort(_ effort: String, include: Bool, warnings: inout [WireWarning]) -> String? {
+        if include || effortLevels.contains(effort) { return effort }
+        let path = "output_config.effort"
+        switch effort {
+        case "minimal":
+            warnings.append(WireWarning(.lossyConversion, "effort `minimal` sent as `low`", path: path))
+            return "low"
+        case "none":
+            warnings.append(WireWarning(.lossyConversion, "effort `none` has no Anthropic level; left out", path: path))
+            return nil
+        default:
+            warnings.append(WireWarning(.unsupportedValue, "effort `\(effort)` is not an Anthropic level; left out", path: path))
+            return nil
+        }
     }
 
     private static func encodeThinking(_ reasoning: WireReasoningConfig, include: Bool, warnings: inout [WireWarning]) -> JSONValue? {
@@ -502,11 +528,13 @@ private struct AnthropicTurns {
     func finish(warnings: inout [WireWarning]) -> [JSONValue] {
         var output = turns
         if !context.include {
-            // Drop empty text blocks and empty turns, then merge same-role
-            // neighbours and put tool results first in their user turn.
+            // Drop empty and whitespace-only text blocks (Anthropic rejects
+            // both; Chat clients send `"content": "\n"` beside tool calls)
+            // and empty turns, then merge same-role neighbours and put tool
+            // results first in their user turn.
             output = output.compactMap { turn in
                 var turn = turn
-                turn.blocks.removeAll { $0.plainText?.isEmpty == true }
+                turn.blocks.removeAll { $0.plainText?.allSatisfy(\.isWhitespace) == true }
                 return turn.blocks.isEmpty ? nil : turn
             }
             var merged: [Turn] = []

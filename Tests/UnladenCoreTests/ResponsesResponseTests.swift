@@ -208,7 +208,7 @@ private let streamFixtures = (try? Fixtures.names("Responses/streams", extension
         ])
         let final = try #require(finalResponse(elements))
         #expect(final["id"] == "resp_msg_1")
-        #expect(final["output"]?.arrayValue?.map { $0["id"] } == ["rs_msg_1_0", "msg_msg_1_1", "fc_msg_1_2"])
+        #expect(final["output"]?.arrayValue?.map { $0["id"] } == ["rs_unladen_msg_1_0", "msg_unladen_msg_1_1", "fc_unladen_msg_1_2"])
         #expect(final["output"]?[2]?["arguments"] == "{}")
         #expect(final["output"]?[2]?["call_id"] == "toolu_1")
         #expect(final["usage"] == [
@@ -234,7 +234,7 @@ private let streamFixtures = (try? Fixtures.names("Responses/streams", extension
         }
         #expect(calls.map(\.id) == ["call_T", "call_O"])
         #expect(calls.map(\.arguments) == [#"{"city":"Tokyo"}"#, #"{"city":"Osaka"}"#])
-        #expect(response.message.parts.first == .reasoning(WireReasoning(text: "Two cities, two calls.", itemID: "rs_gen-1_0", summaryIndex: 0, origin: "openai")))
+        #expect(response.message.parts.first == .reasoning(WireReasoning(text: "Two cities, two calls.", itemID: "rs_unladen_gen-1_0", summaryIndex: 0, origin: "openai")))
         #expect(response.finishReason == WireFinishReason(.toolCalls, raw: "completed"))
         #expect(response.usage?.cachedInputTokens == 64)
     }

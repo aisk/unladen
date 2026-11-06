@@ -222,6 +222,8 @@ enum ChatEncode {
     /// is written as a string when the form says so, or, with no recorded
     /// form, when there is a single text part or `joinTexts` is set (Chat
     /// replies carry one string, so an assistant's text blocks are joined).
+    /// Empty content honours the form only for the same protocol; otherwise
+    /// it is `emptyDefault`.
     static func content(
         _ parts: [WirePart],
         form: WireContentForm?,
@@ -247,6 +249,9 @@ enum ChatEncode {
             }
         }
         if items.isEmpty {
+            // Another protocol's form says nothing about Chat: its empty
+            // array (an Anthropic tool-only turn) is rejected by OpenAI.
+            guard include else { return emptyDefault }
             switch form {
             case .string: return ""
             case .parts: return .array([])
@@ -447,11 +452,22 @@ enum ChatEncode {
         ) {
             object["content"] = content
         }
-        if !reasoning.isEmpty {
+        // Another protocol's reasoning without text (signature only) has
+        // nothing to say in Chat; an empty `reasoning_content` is noise.
+        let reasoningText = reasoning.map(\.text).joined()
+        if !reasoning.isEmpty, !include, reasoningText.isEmpty {
+            if reasoning.contains(where: \.hasSignedData) {
+                warnings.append(WireWarning(.droppedContent, "reasoning signature/encrypted data cannot be carried by Chat", path: path))
+            }
+            var unused = JSONObject()
+            for item in reasoning {
+                appendExtra(item.extra, to: &unused, include: false, path: path, warnings: &warnings)
+            }
+        } else if !reasoning.isEmpty {
             let sourceKey = include ? reasoning.first?.sourceKey : nil
             let key = sourceKey.flatMap { chatReasoningKeys.contains($0) ? $0 : nil } ?? "reasoning_content"
             let keyPath = WirePath.key(path, key)
-            object[key] = .string(reasoning.map(\.text).joined())
+            object[key] = .string(reasoningText)
             if reasoning.count > 1 {
                 warnings.append(WireWarning(.lossyConversion, "reasoning blocks joined into one string", path: keyPath))
             }

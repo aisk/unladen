@@ -161,7 +161,10 @@ enum AnthropicDecode {
         case "thinking":
             guard case .string(let text)? = object["thinking"] else { return opaque("malformed thinking block kept as opaque") }
             _ = reader.raw("thinking")
-            let signature = try reader.string("signature")
+            // `""` is the placeholder Anthropic replies carry for another
+            // system's reasoning (see Context.keepUnsignedReasoning), echoed
+            // by clients: it signs nothing.
+            let signature = try reader.string("signature").flatMap { $0.isEmpty ? nil : $0 }
             return .reasoning(WireReasoning(
                 text: text, signature: signature, origin: origin, extra: bag(reader, warnings: &warnings),
             ))
@@ -252,7 +255,9 @@ enum AnthropicEncode {
         var trusted: Set<WireSystemID>
         /// Replies to a client keep foreign reasoning *text* (with an empty
         /// signature); requests to an upstream drop the whole block, since
-        /// Anthropic rejects unsigned thinking.
+        /// Anthropic rejects unsigned thinking. The decoder reads an empty
+        /// signature as none, so a client's echo of such a block is dropped
+        /// too (quietly: it is the gateway's own placeholder).
         var keepUnsignedReasoning: Bool
     }
 
@@ -361,6 +366,12 @@ enum AnthropicEncode {
 
         case .reasoning(let reasoning):
             let accepted = AnthropicReplay.accepts(reasoning, sameProtocol: include, trusted: context.trusted)
+            if accepted, !context.keepUnsignedReasoning, reasoning.encrypted == nil, reasoning.signature == nil {
+                // Unsigned thinking for an upstream, which would reject it:
+                // a client's echo of the empty-signature placeholder. It was
+                // never signed, so dropping it loses nothing; no warning.
+                return nil
+            }
             if accepted, let data = reasoning.encrypted {
                 object["type"] = "redacted_thinking"
                 object["data"] = .string(data)
@@ -370,11 +381,7 @@ enum AnthropicEncode {
             } else if accepted || (context.keepUnsignedReasoning && !reasoning.text.isEmpty) {
                 object["type"] = "thinking"
                 object["thinking"] = .string(reasoning.text)
-                if accepted {
-                    if let signature = reasoning.signature { object["signature"] = .string(signature) }
-                } else {
-                    object["signature"] = ""
-                }
+                object["signature"] = .string((accepted ? reasoning.signature : nil) ?? "")
                 if !accepted, reasoning.hasSignedData {
                     warnings.append(WireWarning(
                         .droppedContent,

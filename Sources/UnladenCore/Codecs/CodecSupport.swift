@@ -257,3 +257,16 @@ enum Base64 {
         return output
     }
 }
+
+// MARK: - Truncated streams
+
+extension WireStreamError {
+    /// What a stream decoder reports when the upstream stream ends after it
+    /// started but before its protocol's terminal event, without an error:
+    /// a dropped connection or a relay that cut the reply short. Reported
+    /// as an error (with a finish of reason ``WireFinishReason/Unified/error``)
+    /// so a client sees a failed reply, not a clean but truncated one.
+    static func endedEarly(missing: String) -> WireStreamError {
+        WireStreamError(message: "upstream stream ended early, without \(missing)")
+    }
+}

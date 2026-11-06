@@ -22,7 +22,8 @@
 /// - `message_stop` → ``WireEvent/finish(_:)``;
 /// - `ping` and SSE comments → ``WireEvent/ping``;
 /// - `error` events → ``WireEvent/error(_:)`` (the finish then has reason
-///   ``WireFinishReason/Unified/error``).
+///   ``WireFinishReason/Unified/error``);
+/// - a stream cut short (see ``finish()``) → ``WireEvent/error(_:)`` too.
 ///
 /// The event type is read from the JSON `type`, falling back to the SSE
 /// `event` name.
@@ -124,14 +125,25 @@
     }
 
     /// Ends the stream: closes open blocks and emits the finish event, unless
-    /// `message_stop` already did. A stream that ends without `message_stop`
-    /// (and without an error event) gets a warning.
+    /// `message_stop` already did. A stream that started and ends without
+    /// `message_stop` gets a warning; if it had no `stop_reason` either (and
+    /// no error event), it was cut short: an ``WireEvent/error(_:)``
+    /// precedes the finish, whose reason is then
+    /// ``WireFinishReason/Unified/error``. (A `stop_reason` means the reply
+    /// is complete; only the closing event went missing.)
     public mutating func finish() -> [WireEvent] {
         guard !done else { return [] }
+        var events: [WireEvent] = []
         if started, !errored {
             warnings.append(WireWarning(.malformedStream, "stream ended without message_stop"))
+            if finishReason == nil {
+                closeAll(into: &events)
+                events.append(.error(.endedEarly(missing: "message_stop")))
+                errored = true
+                finishReason = WireFinishReason(.error)
+            }
         }
-        return finishEvents()
+        return events + finishEvents()
     }
 
     // MARK: Internals

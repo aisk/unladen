@@ -20,6 +20,8 @@
 /// - Item ids go to ``WireText/itemID``, ``WireReasoning/itemID``,
 ///   ``WireToolCall/itemID`` and ``WireToolResult/itemID``; call ids to
 ///   ``WireToolCall/id``. `custom_tool_call(_output)` sets `itemType`.
+///   Ids the gateway minted for an earlier reply (``ResponsesItemID``) are
+///   cleared: no upstream knows them.
 /// - Reasoning items: see ``WireReasoning`` for the layout. A client's
 ///   `encrypted_content` is either an Unladen envelope (``ResponsesSeal``),
 ///   restored to the original origin and signature, or OpenAI's own

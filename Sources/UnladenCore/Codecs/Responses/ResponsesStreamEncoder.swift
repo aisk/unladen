@@ -10,9 +10,9 @@
 ///   are ignored.
 /// - Item ids: a given ``WireText/itemID`` / ``WireToolCall/itemID`` is
 ///   kept, as is a reasoning item id whose origin ``ResponsesReplay``
-///   accepts; anything else gets a deterministic id
-///   `<prefix>_<seed>_<output_index>` (`msg`, `rs`, `fc`, `ctc`), where the
-///   seed is the response id without its `resp_` prefix.
+///   accepts; anything else gets a deterministic, recognisable id
+///   `<prefix>_unladen_<seed>_<output_index>` (see ``ResponsesItemID``),
+///   which the request parser clears when a client echoes it.
 ///
 /// Items:
 /// - One item is open at a time and Responses items are written one after
@@ -575,8 +575,7 @@ package struct ResponsesStreamEncoder: Sendable {
         guard var current = item, current.index == nil else { return }
         let index = output.count
         current.index = index
-        let seed = id.hasPrefix("resp_") ? String(id.dropFirst(5)) : id
-        func synthesized(_ prefix: String) -> String { "\(prefix)_\(seed)_\(index)" }
+        func synthesized(_ prefix: String) -> String { ResponsesItemID.mint(prefix: prefix, responseID: id, index: index) }
         var object = JSONObject()
         switch current.kind {
         case .message:

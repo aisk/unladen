@@ -397,7 +397,7 @@ extension GeminiCodec {
     /// - tool results (Chat `tool` messages, Responses items) become
     ///   `functionResponse` parts of user turns, named after their call;
     /// - consecutive turns of the same role are merged and empty turns and
-    ///   text parts dropped.
+    ///   empty or whitespace-only text parts dropped.
     ///
     /// Signatures are written when ``GeminiReplay`` accepts their origin
     /// (``GeminiRequestOptions/trustedSignatureOrigins``); reasoning it does
@@ -715,11 +715,14 @@ private struct GeminiTurns {
     func finish(warnings: inout [WireWarning]) -> [JSONValue] {
         var output = turns
         if !context.include {
-            // Turns were merged as parts arrived; drop empty text parts and
-            // the turns they leave empty, then merge again.
+            // Turns were merged as parts arrived; drop empty and
+            // whitespace-only text parts and the turns they leave empty,
+            // then merge again.
             var merged: [Turn] = []
             for var turn in output {
-                turn.parts.removeAll { $0.objectValue?.count == 1 && $0["text"] == "" }
+                turn.parts.removeAll { part in
+                    part.objectValue?.count == 1 && part["text"]?.stringValue?.allSatisfy(\.isWhitespace) == true
+                }
                 guard !turn.parts.isEmpty else { continue }
                 if let last = merged.last, last.role == turn.role {
                     merged[merged.count - 1].parts += turn.parts
@@ -829,9 +832,11 @@ extension GeminiCodec {
                     contentReader.raw("parts"), path: contentReader.path("parts"), origin: origin, isReply: true, warnings: &warnings,
                 )
                 var calls = 0
+                var seed = GeminiToolID.ReplySeed()
                 for i in parts.indices {
+                    seed.add(parts[i])
                     guard case .toolCall(var call) = parts[i] else { continue }
-                    if call.idSynthesized { call.id = GeminiToolID.reply(responseID: id, call: calls) }
+                    if call.idSynthesized { call.id = GeminiToolID.reply(responseID: id, call: calls, seed: seed) }
                     calls += 1
                     parts[i] = .toolCall(call)
                 }
