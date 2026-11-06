@@ -23,6 +23,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.8.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.37.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.105.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.28.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     ],
@@ -32,6 +33,11 @@ let package = Package(
             name: "UnladenCore",
             dependencies: [
                 .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(
+                    name: "HTTPTypesFoundation",
+                    package: "swift-http-types",
+                    condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS]),
+                ),
             ],
             swiftSettings: swiftSettings,
         ),
@@ -47,6 +53,9 @@ let package = Package(
             dependencies: [
                 "UnladenCore",
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
             ],
             swiftSettings: swiftSettings,
         ),
@@ -64,6 +73,19 @@ let package = Package(
         .testTarget(
             name: "UnladenCoreTests",
             dependencies: ["UnladenCore"],
+            swiftSettings: swiftSettings,
+        ),
+        .testTarget(
+            name: "UnladenAsyncHTTPClientTests",
+            dependencies: [
+                "UnladenAsyncHTTPClient",
+                "UnladenCore",
+                .product(name: "AsyncHTTPClient", package: "async-http-client"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "HummingbirdTesting", package: "hummingbird"),
+                .product(name: "NIOCore", package: "swift-nio"),
+            ],
             swiftSettings: swiftSettings,
         ),
         .testTarget(
