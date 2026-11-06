@@ -185,12 +185,12 @@ enum DataURL {
 }
 
 /// RFC 4648 base64, standard or URL-safe alphabet (Foundation-free).
-enum Base64 {
+package enum Base64 {
     private static let standard = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".utf8)
     private static let urlSafe = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".utf8)
 
     /// Encodes `bytes`; the URL-safe form is unpadded.
-    static func encode(_ bytes: some Collection<UInt8>, urlSafe url: Bool = false) -> String {
+    package static func encode(_ bytes: some Collection<UInt8>, urlSafe url: Bool = false) -> String {
         let table = url ? urlSafe : standard
         let input = Array(bytes)
         var output: [UInt8] = []
@@ -220,7 +220,7 @@ enum Base64 {
     /// Decodes `string`, or `nil` if it is not valid in the chosen alphabet.
     /// Padding is optional; non-zero trailing bits are rejected, so every
     /// accepted string is the encoding of its result.
-    static func decode(_ string: String, urlSafe url: Bool = false) -> [UInt8]? {
+    package static func decode(_ string: String, urlSafe url: Bool = false) -> [UInt8]? {
         let table = url ? urlSafe : standard
         var values: [UInt8] = []
         values.reserveCapacity(string.utf8.count)

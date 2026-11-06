@@ -91,7 +91,11 @@ let package = Package(
         ),
         .testTarget(
             name: "UnladenTests",
-            dependencies: ["Unladen"],
+            dependencies: [
+                "Unladen",
+                "UnladenCore",
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ],
             swiftSettings: swiftSettings,
         ),
         .testTarget(

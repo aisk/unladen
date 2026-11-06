@@ -77,6 +77,7 @@ public enum Presets {
 
     public static let openAI = Provider(
         id: "openai",
+        apiKeyEnvironmentVariables: ["OPENAI_API_KEY"],
         endpoints: [
             Endpoint(system: "openai", apiProtocol: .responses, baseURL: "https://api.openai.com/v1",
                      forwardedHeaders: ["openai-organization", "openai-project"], defaults: Profile(transforms: base)),
@@ -89,6 +90,7 @@ public enum Presets {
 
     public static let anthropic = Provider(
         id: "anthropic",
+        apiKeyEnvironmentVariables: ["ANTHROPIC_API_KEY"],
         endpoints: [
             Endpoint(system: "anthropic", apiProtocol: .anthropicMessages, baseURL: "https://api.anthropic.com",
                      auth: .anthropic(), forwardedHeaders: ["anthropic-beta", "anthropic-version"],
@@ -99,6 +101,7 @@ public enum Presets {
 
     public static let gemini = Provider(
         id: "gemini",
+        apiKeyEnvironmentVariables: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         endpoints: [
             Endpoint(system: "gemini", apiProtocol: .gemini, baseURL: "https://generativelanguage.googleapis.com",
                      auth: .googleAPIKey,
@@ -123,6 +126,7 @@ public enum Presets {
 
     public static let deepSeek = Provider(
         id: "deepseek",
+        apiKeyEnvironmentVariables: ["DEEPSEEK_API_KEY"],
         endpoints: [
             Endpoint(system: "deepseek", apiProtocol: .chatCompletions, baseURL: "https://api.deepseek.com/v1",
                      defaults: Profile(
@@ -142,6 +146,7 @@ public enum Presets {
 
     public static let moonshot = Provider(
         id: "moonshot",
+        apiKeyEnvironmentVariables: ["MOONSHOT_API_KEY"],
         endpoints: [
             // Kimi turns away other vendors' reasoning_details.
             Endpoint(system: "moonshot", apiProtocol: .chatCompletions, baseURL: "https://api.moonshot.ai/v1",
@@ -156,6 +161,7 @@ public enum Presets {
 
     public static let openRouter = Provider(
         id: "openrouter",
+        apiKeyEnvironmentVariables: ["OPENROUTER_API_KEY"],
         endpoints: [
             Endpoint(system: "openrouter", apiProtocol: .chatCompletions, baseURL: "https://openrouter.ai/api/v1",
                      forwardedHeaders: ["http-referer", "x-title"], defaults: Profile(transforms: base)),
@@ -169,6 +175,7 @@ public enum Presets {
 
     public static let groq = Provider(
         id: "groq",
+        apiKeyEnvironmentVariables: ["GROQ_API_KEY"],
         endpoints: [
             Endpoint(system: "groq", apiProtocol: .chatCompletions, baseURL: "https://api.groq.com/openai/v1",
                      defaults: Profile(transforms: base + [.flattenTextParts])),
@@ -177,6 +184,7 @@ public enum Presets {
 
     public static let mistral = Provider(
         id: "mistral",
+        apiKeyEnvironmentVariables: ["MISTRAL_API_KEY"],
         endpoints: [
             // 422 extra_forbidden on any field it does not know.
             Endpoint(system: "mistral", apiProtocol: .chatCompletions, baseURL: "https://api.mistral.ai/v1",
@@ -186,6 +194,7 @@ public enum Presets {
 
     public static let xAI = Provider(
         id: "xai",
+        apiKeyEnvironmentVariables: ["XAI_API_KEY"],
         endpoints: [
             Endpoint(system: "xai", apiProtocol: .responses, baseURL: "https://api.x.ai/v1", defaults: Profile(transforms: base)),
             Endpoint(system: "xai", apiProtocol: .chatCompletions, baseURL: "https://api.x.ai/v1", defaults: Profile(transforms: base)),
@@ -202,6 +211,7 @@ public enum Presets {
 
     public static let together = Provider(
         id: "together",
+        apiKeyEnvironmentVariables: ["TOGETHER_API_KEY"],
         endpoints: [
             Endpoint(system: "together", apiProtocol: .chatCompletions, baseURL: "https://api.together.xyz/v1",
                      defaults: Profile(transforms: base)),
