@@ -1,9 +1,3 @@
-// The Swift Programming Language
-// https://docs.swift.org/swift-book
+// Public semantic API: messages, parts, tools, generate and stream.
 
-@main
-struct Unladen {
-    static func main() {
-        print("Hello, world!")
-    }
-}
+import UnladenCore
