@@ -1,0 +1,43 @@
+{
+  "model": "gpt-4.1",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant with access to weather tools."},
+    {"role": "user", "content": "What's the weather in Paris?"},
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {"id": "call_Xk2a9", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\",\"unit\":\"celsius\"}"}}
+      ]
+    },
+    {"role": "tool", "tool_call_id": "call_Xk2a9", "content": "{\"temp\":18,\"condition\":\"cloudy\"}"},
+    {"role": "assistant", "content": "It's 18°C and cloudy in Paris."},
+    {"role": "user", "content": "And tomorrow?"}
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": {"city": {"type": "string"}, "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}},
+          "required": ["city", "unit"],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    },
+    {
+      "type": "function",
+      "function": {"name": "get_forecast", "description": "Forecast for the next days", "parameters": {"type": "object", "properties": {"city": {"type": "string"}, "days": {"type": "integer"}}}}
+    }
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "max_completion_tokens": 2048,
+  "reasoning_effort": "low",
+  "stream": true,
+  "stream_options": {"include_usage": true}
+}

@@ -1,0 +1,6 @@
+data: {"id":"chatcmpl-r","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","refusal":"I can't"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-r","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"refusal":" help with that."},"finish_reason":null}]}
+
+data: {"error":{"message":"Upstream overloaded","type":"server_error","code":529}}
+

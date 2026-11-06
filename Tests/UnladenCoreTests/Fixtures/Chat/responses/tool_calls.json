@@ -1,0 +1,23 @@
+{
+  "id": "chatcmpl-tool1",
+  "object": "chat.completion",
+  "created": 1741570000,
+  "model": "gpt-4o-mini",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {"id": "call_abc", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"Tokyo\"}"}},
+          {"id": "call_def", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": \"Osaka\"}"}}
+        ],
+        "refusal": null
+      },
+      "logprobs": null,
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {"prompt_tokens": 80, "completion_tokens": 40, "total_tokens": 120}
+}

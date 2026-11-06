@@ -73,6 +73,7 @@ let package = Package(
         .testTarget(
             name: "UnladenCoreTests",
             dependencies: ["UnladenCore"],
+            resources: [.copy("Fixtures")],
             swiftSettings: swiftSettings,
         ),
         .testTarget(

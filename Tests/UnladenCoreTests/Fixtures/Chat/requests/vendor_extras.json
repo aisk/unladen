@@ -1,0 +1,32 @@
+{
+  "model": "deepseek/deepseek-r1",
+  "provider": {"order": ["DeepSeek", "Together"], "allow_fallbacks": false},
+  "messages": [
+    {"role": "system", "content": [{"type": "text", "text": "You are terse.", "cache_control": {"type": "ephemeral"}}]},
+    {"role": "user", "content": "2+2?"},
+    {"role": "assistant", "reasoning_content": "Simple arithmetic: 4.", "content": "4", "refusal": null},
+    {"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": "UklGRg==", "format": "wav"}}, {"type": "text", "text": "and this?"}]},
+    {"role": "assistant", "content": "Assistant prefix", "prefix": true}
+  ],
+  "reasoning": {"effort": "high", "exclude": false},
+  "top_k": 40,
+  "repetition_penalty": 1.05,
+  "temperature": 1.0,
+  "frequency_penalty": null,
+  "presence_penalty": 0,
+  "logprobs": true,
+  "top_logprobs": 3,
+  "stop": "###",
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {"name": "answer", "strict": true, "schema": {"type": "object", "properties": {"value": {"type": "number"}}, "required": ["value"]}}
+  },
+  "tools": [
+    {"type": "function", "function": {"name": "calc", "description": "Evaluate", "parameters": {"type": "object"}, "defer_loading": true}, "cache_control": {"type": "ephemeral"}},
+    {"type": "web_search_preview", "search_context_size": "low"}
+  ],
+  "tool_choice": "required",
+  "web_search_options": {},
+  "transforms": ["middle-out"],
+  "usage": {"include": true}
+}

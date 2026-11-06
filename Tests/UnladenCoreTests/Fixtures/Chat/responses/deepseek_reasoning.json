@@ -1,0 +1,24 @@
+{
+  "id": "930c60df-bf64-41c9-a88e-3ec75f81e00e",
+  "object": "chat.completion",
+  "created": 1741570100,
+  "model": "deepseek-reasoner",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "The answer is 4.", "reasoning_content": "2 plus 2 equals 4."},
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 30,
+    "total_tokens": 42,
+    "prompt_tokens_details": {"cached_tokens": 0},
+    "completion_tokens_details": {"reasoning_tokens": 22},
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 12
+  },
+  "system_fingerprint": "fp_5417b77867_prod0225"
+}

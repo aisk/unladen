@@ -1,0 +1,24 @@
+{
+  "model": "o4-mini",
+  "messages": [
+    {"role": "developer", "content": [{"type": "text", "text": "Be precise."}, {"type": "text", "text": " Cite sources."}]},
+    {"role": "user", "content": "Look it up."},
+    {
+      "role": "assistant",
+      "tool_calls": [{"id": "call_a", "type": "function", "function": {"name": "search", "arguments": "{\"q\":\"swift 6\"}"}}],
+      "reasoning": "Need to search first."
+    },
+    {"role": "tool", "tool_call_id": "call_a", "content": ""},
+    {"role": "assistant", "content": [{"type": "text", "text": "Nothing found."}], "tool_calls": []},
+    {"role": "user", "content": "OK"}
+  ],
+  "max_completion_tokens": 1000,
+  "max_tokens": 1000,
+  "verbosity": "low",
+  "service_tier": "flex",
+  "prompt_cache_key": "thread-42",
+  "safety_identifier": "hash-1",
+  "tools": [],
+  "tool_choice": null,
+  "stream": false
+}

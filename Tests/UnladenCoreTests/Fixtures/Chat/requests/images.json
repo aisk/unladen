@@ -1,0 +1,22 @@
+{
+  "model": "gpt-4o",
+  "messages": [
+    {"role": "developer", "content": "Answer in French."},
+    {
+      "role": "user",
+      "name": "alice",
+      "content": [
+        {"type": "text", "text": "What is in these images and this PDF?"},
+        {"type": "image_url", "image_url": {"url": "https://example.com/cat.jpg", "detail": "high"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}},
+        {"type": "file", "file": {"filename": "report.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQK"}},
+        {"type": "file", "file": {"file_id": "file-abc123"}}
+      ]
+    }
+  ],
+  "max_tokens": 300,
+  "n": 1,
+  "user": "user-1234",
+  "metadata": {"session": "s-1"},
+  "store": false
+}
