@@ -1,0 +1,66 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "<system-reminder>\nAs you answer, use the context below.\n</system-reminder>"},
+        {"type": "text", "text": "What does this screenshot show? Then check the weather in Paris."},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {"type": "thinking", "thinking": "The image is a single pixel. Then I need the weather tool.", "signature": "EqQBCkYIBxgCKkDiM7w5FjTnL0rLoWq3sZcR8xGjS5qSyN7Hh9b0r3Q=="},
+        {"type": "text", "text": "The screenshot is a single transparent pixel. Let me check the weather."},
+        {"type": "tool_use", "id": "toolu_01A09q90qw90lq917835lq9", "name": "get_weather", "input": {"city": "Paris", "unit": "celsius"}}
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_01A09q90qw90lq917835lq9", "content": [{"type": "text", "text": "Service unavailable"}], "is_error": true}
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {"type": "redacted_thinking", "data": "EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIwxtE3rAFBa8cr3qpPkNRj2YfWXGmKDxH4mPnZ5sQ7vLtaFqI="},
+        {"type": "tool_use", "id": "toolu_01B", "name": "get_weather", "input": {"city": "Paris"}},
+        {"type": "tool_use", "id": "toolu_01C", "name": "Bash", "input": {"command": "date", "description": "Print the date"}}
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_01B", "content": "{\"temp\":18}"},
+        {"type": "tool_result", "tool_use_id": "toolu_01C", "content": [{"type": "text", "text": "Fri Nov  7 10:00:00 UTC 2026"}, {"type": "image", "source": {"type": "url", "url": "https://example.com/chart.png"}}]},
+        {"type": "text", "text": "Thanks. Search the news too.", "cache_control": {"type": "ephemeral"}}
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {"type": "server_tool_use", "id": "srvtoolu_01", "name": "web_search", "input": {"query": "Paris news today"}},
+        {"type": "web_search_tool_result", "tool_use_id": "srvtoolu_01", "content": [{"type": "web_search_result", "title": "Paris", "url": "https://example.com/paris", "encrypted_content": "EqgfCioIARgB", "page_age": null}]},
+        {"type": "text", "text": "Paris is sunny.", "citations": [{"type": "web_search_result_location", "cited_text": "Sunny in Paris", "url": "https://example.com/paris", "title": "Paris", "encrypted_index": "Eo8BCioIAhgB"}]}
+      ]
+    },
+    {"role": "user", "content": "Summarize."}
+  ],
+  "max_tokens": 32000,
+  "metadata": {"user_id": "user_abc123_account_def_session_0f1e"},
+  "stream": true,
+  "system": [
+    {"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."},
+    {"type": "text", "text": "You are an interactive CLI tool that helps users with software engineering tasks.", "cache_control": {"type": "ephemeral"}}
+  ],
+  "temperature": 1,
+  "thinking": {"type": "enabled", "budget_tokens": 31999},
+  "tools": [
+    {"name": "get_weather", "description": "Get the weather for a city.", "input_schema": {"type": "object", "properties": {"city": {"type": "string"}, "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}}, "required": ["city"]}},
+    {"name": "Bash", "description": "Run a shell command.", "input_schema": {"$schema": "http://json-schema.org/draft-07/schema#", "type": "object", "properties": {"command": {"type": "string"}, "description": {"type": "string"}}, "required": ["command"], "additionalProperties": false}, "cache_control": {"type": "ephemeral"}},
+    {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
+  ]
+}

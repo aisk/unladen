@@ -1,0 +1,14 @@
+{
+  "id": "msg_01ToolUse",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-4-5",
+  "content": [
+    {"type": "text", "text": "Checking both cities."},
+    {"type": "tool_use", "id": "toolu_T", "name": "get_weather", "input": {"city": "Tokyo"}},
+    {"type": "tool_use", "id": "toolu_O", "name": "get_weather", "input": {"city": "Osaka"}}
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 80, "output_tokens": 40}
+}

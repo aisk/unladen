@@ -1,0 +1,15 @@
+{
+  "model": "claude-sonnet-4-5",
+  "messages": [
+    {"role": "user", "content": [{"type": "text", "text": "Hi"}]},
+    {"role": "assistant", "content": []},
+    {"role": "user", "content": ""}
+  ],
+  "max_tokens": 100,
+  "metadata": {"user_id": "u", "extra": 1},
+  "system": "",
+  "thinking": {"type": "disabled"},
+  "tool_choice": {"type": "auto", "disable_parallel_tool_use": false},
+  "tools": [],
+  "stream": false
+}

@@ -1,0 +1,21 @@
+{
+  "id": "msg_01Thinking",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-5-20250929",
+  "content": [
+    {"type": "thinking", "thinking": "2 plus 2 is 4.", "signature": "EqQBCkYIBxgCKkDsig=="},
+    {"type": "redacted_thinking", "data": "EmwKAhgBEgyredacted"},
+    {"type": "text", "text": "The answer is 4."}
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 100,
+    "cache_read_input_tokens": 2048,
+    "cache_creation": {"ephemeral_5m_input_tokens": 100, "ephemeral_1h_input_tokens": 0},
+    "output_tokens": 30,
+    "service_tier": "standard"
+  }
+}

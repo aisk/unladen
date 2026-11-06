@@ -16,8 +16,10 @@
     case textStart(id: String, text: WireText)
     case textDelta(id: String, delta: String)
     /// `text`, when non-nil, carries metadata learned at the end (Gemini's
-    /// `thoughtSignature`, which arrives with the last chunk); its non-nil
-    /// fields replace the start's. Its `text` is ignored.
+    /// `thoughtSignature`, which arrives with the last chunk; Anthropic's
+    /// `citations`, collected from `citations_delta`s); its non-nil fields
+    /// replace the start's and its bag keys replace or extend the start's
+    /// bag. Its `text` is ignored.
     case textEnd(id: String, text: WireText?)
 
     /// `reasoning` carries fidelity metadata known at start (item id,
@@ -29,7 +31,9 @@
     /// A piece of the block's signature (appended to the previous pieces).
     case reasoningSignatureDelta(id: String, delta: String)
     /// `reasoning`, when non-nil, carries metadata learned at the end
-    /// (Responses `encrypted_content`); its non-nil fields replace the start's.
+    /// (Responses `encrypted_content`); its non-nil fields replace the
+    /// start's and its bag keys are merged into the start's, as for
+    /// ``textEnd(id:text:)``.
     case reasoningEnd(id: String, reasoning: WireReasoning?)
 
     /// As ``textStart(id:text:)``: metadata only, the text follows as deltas.

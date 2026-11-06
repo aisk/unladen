@@ -12,7 +12,10 @@
     public var message: WireMessage
     public var finishReason: WireFinishReason?
     public var usage: WireUsage?
-    /// Unknown keys of the candidate wrapper (Chat `choices[0]`, e.g. `logprobs`).
+    /// Unknown keys of the candidate wrapper (Chat `choices[0]`, e.g.
+    /// `logprobs`), and other keys that describe how the candidate finished
+    /// (Anthropic `stop_sequence`, `stop_details`). Streams deliver these in
+    /// ``WireFinish/extra``, so an accumulated stream lands them here too.
     public var choiceExtra: JSONObject
     /// Unknown top-level keys (e.g. `system_fingerprint`, `service_tier`).
     public var extra: JSONObject

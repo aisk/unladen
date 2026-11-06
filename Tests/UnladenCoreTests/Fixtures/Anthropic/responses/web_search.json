@@ -1,0 +1,15 @@
+{
+  "id": "msg_01Search",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-20250514",
+  "content": [
+    {"type": "server_tool_use", "id": "srvtoolu_01", "name": "web_search", "input": {"query": "tech news today"}},
+    {"type": "web_search_tool_result", "tool_use_id": "srvtoolu_01", "content": [{"type": "web_search_result", "title": "News", "url": "https://example.com/news", "encrypted_content": "ErkeCioICBgC", "page_age": "2 hours ago"}]},
+    {"type": "text", "text": "Apple reopened Ginza.", "citations": [{"type": "web_search_result_location", "cited_text": "Apple today announced", "url": "https://example.com/news", "title": "News", "encrypted_index": "Eo8BCioIAhgB"}]}
+  ],
+  "stop_reason": "stop_sequence",
+  "stop_sequence": "###",
+  "usage": {"input_tokens": 2037, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 12, "server_tool_use": {"web_search_requests": 1}},
+  "container": null
+}

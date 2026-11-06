@@ -1,0 +1,20 @@
+{
+  "model": "claude-haiku-4-5",
+  "messages": [
+    {"role": "user", "content": "Write a haiku about the sea."},
+    {"role": "assistant", "content": "Waves fold into foam"},
+    {"role": "user", "content": "Another one, please."}
+  ],
+  "max_tokens": 1024,
+  "service_tier": "auto",
+  "stop_sequences": ["\n\nHuman:", "###"],
+  "system": "You are a poet.",
+  "temperature": 0.70,
+  "tool_choice": {"type": "tool", "name": "save_poem", "disable_parallel_tool_use": true},
+  "tools": [
+    {"type": "custom", "name": "save_poem", "description": "Save a poem.", "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}}, "strict": true}
+  ],
+  "top_k": 40,
+  "top_p": 0.9,
+  "anthropic_beta_flag": {"x": 1}
+}
