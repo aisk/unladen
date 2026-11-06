@@ -67,6 +67,10 @@ let package = Package(
                 "UnladenAsyncHTTPClient",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "AsyncHTTPClient", package: "async-http-client"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
             ],
             swiftSettings: swiftSettings,
         ),
@@ -100,7 +104,16 @@ let package = Package(
         ),
         .testTarget(
             name: "UnladenServerTests",
-            dependencies: ["UnladenServer"],
+            dependencies: [
+                "UnladenServer",
+                "UnladenCore",
+                .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "HummingbirdTesting", package: "hummingbird"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+            ],
             swiftSettings: swiftSettings,
         ),
     ]

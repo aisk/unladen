@@ -184,6 +184,25 @@ package struct ResponsesStreamEncoder: Sendable {
         return finishEvents(WireFinish())
     }
 
+    /// A keepalive that is an event, for a gateway client whose idle timer
+    /// ignores SSE comments (Codex counts events only): the reply's
+    /// `response.created`/`response.in_progress` if it has not started yet,
+    /// else another `response.in_progress` with the next `sequence_number`.
+    /// Nothing once the reply ended. Starting the reply here fixes its id
+    /// and model before upstream metadata arrives (later metadata is then
+    /// ignored), as for content arriving first.
+    package mutating func keepalive() -> [SSEElement] {
+        guard !done else { return [] }
+        var out: [SSEElement] = []
+        if !started {
+            ensureStarted(into: &out)
+        } else {
+            let response = responseObject(status: "in_progress", error: .null, incompleteReason: nil, usage: nil, overlay: [:])
+            emit("response.in_progress", ["response": response], into: &out)
+        }
+        return out
+    }
+
     // MARK: Scheduling
 
     private mutating func drain(into out: inout [SSEElement]) {
