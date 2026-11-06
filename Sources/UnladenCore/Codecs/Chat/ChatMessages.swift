@@ -455,7 +455,7 @@ enum ChatEncode {
             if reasoning.count > 1 {
                 warnings.append(WireWarning(.lossyConversion, "reasoning blocks joined into one string", path: keyPath))
             }
-            if reasoning.contains(where: \.hasFidelityData) {
+            if reasoning.contains(where: \.hasSignedData) {
                 warnings.append(WireWarning(.droppedContent, "reasoning signature/encrypted data cannot be carried by Chat", path: keyPath))
             }
             for item in reasoning {

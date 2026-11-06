@@ -1,0 +1,75 @@
+{
+  "id": "resp_reason",
+  "object": "response",
+  "created_at": 1741290958,
+  "status": "completed",
+  "background": false,
+  "error": null,
+  "incomplete_details": null,
+  "instructions": null,
+  "max_output_tokens": null,
+  "model": "gpt-5-2025-08-07",
+  "output": [
+    {
+      "id": "rs_reason",
+      "type": "reasoning",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "**Checking the math**"
+        },
+        {
+          "type": "summary_text",
+          "text": "2 + 2 is 4."
+        }
+      ],
+      "encrypted_content": "gAAAAABoEncryptedReasoning=="
+    },
+    {
+      "id": "msg_reason",
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "The answer is 4."
+        }
+      ],
+      "role": "assistant"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "previous_response_id": null,
+  "reasoning": {
+    "effort": "medium",
+    "summary": "auto"
+  },
+  "service_tier": "auto",
+  "store": false,
+  "temperature": 1.0,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_p": 1.0,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 30,
+    "input_tokens_details": {
+      "cached_tokens": 16
+    },
+    "output_tokens": 120,
+    "output_tokens_details": {
+      "reasoning_tokens": 96
+    },
+    "total_tokens": 150
+  },
+  "user": null,
+  "metadata": {}
+}

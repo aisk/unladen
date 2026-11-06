@@ -29,6 +29,9 @@
 ///   `redacted_thinking.data` → ``WireReasoning/encrypted``. Replies stamp
 ///   their origin (default `"anthropic"`); client requests leave it `nil`.
 ///   What may be replayed is decided by ``AnthropicReplay``.
+/// - Tool-call ids (`tool_use.id`, `tool_result.tool_use_id`) pass through
+///   ``AnthropicToolID``: decoders apply `inbound`, encoders `outbound`, so
+///   other protocols' ids that Anthropic would reject travel reversibly.
 ///
 /// Encoders write keys in a fixed order: `model`, `messages`, `max_tokens`,
 /// then the remaining known fields in API-reference (alphabetical) order,

@@ -266,7 +266,7 @@ package struct AnthropicMessagesStreamEncoder: Sendable {
                 current.startObject = ["type": "redacted_thinking", "data": .string(data)]
             } else {
                 current.startObject = ["type": "thinking", "thinking": "", "signature": .string(current.accepted ? reasoning.signature ?? "" : "")]
-                if !current.accepted, reasoning.hasFidelityData { dropFidelity() }
+                if !current.accepted, reasoning.hasSignedData { dropFidelity() }
             }
             appendExtra(reasoning.extra, to: &current.startObject, include: sameProtocol, path: "content_block", warnings: &warnings)
             live = current
@@ -349,7 +349,7 @@ package struct AnthropicMessagesStreamEncoder: Sendable {
     }
 
     private mutating func toolStart(_ call: WireToolCall) -> JSONObject {
-        var object: JSONObject = ["type": "tool_use", "id": .string(call.id), "name": .string(call.name), "input": [:]]
+        var object: JSONObject = ["type": "tool_use", "id": .string(AnthropicToolID.outbound(call.id)), "name": .string(call.name), "input": [:]]
         if call.signature != nil { dropOnce("tool-signature", "tool call signature cannot be carried by Anthropic") }
         if let itemType = call.itemType {
             warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a tool_use block"))

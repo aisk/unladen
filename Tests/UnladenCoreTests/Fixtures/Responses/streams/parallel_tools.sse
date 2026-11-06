@@ -1,0 +1,57 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_tools","object":"response","created_at":1741290958,"status":"in_progress","background":false,"error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-5-2025-08-07","output":[],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":"medium","summary":"auto"},"service_tier":"auto","store":false,"temperature":1.0,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"top_p":1.0,"truncation":"disabled","usage":null,"user":null,"metadata":{}}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_tools","object":"response","created_at":1741290958,"status":"in_progress","background":false,"error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-5-2025-08-07","output":[],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":"medium","summary":"auto"},"service_tier":"auto","store":false,"temperature":1.0,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"top_p":1.0,"truncation":"disabled","usage":null,"user":null,"metadata":{}}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"id":"rs_tools","type":"reasoning","summary":[]}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"id":"rs_tools","type":"reasoning","summary":[],"encrypted_content":"gAAAAABoToolsEncrypted=="}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":4,"output_index":1,"item":{"id":"fc_tokyo","type":"function_call","status":"in_progress","arguments":"","call_id":"call_T","name":"get_weather"}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":5,"item_id":"fc_tokyo","output_index":1,"delta":"{\"city\":"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":6,"item_id":"fc_tokyo","output_index":1,"delta":"\"Tokyo\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","sequence_number":7,"item_id":"fc_tokyo","output_index":1,"arguments":"{\"city\":\"Tokyo\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":8,"output_index":1,"item":{"id":"fc_tokyo","type":"function_call","status":"completed","arguments":"{\"city\":\"Tokyo\"}","call_id":"call_T","name":"get_weather"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":9,"output_index":2,"item":{"id":"fc_osaka","type":"function_call","status":"in_progress","arguments":"","call_id":"call_O","name":"get_weather"}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":10,"item_id":"fc_osaka","output_index":2,"delta":"{\"city\":\"Osaka\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","sequence_number":11,"item_id":"fc_osaka","output_index":2,"arguments":"{\"city\":\"Osaka\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":12,"output_index":2,"item":{"id":"fc_osaka","type":"function_call","status":"completed","arguments":"{\"city\":\"Osaka\"}","call_id":"call_O","name":"get_weather"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":13,"output_index":3,"item":{"id":"ctc_patch","type":"custom_tool_call","status":"in_progress","input":"","call_id":"call_P","name":"apply_patch"}}
+
+event: response.custom_tool_call_input.delta
+data: {"type":"response.custom_tool_call_input.delta","sequence_number":14,"item_id":"ctc_patch","output_index":3,"delta":"*** Begin Patch\n"}
+
+event: response.custom_tool_call_input.delta
+data: {"type":"response.custom_tool_call_input.delta","sequence_number":15,"item_id":"ctc_patch","output_index":3,"delta":"*** End Patch"}
+
+event: response.custom_tool_call_input.done
+data: {"type":"response.custom_tool_call_input.done","sequence_number":16,"item_id":"ctc_patch","output_index":3,"input":"*** Begin Patch\n*** End Patch"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":17,"output_index":3,"item":{"id":"ctc_patch","type":"custom_tool_call","status":"completed","input":"*** Begin Patch\n*** End Patch","call_id":"call_P","name":"apply_patch"}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":18,"response":{"id":"resp_tools","object":"response","created_at":1741290958,"status":"completed","background":false,"error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-5-2025-08-07","output":[{"id":"rs_tools","type":"reasoning","summary":[],"encrypted_content":"gAAAAABoToolsEncrypted=="},{"id":"fc_tokyo","type":"function_call","status":"completed","arguments":"{\"city\":\"Tokyo\"}","call_id":"call_T","name":"get_weather"},{"id":"fc_osaka","type":"function_call","status":"completed","arguments":"{\"city\":\"Osaka\"}","call_id":"call_O","name":"get_weather"},{"id":"ctc_patch","type":"custom_tool_call","status":"completed","input":"*** Begin Patch\n*** End Patch","call_id":"call_P","name":"apply_patch"}],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":"medium","summary":"auto"},"service_tier":"auto","store":false,"temperature":1.0,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"top_p":1.0,"truncation":"disabled","usage":{"input_tokens":80,"input_tokens_details":{"cached_tokens":0},"output_tokens":40,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":120},"user":null,"metadata":{}}}
+

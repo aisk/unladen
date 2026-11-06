@@ -75,6 +75,10 @@
     case maxOutputTokens
     /// Chat: `reasoning_effort` (OpenAI) or `reasoning` object (OpenRouter).
     case reasoning
+    /// Responses: `input` as a bare string (spelling `"string"`) rather than
+    /// an item list. The encoder honours it only for a single plain user
+    /// text message.
+    case input
 }
 
 /// A tool offered to the model.

@@ -192,7 +192,8 @@ extension ChatCompletionsCodec {
     ///
     /// Bags and the client's spellings (``WireRequest/spellings``, part
     /// `sourceKey`s) are honoured only if `request.source` is Chat: another
-    /// protocol's spelling may be invalid here. Content Chat cannot carry
+    /// protocol's spelling may be invalid here. Consecutive assistant messages
+    /// of another protocol are merged into one. Content Chat cannot carry
     /// (signatures, top-k, other protocols' opaque parts) is dropped with a
     /// warning. No default values are added.
     public static func buildRequest(_ request: WireRequest) -> WireEncoded {
@@ -209,7 +210,22 @@ extension ChatCompletionsCodec {
             )
             messages += ChatEncode.messages(system, include: include, path: "instructions", warnings: &warnings)
         }
+        // Another protocol may split one model turn into several messages
+        // (Responses: one item each); Chat needs it whole, so tool calls
+        // sit in one message before their results.
+        var merged: [(message: WireMessage, index: Int)] = []
         for (i, message) in request.messages.enumerated() {
+            if !include, message.role == .assistant, let last = merged.last, last.message.role == .assistant {
+                var combined = last.message
+                combined.parts += message.parts
+                combined.contentForm = nil
+                for (key, value) in message.extra where combined.extra[key] == nil { combined.extra[key] = value }
+                merged[merged.count - 1].message = combined
+            } else {
+                merged.append((message, i))
+            }
+        }
+        for (message, i) in merged {
             messages += ChatEncode.messages(message, include: include, path: WirePath.index("messages", i), warnings: &warnings)
         }
         object["messages"] = .array(messages)

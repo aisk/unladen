@@ -75,7 +75,7 @@ package struct ChatCompletionsStreamEncoder: Sendable {
         case .reasoningStart(let block, let reasoning):
             let key = sameProtocol ? reasoning.sourceKey.flatMap { chatReasoningKeys.contains($0) ? $0 : nil } : nil
             reasoningKeyByBlock[block] = key ?? "reasoning_content"
-            if reasoning.hasFidelityData { dropFidelity(block) }
+            if reasoning.hasSignedData { dropFidelity(block) }
 
         case .reasoningDelta(let block, let delta):
             if !delta.isEmpty {
@@ -86,7 +86,7 @@ package struct ChatCompletionsStreamEncoder: Sendable {
             dropFidelity(block)
 
         case .reasoningEnd(let block, let reasoning):
-            if reasoning?.hasFidelityData == true { dropFidelity(block) }
+            if reasoning?.hasSignedData == true { dropFidelity(block) }
 
         case .toolInputStart(let block, let call):
             output += startTool(block: block, call: call, arguments: "")

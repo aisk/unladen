@@ -1,0 +1,18 @@
+{
+  "id": "resp_search",
+  "object": "response",
+  "created_at": 1741290958,
+  "status": "completed",
+  "error": null,
+  "incomplete_details": null,
+  "model": "gpt-5-2025-08-07",
+  "output": [
+    {"id": "ws_1", "type": "web_search_call", "status": "completed", "action": {"type": "search", "query": "swift news"}},
+    {"id": "msg_1", "type": "message", "status": "completed", "role": "assistant", "content": [
+      {"type": "output_text", "text": "Swift 6.4 shipped.", "logprobs": [], "annotations": [{"type": "url_citation", "start_index": 0, "end_index": 9, "url": "https://swift.org", "title": "Swift"}]},
+      {"type": "output_text", "text": " More soon.", "annotations": [], "logprobs": []}
+    ]}
+  ],
+  "usage": {"input_tokens": 300, "input_tokens_details": {"cached_tokens": 0}, "output_tokens": 20, "output_tokens_details": {"reasoning_tokens": 0}, "total_tokens": 320},
+  "tools": [{"type": "web_search"}]
+}

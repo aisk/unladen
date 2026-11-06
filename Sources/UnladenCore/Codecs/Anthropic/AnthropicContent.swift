@@ -23,6 +23,47 @@ enum AnthropicReplay {
     }
 }
 
+// MARK: - Tool ids
+
+/// Anthropic accepts only `[A-Za-z0-9_-]+` as a `tool_use` id; other
+/// protocols' call ids may contain anything (`functions.get:0`, `call|x`).
+///
+/// ``outbound(_:)`` maps any id to a valid one, reversibly and statelessly:
+/// a valid id that does not start with ``mark`` is itself; any other id is
+/// ``mark`` + its unpadded base64url. ``inbound(_:)`` undoes that, so the
+/// upstream that made a call gets its own id back whichever request or
+/// gateway instance the result comes through. Encoders (requests to an
+/// Anthropic upstream, replies to an Anthropic client) apply `outbound`;
+/// decoders (client requests, upstream replies) apply `inbound`.
+@_spi(Wire) public enum AnthropicToolID {
+    public static let mark = "unl_"
+
+    public static func isValid(_ id: String) -> Bool {
+        !id.isEmpty && id.utf8.allSatisfy { byte in
+            switch byte {
+            case UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "A")...UInt8(ascii: "Z"),
+                 UInt8(ascii: "0")...UInt8(ascii: "9"), UInt8(ascii: "_"), UInt8(ascii: "-"):
+                true
+            default:
+                false
+            }
+        }
+    }
+
+    public static func outbound(_ id: String) -> String {
+        if id.isEmpty || (isValid(id) && !id.hasPrefix(mark)) { return id }
+        return mark + Base64.encode(Array(id.utf8), urlSafe: true)
+    }
+
+    public static func inbound(_ id: String) -> String {
+        guard id.hasPrefix(mark), isValid(id),
+              let bytes = Base64.decode(String(id.dropFirst(mark.count)), urlSafe: true), !bytes.isEmpty,
+              case let raw = String(decoding: bytes, as: UTF8.self), Array(raw.utf8) == bytes, outbound(raw) == id
+        else { return id }
+        return raw
+    }
+}
+
 // MARK: - Decoding
 
 enum AnthropicDecode {
@@ -139,7 +180,7 @@ enum AnthropicDecode {
             _ = reader.raw("id")
             _ = reader.raw("name")
             let arguments = reader.raw("input").map { String(decoding: $0.encoded(), as: UTF8.self) } ?? ""
-            return .toolCall(WireToolCall(id: id, name: name, arguments: arguments, extra: bag(reader, warnings: &warnings)))
+            return .toolCall(WireToolCall(id: AnthropicToolID.inbound(id), name: name, arguments: arguments, extra: bag(reader, warnings: &warnings)))
 
         case "tool_result":
             guard case .string(let callID)? = object["tool_use_id"] else {
@@ -149,7 +190,7 @@ enum AnthropicDecode {
             let content = try content(reader.raw("content"), path: reader.path("content"), origin: origin, warnings: &warnings)
             let isError = try reader.bool("is_error")
             return .toolResult(WireToolResult(
-                callID: callID, content: content.parts, contentForm: content.form, isError: isError,
+                callID: AnthropicToolID.inbound(callID), content: content.parts, contentForm: content.form, isError: isError,
                 extra: bag(reader, warnings: &warnings),
             ))
 
@@ -334,7 +375,7 @@ enum AnthropicEncode {
                 } else {
                     object["signature"] = ""
                 }
-                if !accepted, reasoning.hasFidelityData {
+                if !accepted, reasoning.hasSignedData {
                     warnings.append(WireWarning(
                         .droppedContent,
                         "reasoning signature from \(reasoning.origin ?? "another protocol") cannot be carried by Anthropic",
@@ -351,7 +392,7 @@ enum AnthropicEncode {
 
         case .toolCall(let call):
             object["type"] = "tool_use"
-            object["id"] = .string(call.id)
+            object["id"] = .string(AnthropicToolID.outbound(call.id))
             object["name"] = .string(call.name)
             object["input"] = toolInput(call.arguments, path: WirePath.key(path, "input"), warnings: &warnings)
             if call.signature != nil {
@@ -365,7 +406,7 @@ enum AnthropicEncode {
 
         case .toolResult(let result):
             object["type"] = "tool_result"
-            object["tool_use_id"] = .string(result.callID)
+            object["tool_use_id"] = .string(AnthropicToolID.outbound(result.callID))
             let contentPath = WirePath.key(path, "content")
             let inner = blocks(result.content, context: context, path: contentPath, warnings: &warnings).filter { block in
                 let type = block.json["type"]?.stringValue ?? ""

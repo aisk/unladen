@@ -230,7 +230,7 @@
             extra["name"] = nil
             extra["input"] = nil
             let call = WireToolCall(
-                id: block["id"]?.stringValue ?? "", name: block["name"]?.stringValue ?? "", arguments: "", extra: extra,
+                id: AnthropicToolID.inbound(block["id"]?.stringValue ?? ""), name: block["name"]?.stringValue ?? "", arguments: "", extra: extra,
             )
             let id = newBlock("tool")
             events.append(.toolInputStart(id: id, call: call))

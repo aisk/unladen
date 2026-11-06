@@ -1,0 +1,22 @@
+{
+  "model": "gpt-4.1",
+  "input": "Write a haiku about Swift.",
+  "previous_response_id": "resp_prev",
+  "instructions": "Be poetic.",
+  "temperature": 0.70,
+  "top_p": 1,
+  "max_output_tokens": 200,
+  "text": {
+    "format": {"type": "json_schema", "name": "haiku", "schema": {"type": "object", "properties": {"lines": {"type": "array"}}}, "strict": true},
+    "verbosity": "medium"
+  },
+  "tool_choice": {"type": "function", "name": "lookup"},
+  "tools": [{"type": "function", "name": "lookup", "parameters": {"type": "object", "properties": {}}}],
+  "truncation": "auto",
+  "metadata": {"k": "v"},
+  "service_tier": "flex",
+  "user": "u-1",
+  "safety_identifier": "sid-1",
+  "store": true,
+  "vendor_flag": 1
+}

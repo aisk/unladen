@@ -176,10 +176,13 @@
 ///
 /// **Responses summaries.** A Responses `reasoning` item with N `summary`
 /// parts decodes to N consecutive `WireReasoning` parts that share
-/// ``itemID`` and carry ``summaryIndex`` 0..<N; item-level data
-/// (``encrypted``, the item's bag) is on the first. The Responses encoder
-/// merges consecutive parts with the same item id back into one item. In
-/// streams each summary part is its own reasoning block (a new
+/// ``itemID`` and carry ``summaryIndex`` 0..<N, followed by one part per
+/// `content` entry (`reasoning_text`, ``sourceKey`` `"content"`, its index
+/// in ``summaryIndex``); an item with neither is one empty part with no
+/// index. Item-level data (``encrypted``, the item's bag) is on the *last*
+/// part, because a stream delivers it with the item's end. The Responses
+/// encoder merges consecutive parts with the same item id back into one
+/// item. In streams each summary part is its own reasoning block (a new
 /// ``WireEvent/reasoningStart(id:reasoning:)`` with the same item id and the
 /// next summary index). Other encoders treat them as separate blocks.
 @_spi(Wire) public struct WireReasoning: Hashable, Sendable {
@@ -197,7 +200,8 @@
     /// The system that produced ``signature``, ``encrypted`` and ``itemID``.
     public var origin: WireSystemID?
     /// The field the source protocol used, when it has several spellings
-    /// (Chat: `reasoning_content` vs `reasoning`).
+    /// (Chat: `reasoning_content` vs `reasoning`; Responses: `"content"` for
+    /// a `reasoning_text` entry rather than a summary).
     public var sourceKey: String?
     /// Unknown keys of the reasoning object, when it was an object.
     public var extra: JSONObject
@@ -224,6 +228,11 @@
 
     /// `true` if this carries data only its origin can verify.
     public var hasFidelityData: Bool { signature != nil || encrypted != nil || itemID != nil }
+
+    /// `true` if this carries a signature or encrypted payload: content
+    /// whose loss is worth a warning (item ids alone are bookkeeping and are
+    /// dropped silently across protocols).
+    public var hasSignedData: Bool { signature != nil || encrypted != nil }
 }
 
 /// A tool call made by the model.
@@ -336,7 +345,9 @@
     public var value: JSONValue
     /// Where in the source protocol's structure it lived when that is not
     /// implied by its position, e.g. Chat `tool_calls` for a non-function
-    /// call inside an assistant message. `nil` for ordinary content.
+    /// call inside an assistant message; Responses `"item"` for a whole
+    /// top-level item (`web_search_call`, `item_reference`…) as opposed to a
+    /// content part. `nil` for ordinary content.
     public var slot: String?
 
     public init(protocol: WireProtocol, value: JSONValue, slot: String? = nil) {

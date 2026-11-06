@@ -183,3 +183,77 @@ enum DataURL {
         "data:\(mediaType);base64,\(data)"
     }
 }
+
+/// RFC 4648 base64, standard or URL-safe alphabet (Foundation-free).
+enum Base64 {
+    private static let standard = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".utf8)
+    private static let urlSafe = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".utf8)
+
+    /// Encodes `bytes`; the URL-safe form is unpadded.
+    static func encode(_ bytes: some Collection<UInt8>, urlSafe url: Bool = false) -> String {
+        let table = url ? urlSafe : standard
+        let input = Array(bytes)
+        var output: [UInt8] = []
+        output.reserveCapacity((input.count + 2) / 3 * 4)
+        var i = 0
+        while i < input.count {
+            let b0 = input[i]
+            let b1 = i + 1 < input.count ? input[i + 1] : 0
+            let b2 = i + 2 < input.count ? input[i + 2] : 0
+            output.append(table[Int(b0 >> 2)])
+            output.append(table[Int((b0 & 0x03) << 4 | b1 >> 4)])
+            if i + 1 < input.count {
+                output.append(table[Int((b1 & 0x0F) << 2 | b2 >> 6)])
+            } else if !url {
+                output.append(UInt8(ascii: "="))
+            }
+            if i + 2 < input.count {
+                output.append(table[Int(b2 & 0x3F)])
+            } else if !url {
+                output.append(UInt8(ascii: "="))
+            }
+            i += 3
+        }
+        return String(decoding: output, as: UTF8.self)
+    }
+
+    /// Decodes `string`, or `nil` if it is not valid in the chosen alphabet.
+    /// Padding is optional; non-zero trailing bits are rejected, so every
+    /// accepted string is the encoding of its result.
+    static func decode(_ string: String, urlSafe url: Bool = false) -> [UInt8]? {
+        let table = url ? urlSafe : standard
+        var values: [UInt8] = []
+        values.reserveCapacity(string.utf8.count)
+        var padding = 0
+        for byte in string.utf8 {
+            if byte == UInt8(ascii: "=") {
+                padding += 1
+                continue
+            }
+            guard padding == 0, let index = table.firstIndex(of: byte) else { return nil }
+            values.append(UInt8(index))
+        }
+        if padding > 0, (values.count + padding) % 4 != 0 || padding > 2 { return nil }
+        if values.count % 4 == 1 { return nil }
+        var output: [UInt8] = []
+        output.reserveCapacity(values.count * 3 / 4)
+        var i = 0
+        while i + 1 < values.count {
+            let v0 = values[i], v1 = values[i + 1]
+            output.append(v0 << 2 | v1 >> 4)
+            if i + 2 < values.count {
+                let v2 = values[i + 2]
+                output.append((v1 & 0x0F) << 4 | v2 >> 2)
+                if i + 3 < values.count {
+                    output.append((v2 & 0x03) << 6 | values[i + 3])
+                } else if v2 & 0x03 != 0 {
+                    return nil
+                }
+            } else if v1 & 0x0F != 0 {
+                return nil
+            }
+            i += 4
+        }
+        return output
+    }
+}

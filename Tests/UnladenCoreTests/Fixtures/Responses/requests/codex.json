@@ -1,0 +1,38 @@
+{
+  "model": "gpt-5-codex",
+  "instructions": "You are Codex, a coding agent running in a terminal.",
+  "input": [
+    {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "<permissions>workspace-write</permissions>"}]},
+    {"type": "message", "role": "user", "content": [
+      {"type": "input_text", "text": "Fix the failing test."},
+      {"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo=", "detail": "auto"}
+    ]},
+    {"type": "reasoning", "id": "rs_01", "summary": [
+      {"type": "summary_text", "text": "**Inspecting tests**"},
+      {"type": "summary_text", "text": "**Planning the fix**"}
+    ], "content": null, "encrypted_content": "gAAAAABoEncrypted01=="},
+    {"type": "message", "role": "assistant", "id": "msg_01", "content": [{"type": "output_text", "text": "Let me look at the tests."}]},
+    {"type": "function_call", "id": "fc_01", "call_id": "call_A", "name": "shell", "arguments": "{\"command\":[\"ls\"]}"},
+    {"type": "function_call", "id": "fc_02", "call_id": "call_B", "name": "shell", "arguments": "{\"command\":[\"swift\",\"test\"]}"},
+    {"type": "function_call_output", "call_id": "call_A", "output": "Package.swift\nSources\nTests"},
+    {"type": "function_call_output", "call_id": "call_B", "output": [{"type": "input_text", "text": "1 test failed"}]},
+    {"type": "custom_tool_call", "id": "ctc_01", "call_id": "call_C", "name": "apply_patch", "input": "*** Begin Patch\n*** End Patch"},
+    {"type": "custom_tool_call_output", "call_id": "call_C", "output": "Done!"},
+    {"type": "item_reference", "id": "msg_00"},
+    {"type": "web_search_call", "id": "ws_01", "status": "completed", "action": {"type": "search", "query": "swift testing"}},
+    {"type": "reasoning", "summary": [], "encrypted_content": "gAAAAABoEncrypted02=="},
+    {"type": "message", "role": "user", "content": "Thanks, now run the tests again."}
+  ],
+  "tools": [
+    {"type": "function", "name": "shell", "description": "Runs a shell command", "strict": false, "parameters": {"type": "object", "properties": {"command": {"type": "array", "items": {"type": "string"}}}, "required": ["command"], "additionalProperties": false}},
+    {"type": "custom", "name": "apply_patch", "description": "Applies a patch", "format": {"type": "grammar", "syntax": "lark", "definition": "start: /.+/"}},
+    {"type": "web_search"}
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "reasoning": {"effort": "medium", "summary": "auto"},
+  "store": false,
+  "stream": true,
+  "include": ["reasoning.encrypted_content"],
+  "prompt_cache_key": "019a5c3e-session"
+}
