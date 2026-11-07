@@ -275,6 +275,9 @@ enum GeminiDecode {
 // MARK: - Encoding
 
 enum GeminiEncode {
+    /// Why a cache breakpoint is dropped.
+    static let noCache = "Gemini has no per-part breakpoint (caching is implicit or uses cachedContent)"
+
     /// Settings that every part encoder needs.
     struct Context {
         /// The target is the source protocol: bags and opaque parts go back.
@@ -304,6 +307,7 @@ enum GeminiEncode {
     ) -> JSONValue? {
         let include = context.include
         var object = JSONObject()
+        defer { dropCacheControl(part.cacheControl, path: path, reason: GeminiEncode.noCache, warnings: &warnings) }
         switch part {
         case .text(let text):
             object["text"] = .string(text.text)
@@ -317,11 +321,13 @@ enum GeminiEncode {
                 }
             }
             appendExtra(text.extra, to: &object, include: include, path: path, warnings: &warnings)
+            applyPatch(text.patch, to: &object, target: .gemini)
 
         case .refusal(let refusal):
             warnings.append(WireWarning(.lossyConversion, "refusal sent as a text part", path: path))
             object["text"] = .string(refusal.text)
             appendExtra(refusal.extra, to: &object, include: false, path: path, warnings: &warnings)
+            applyPatch(refusal.patch, to: &object, target: .gemini)
 
         case .reasoning(let reasoning):
             let accepted = context.accepts(reasoning.origin)
@@ -349,6 +355,7 @@ enum GeminiEncode {
                 }
             }
             appendExtra(reasoning.extra, to: &object, include: include, path: path, warnings: &warnings)
+            applyPatch(reasoning.patch, to: &object, target: .gemini)
 
         case .image(let media), .file(let media):
             var data = JSONObject()
@@ -385,6 +392,7 @@ enum GeminiEncode {
             if case .object(let outer)? = outer {
                 appendExtra(outer, to: &object, include: include, path: path, warnings: &warnings)
             }
+            applyPatch(media.patch, to: &object, target: .gemini)
 
         case .toolCall(let call):
             let signature = call.signature.flatMap { context.accepts(call.origin) ? $0 : nil }
@@ -441,6 +449,7 @@ enum GeminiEncode {
             if case .object(let outer)? = outer {
                 appendExtra(outer, to: &object, include: include, path: path, warnings: &warnings)
             }
+            applyPatch(result.patch, to: &object, target: .gemini)
 
         case .opaque(let opaque):
             guard opaque.protocol == .gemini else {
@@ -479,6 +488,7 @@ enum GeminiEncode {
         if case .object(let outer)? = outer {
             appendExtra(outer, to: &object, include: context.include, path: path, warnings: &warnings)
         }
+        applyPatch(call.patch, to: &object, target: .gemini)
         return .object(object)
     }
 

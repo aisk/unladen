@@ -290,19 +290,24 @@
     // MARK: - flattenTextParts
 
     /// See ``ProfileTransform/flattenTextParts``: content made only of text
-    /// parts without bags is joined with newlines into one part and marked
-    /// ``WireContentForm/string``.
-    public static func flattenTextParts(_ request: inout WireRequest, warnings: inout [WireWarning]) {
+    /// parts without bags, provider options or (when `keepsCacheControl`,
+    /// the upstream honouring them) cache breakpoints is joined with
+    /// newlines into one part and marked ``WireContentForm/string``. A
+    /// breakpoint that would not be written anyway goes on the joined part,
+    /// for the encoder to report.
+    public static func flattenTextParts(_ request: inout WireRequest, keepsCacheControl: Bool = false, warnings: inout [WireWarning]) {
         let sameProtocol = request.source == .chatCompletions
         func flatten(_ parts: inout [WirePart], _ form: inout WireContentForm?) {
             var texts: [WireText] = []
             for part in parts {
-                guard case .text(let text) = part, !(sameProtocol && !text.extra.isEmpty) else { return }
+                guard case .text(let text) = part, !(sameProtocol && !text.extra.isEmpty),
+                      !(keepsCacheControl && text.cacheControl != nil), text.patch == nil else { return }
                 texts.append(text)
             }
             guard var first = texts.first else { return }
             if texts.count > 1 {
                 first.text = texts.map(\.text).joined(separator: "\n")
+                first.cacheControl = texts.last { $0.cacheControl != nil }?.cacheControl
                 parts = [.text(first)]
             }
             form = .string

@@ -104,6 +104,10 @@
     /// Unknown keys of a protocol's wrapper object around it (Chat's
     /// `{"type":"function","function":{…}}`).
     public var envelopeExtra: JSONObject
+    /// A prompt-cache breakpoint on the tool definition (see ``WireCacheControl``).
+    public var cacheControl: WireCacheControl?
+    /// Caller JSON for the tool object the target writes (see ``WirePatch``).
+    public var patch: WirePatch?
 
     public init(
         name: String,
@@ -113,6 +117,8 @@
         sourceKey: String? = nil,
         extra: JSONObject = [:],
         envelopeExtra: JSONObject = [:],
+        cacheControl: WireCacheControl? = nil,
+        patch: WirePatch? = nil,
     ) {
         self.name = name
         self.description = description
@@ -121,6 +127,8 @@
         self.sourceKey = sourceKey
         self.extra = extra
         self.envelopeExtra = envelopeExtra
+        self.cacheControl = cacheControl
+        self.patch = patch
     }
 }
 

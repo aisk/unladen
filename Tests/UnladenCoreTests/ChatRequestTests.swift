@@ -127,8 +127,8 @@ private func parseFixture(_ name: String) throws -> WireDecoded<WireRequest> {
         #expect(request.responseFormat?.name == "answer")
         #expect(request.toolChoice == .required)
 
-        // Part-level bag.
-        #expect(request.messages[0].parts == [.text(WireText("You are terse.", extra: ["cache_control": ["type": "ephemeral"]]))])
+        // A cache breakpoint is typed, not a bag key.
+        #expect(request.messages[0].parts == [.text(WireText("You are terse.", cacheControl: WireCacheControl()))])
         // DeepSeek reasoning in history, refusal: null kept in the message bag.
         #expect(request.messages[2].parts == [
             .reasoning(WireReasoning(text: "Simple arithmetic: 4.", sourceKey: "reasoning_content")),
@@ -150,7 +150,8 @@ private func parseFixture(_ name: String) throws -> WireDecoded<WireRequest> {
             return
         }
         #expect(calc.extra == ["defer_loading": true])
-        #expect(calc.envelopeExtra == ["cache_control": ["type": "ephemeral"]])
+        #expect(calc.envelopeExtra.isEmpty)
+        #expect(calc.cacheControl == WireCacheControl())
 
         let codes = Set(decoded.warnings.map(\.code))
         #expect(codes == [.unknownField, .opaqueContent])

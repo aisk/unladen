@@ -283,6 +283,8 @@ extension ResponsesCodec {
                 if case .text(let text)? = parts.first {
                     instructions = text.text
                     appendExtra(text.extra, to: &object, include: false, path: "instructions", warnings: &warnings)
+                    dropCacheControl(text.cacheControl, path: "instructions", reason: ResponsesEncode.noCache, warnings: &warnings)
+                    dropPatch(text.patch, target: .responses, path: "instructions", warnings: &warnings)
                     if text.signature != nil {
                         warnings.append(WireWarning(.droppedContent, "text signature cannot be carried by Responses", path: "instructions"))
                     }
@@ -432,6 +434,8 @@ extension ResponsesCodec {
             }
             appendExtra(function.extra, to: &object, include: include, path: path, warnings: &warnings)
             appendExtra(function.envelopeExtra, to: &object, include: include, path: path, warnings: &warnings)
+            dropCacheControl(function.cacheControl, path: path, reason: ResponsesEncode.noCache, warnings: &warnings)
+            applyPatch(function.patch, to: &object, target: .responses)
             return .object(object)
         case .opaque(let opaque):
             guard opaque.protocol == .responses else {

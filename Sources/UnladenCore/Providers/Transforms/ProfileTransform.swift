@@ -100,7 +100,8 @@ extension ProfileTransform {
             WireTransforms.ensureThinkingOnToolTurns(&request)
         case .flattenTextParts:
             guard context.target == .chatCompletions else { return }
-            WireTransforms.flattenTextParts(&request, warnings: &outcome.warnings)
+            let keeps = context.profile.chatCacheControlOption ?? (request.source == .chatCompletions)
+            WireTransforms.flattenTextParts(&request, keepsCacheControl: keeps, warnings: &outcome.warnings)
         case .mapReasoningEffort:
             WireTransforms.mapReasoningEffort(&request, profile: context.profile, warnings: &outcome.warnings)
         case .dropUnsupportedParams:

@@ -447,6 +447,7 @@ extension GeminiCodec {
 
         var systemParts = request.instructions
         var systemForm = request.instructionsForm
+        var systemPatch: WirePatch?
         var turns = GeminiTurns(context: context, callNames: callNames, fallback: options.missingSignatureFallback)
         var leading = true
         for (i, message) in request.messages.enumerated() {
@@ -456,6 +457,7 @@ extension GeminiCodec {
                 systemParts = (systemParts ?? []) + message.parts
                 var unused = JSONObject()
                 appendExtra(message.extra, to: &unused, include: false, path: path, warnings: &warnings)
+                systemPatch = WirePatch.combined(systemPatch, message.patch)
                 continue
             }
             leading = false
@@ -473,13 +475,17 @@ extension GeminiCodec {
                 }
                 if let value = GeminiEncode.part(part, context: context, path: path, warnings: &warnings) { encoded.append(value) }
             }
-            if include, systemForm == .string, encoded.count <= 1, request.instructionsExtra.isEmpty {
+            let patched = hasPatch(systemPatch, for: .gemini)
+            if include, systemForm == .string, encoded.count <= 1, request.instructionsExtra.isEmpty, !patched {
                 object["systemInstruction"] = .string(encoded.first?["text"]?.stringValue ?? "")
             } else if !(encoded.isEmpty && !include) {
                 var system = JSONObject()
                 if !(include && systemForm == .absent && encoded.isEmpty) { system["parts"] = .array(encoded) }
                 appendExtra(request.instructionsExtra, to: &system, include: include, path: "systemInstruction", warnings: &warnings)
+                applyPatch(systemPatch, to: &system, target: .gemini)
                 object["systemInstruction"] = .object(system)
+            } else {
+                dropPatch(systemPatch, target: .gemini, path: "systemInstruction", warnings: &warnings)
             }
         }
         if let tools = request.tools {
@@ -561,6 +567,8 @@ extension GeminiCodec {
                 }
                 appendExtra(function.extra, to: &object, include: include, path: path, warnings: &warnings)
                 appendExtra(function.envelopeExtra, to: &object, include: include, path: path, warnings: &warnings)
+                dropCacheControl(function.cacheControl, path: path, reason: GeminiEncode.noCache, warnings: &warnings)
+                applyPatch(function.patch, to: &object, target: .gemini)
                 declarations.append(.object(object))
             case .opaque(let opaque):
                 guard opaque.protocol == .gemini else {
@@ -667,6 +675,7 @@ private struct GeminiTurns {
         var parts: [JSONValue]
         var extra: JSONObject
         var absentParts: Bool
+        var patch: WirePatch? = nil
     }
 
     let context: GeminiEncode.Context
@@ -695,7 +704,10 @@ private struct GeminiTurns {
             case .assistant: "model"
             default: message.role.rawValue
             }
-            turns.append(Turn(role: role, parts: parts, extra: message.extra, absentParts: message.contentForm == .absent && parts.isEmpty))
+            turns.append(Turn(
+                role: role, parts: parts, extra: message.extra, absentParts: message.contentForm == .absent && parts.isEmpty,
+                patch: message.patch,
+            ))
             return
         }
         // Bags of another protocol's message have no place; warn once here.
@@ -714,6 +726,8 @@ private struct GeminiTurns {
             warnings.append(WireWarning(.lossyConversion, "role `\(message.role)` sent as a user turn", path: path))
             role = "user"
         }
+        // Turns this message's parts went into: its patch goes on each.
+        var patched: Set<Int> = []
         for (i, part) in message.parts.enumerated() {
             let partPath = WirePath.index(partsPath, i)
             // Calls are the model's and results the user's, whatever the
@@ -740,10 +754,15 @@ private struct GeminiTurns {
             }
             if let last = turns.last, last.role == partRole {
                 turns[turns.count - 1].parts.append(value)
+                if !patched.contains(turns.count - 1) {
+                    turns[turns.count - 1].patch = WirePatch.combined(turns[turns.count - 1].patch, message.patch)
+                }
             } else {
-                turns.append(Turn(role: partRole, parts: [value], extra: [:], absentParts: false))
+                turns.append(Turn(role: partRole, parts: [value], extra: [:], absentParts: false, patch: message.patch))
             }
+            patched.insert(turns.count - 1)
         }
+        if patched.isEmpty { dropPatch(message.patch, target: .gemini, path: path, warnings: &warnings) }
     }
 
     func finish(warnings: inout [WireWarning]) -> [JSONValue] {
@@ -760,6 +779,7 @@ private struct GeminiTurns {
                 guard !turn.parts.isEmpty else { continue }
                 if let last = merged.last, last.role == turn.role {
                     merged[merged.count - 1].parts += turn.parts
+                    merged[merged.count - 1].patch = WirePatch.combined(last.patch, turn.patch)
                 } else {
                     merged.append(turn)
                 }
@@ -772,6 +792,7 @@ private struct GeminiTurns {
             object["role"] = .string(turn.role)
             var ignored: [WireWarning] = []
             appendExtra(turn.extra, to: &object, include: true, path: "", warnings: &ignored)
+            applyPatch(turn.patch, to: &object, target: .gemini)
             return .object(object)
         }
     }

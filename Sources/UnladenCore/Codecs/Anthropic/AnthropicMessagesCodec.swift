@@ -24,8 +24,10 @@
 /// - Tools without a `type` (or `custom`) are function tools; server tools
 ///   (`web_search_…`, `bash_…`) are opaque.
 /// - Content blocks: see ``AnthropicDecode/block(_:path:origin:warnings:)``.
-///   `cache_control` and `citations` live in part bags (same protocol only;
-///   dropped with a warning elsewhere, like any bag).
+///   `cache_control` on blocks and tools is a ``WireCacheControl`` (written
+///   last, after the bag; spellings it cannot reproduce stay in the bag);
+///   `citations` lives in part bags (same protocol only; dropped with a
+///   warning elsewhere, like any bag).
 /// - Reasoning: `thinking.signature` → ``WireReasoning/signature``,
 ///   `redacted_thinking.data` → ``WireReasoning/encrypted``. Replies stamp
 ///   their origin (default `"anthropic"`); client requests leave it `nil`.
@@ -246,6 +248,7 @@ extension AnthropicMessagesCodec {
         tool.strict = try reader.bool("strict")
         // `type: "custom"` stays in the bag, quietly: it is how it was spelled.
         tool.extra = AnthropicDecode.bag(reader, quiet: ["type", "defer_loading", "input_examples"], warnings: &warnings)
+        tool.cacheControl = WireCacheControl.lift(from: &tool.extra)
         return .function(tool)
     }
 
@@ -291,6 +294,8 @@ extension AnthropicMessagesCodec {
                 systemParts = (systemParts ?? []) + message.parts
                 var unused = JSONObject()
                 appendExtra(message.extra, to: &unused, include: false, path: path, warnings: &warnings)
+                // `system` has no message object: set options on the parts.
+                dropPatch(message.patch, target: .anthropicMessages, path: path, warnings: &warnings)
                 continue
             }
             leading = false
@@ -452,6 +457,8 @@ extension AnthropicMessagesCodec {
             if let value = function.strict { object["strict"] = .bool(value) }
             appendExtra(function.extra, to: &object, include: include, path: path, warnings: &warnings)
             appendExtra(function.envelopeExtra, to: &object, include: include, path: path, warnings: &warnings)
+            writeCacheControl(function.cacheControl, to: &object, allowed: true, path: path, reason: "", warnings: &warnings)
+            applyPatch(function.patch, to: &object, target: .anthropicMessages)
             return .object(object)
         case .opaque(let opaque):
             guard opaque.protocol == .anthropicMessages else {
@@ -473,6 +480,7 @@ private struct AnthropicTurns {
         var form: WireContentForm?
         var extra: JSONObject
         var path: String
+        var patch: WirePatch? = nil
     }
 
     let context: AnthropicEncode.Context
@@ -487,7 +495,9 @@ private struct AnthropicTurns {
         if context.include, ![.developer, .tool, .item].contains(message.role) {
             // Same protocol: as it came (inline `system` messages included).
             let blocks = AnthropicEncode.blocks(message.parts, context: context, path: contentPath, warnings: &warnings)
-            turns.append(Turn(role: message.role.rawValue, blocks: blocks, form: message.contentForm, extra: message.extra, path: path))
+            turns.append(Turn(
+                role: message.role.rawValue, blocks: blocks, form: message.contentForm, extra: message.extra, path: path, patch: message.patch,
+            ))
             return
         }
         // Bags of another protocol's message have no place; warn once here.
@@ -520,18 +530,18 @@ private struct AnthropicTurns {
             }
         }
         if !results.isEmpty {
-            turns.append(Turn(role: "user", blocks: results, form: nil, extra: [:], path: path))
+            turns.append(Turn(role: "user", blocks: results, form: nil, extra: [:], path: path, patch: message.patch))
         }
         if !calls.isEmpty {
-            turns.append(Turn(role: "assistant", blocks: calls, form: nil, extra: [:], path: path))
+            turns.append(Turn(role: "assistant", blocks: calls, form: nil, extra: [:], path: path, patch: message.patch))
         }
         switch message.role {
         case .user, .assistant:
             let form = results.isEmpty ? message.contentForm : nil
-            turns.append(Turn(role: message.role.rawValue, blocks: rest, form: form, extra: [:], path: path))
+            turns.append(Turn(role: message.role.rawValue, blocks: rest, form: form, extra: [:], path: path, patch: message.patch))
         case .system, .developer:
             warnings.append(WireWarning(.lossyConversion, "a `\(message.role)` message after the conversation began sent as user text", path: path))
-            turns.append(Turn(role: "user", blocks: rest, form: nil, extra: [:], path: path))
+            turns.append(Turn(role: "user", blocks: rest, form: nil, extra: [:], path: path, patch: message.patch))
         case .tool, .item:
             break
         default:
@@ -558,6 +568,7 @@ private struct AnthropicTurns {
                 if var last = merged.last, last.role == turn.role {
                     last.blocks += turn.blocks
                     last.form = nil
+                    last.patch = WirePatch.combined(last.patch, turn.patch)
                     merged[merged.count - 1] = last
                 } else {
                     merged.append(turn)
@@ -581,6 +592,7 @@ private struct AnthropicTurns {
             }
             var ignored: [WireWarning] = []
             appendExtra(turn.extra, to: &object, include: true, path: turn.path, warnings: &ignored)
+            applyPatch(turn.patch, to: &object, target: .anthropicMessages)
             return .object(object)
         }
     }

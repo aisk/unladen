@@ -392,6 +392,9 @@ enum ResponsesDecode {
 // MARK: - Encoding
 
 enum ResponsesEncode {
+    /// Why a cache breakpoint is dropped.
+    static let noCache = "Responses has no per-block breakpoint (prompt caching is automatic)"
+
     /// Settings that every item encoder needs.
     struct Context {
         /// The target is the source protocol: bags and opaque parts go back.
@@ -417,6 +420,7 @@ enum ResponsesEncode {
     ) -> JSONValue? {
         let include = context.include
         var object = JSONObject()
+        defer { dropCacheControl(part.cacheControl, path: path, reason: ResponsesEncode.noCache, warnings: &warnings) }
         switch part {
         case .text(let text):
             object["type"] = assistant ? "output_text" : "input_text"
@@ -425,6 +429,7 @@ enum ResponsesEncode {
                 warnings.append(WireWarning(.droppedContent, "text signature cannot be carried by Responses", path: path))
             }
             appendExtra(text.extra, to: &object, include: include, path: path, warnings: &warnings)
+            applyPatch(text.patch, to: &object, target: .responses)
 
         case .refusal(let refusal):
             if assistant {
@@ -436,6 +441,7 @@ enum ResponsesEncode {
                 object["text"] = .string(refusal.text)
             }
             appendExtra(refusal.extra, to: &object, include: include, path: path, warnings: &warnings)
+            applyPatch(refusal.patch, to: &object, target: .responses)
 
         case .image(let media):
             guard !assistant else {
@@ -453,6 +459,7 @@ enum ResponsesEncode {
                 warnings.append(WireWarning(.droppedField, "Responses images have no file name", path: WirePath.key(path, "filename")))
             }
             appendExtra(media.extra, to: &object, include: include, path: path, warnings: &warnings)
+            applyPatch(media.patch, to: &object, target: .responses)
 
         case .file(let media):
             guard !assistant else {
@@ -476,6 +483,7 @@ enum ResponsesEncode {
                 warnings.append(WireWarning(.droppedField, "Responses files have no detail setting", path: WirePath.key(path, "detail")))
             }
             appendExtra(media.extra, to: &object, include: include, path: path, warnings: &warnings)
+            applyPatch(media.patch, to: &object, target: .responses)
 
         case .opaque(let opaque):
             guard opaque.protocol == .responses, opaque.slot == nil else {
@@ -508,7 +516,9 @@ enum ResponsesEncode {
                 continue
             }
             items.append(item)
-            if case .text(let text) = part, text.extra.isEmpty || !context.include { plain.append(text.text) }
+            if case .text(let text) = part, text.extra.isEmpty || !context.include, !hasPatch(text.patch, for: .responses) {
+                plain.append(text.text)
+            }
         }
         if items.isEmpty {
             // Another protocol's empty array becomes the always-valid "".
@@ -555,6 +565,7 @@ enum ResponsesEncode {
         for part in parts {
             appendExtra(part.extra, to: &object, include: context.include, path: path, warnings: &warnings)
         }
+        for part in parts { applyPatch(part.patch, to: &object, target: .responses) }
         return .object(object)
     }
 
@@ -573,6 +584,8 @@ enum ResponsesEncode {
             warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a function_call item", path: path))
         }
         appendExtra(call.extra, to: &object, include: context.include, path: path, warnings: &warnings)
+        dropCacheControl(call.cacheControl, path: path, reason: noCache, warnings: &warnings)
+        applyPatch(call.patch, to: &object, target: .responses)
         return .object(object)
     }
 
@@ -603,6 +616,8 @@ enum ResponsesEncode {
             warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a function_call_output item", path: path))
         }
         appendExtra(result.extra, to: &object, include: context.include, path: path, warnings: &warnings)
+        dropCacheControl(result.cacheControl, path: path, reason: noCache, warnings: &warnings)
+        applyPatch(result.patch, to: &object, target: .responses)
         return .object(object)
     }
 
@@ -702,6 +717,14 @@ enum ResponsesEncode {
         if !extraPlaced {
             var unused = JSONObject()
             appendExtra(message.extra, to: &unused, include: false, path: path, warnings: &warnings)
+        }
+        if hasPatch(message.patch, for: .responses) {
+            if output.isEmpty { dropPatch(message.patch, target: .responses, path: path, warnings: &warnings) }
+            output = output.map { item in
+                guard case .object(var object) = item else { return item }
+                applyPatch(message.patch, to: &object, target: .responses)
+                return .object(object)
+            }
         }
         return output
     }

@@ -9,10 +9,15 @@
 /// - ``encodeResponse(_:defaults:)`` ``WireResponse`` → client JSON (gateway
 ///   only); streaming: ``ChatCompletionsStreamEncoder``
 ///
+/// `cache_control` on content parts and on a tool's envelope (OpenRouter's
+/// and other relays' prompt-cache breakpoints for Claude) is typed as
+/// ``WireCacheControl``; see ``ChatRequestOptions/cacheControl`` for where
+/// it is written.
+///
 /// Encoders write keys in a fixed order: `model`, `messages` (or the
 /// response's `id`, `object`, `created`, `model`, `choices`, `usage`), then
 /// the remaining known fields in API-reference (alphabetical) order, then
-/// unknown fields in their decode order.
+/// unknown fields in their decode order, then `cache_control`.
 @_spi(Wire) public enum ChatCompletionsCodec {
     /// Bag keys of a part that hold dialect data a replay needs besides its
     /// typed fields: the `reasoning_details` entry's `type`, `format`,
@@ -35,10 +40,18 @@
     /// (the endpoint trust set; see ``ChatReplay``). Data a Chat client
     /// sent itself goes on to a Chat upstream regardless.
     public var trustedOrigins: Set<WireSystemID>
+    /// Whether prompt-cache breakpoints (``WireCacheControl``) are written
+    /// as `cache_control` on content parts and tools: `true` for an
+    /// upstream that honours them (OpenRouter or another relay serving
+    /// Claude; ``Profile/chatCacheControl``), `false` to drop them with a
+    /// cache-hint warning. `nil` writes them back only to the protocol they
+    /// came from, like a bag.
+    public var cacheControl: Bool?
 
-    public init(maxTokensKey: String? = nil, trustedOrigins: Set<WireSystemID> = []) {
+    public init(maxTokensKey: String? = nil, trustedOrigins: Set<WireSystemID> = [], cacheControl: Bool? = nil) {
         self.maxTokensKey = maxTokensKey
         self.trustedOrigins = trustedOrigins
+        self.cacheControl = cacheControl
     }
 }
 
@@ -212,6 +225,7 @@ extension ChatCompletionsCodec {
         tool.strict = try inner.bool("strict")
         tool.extra = inner.remaining(warnings: &warnings)
         tool.envelopeExtra = outer.remaining(warnings: &warnings)
+        tool.cacheControl = WireCacheControl.lift(from: &tool.envelopeExtra)
         return .function(tool)
     }
 
@@ -226,6 +240,7 @@ extension ChatCompletionsCodec {
     public static func buildRequest(_ request: WireRequest, options: ChatRequestOptions = .init()) -> WireEncoded {
         var warnings: [WireWarning] = []
         let include = request.source == .chatCompletions
+        let cache = options.cacheControl ?? include
         let spellings = include ? request.spellings : [:]
         var object = JSONObject()
         object["model"] = .string(request.model)
@@ -235,7 +250,9 @@ extension ChatCompletionsCodec {
             let system = WireMessage(
                 role: .system, parts: instructions, contentForm: request.instructionsForm, extra: request.instructionsExtra,
             )
-            messages += ChatEncode.messages(system, include: include, trusted: options.trustedOrigins, path: "instructions", warnings: &warnings)
+            messages += ChatEncode.messages(
+                system, include: include, cache: cache, trusted: options.trustedOrigins, path: "instructions", warnings: &warnings,
+            )
         }
         // Another protocol may split one model turn into several messages
         // (Responses: one item each); Chat needs it whole, so tool calls
@@ -247,13 +264,17 @@ extension ChatCompletionsCodec {
                 combined.parts += message.parts
                 combined.contentForm = nil
                 for (key, value) in message.extra where combined.extra[key] == nil { combined.extra[key] = value }
+                combined.patch = WirePatch.combined(combined.patch, message.patch)
                 merged[merged.count - 1].message = combined
             } else {
                 merged.append((message, i))
             }
         }
         for (message, i) in merged {
-            messages += ChatEncode.messages(message, include: include, trusted: options.trustedOrigins, path: WirePath.index("messages", i), warnings: &warnings)
+            messages += ChatEncode.messages(
+                message, include: include, cache: cache, trusted: options.trustedOrigins,
+                path: WirePath.index("messages", i), warnings: &warnings,
+            )
         }
         object["messages"] = .array(messages)
 
@@ -295,7 +316,7 @@ extension ChatCompletionsCodec {
         if let tools = request.tools {
             var items: [JSONValue] = []
             for (i, tool) in tools.enumerated() {
-                if let item = encodeTool(tool, include: include, path: WirePath.index("tools", i), warnings: &warnings) {
+                if let item = encodeTool(tool, include: include, cache: cache, path: WirePath.index("tools", i), warnings: &warnings) {
                     items.append(item)
                 }
             }
@@ -388,6 +409,7 @@ extension ChatCompletionsCodec {
     private static func encodeTool(
         _ tool: WireTool,
         include: Bool,
+        cache: Bool,
         path: String,
         warnings: inout [WireWarning],
     ) -> JSONValue? {
@@ -403,6 +425,11 @@ extension ChatCompletionsCodec {
             outer["type"] = "function"
             outer["function"] = .object(inner)
             appendExtra(function.envelopeExtra, to: &outer, include: include, path: path, warnings: &warnings)
+            writeCacheControl(
+                function.cacheControl, to: &outer, allowed: cache, path: path,
+                reason: "this Chat upstream takes no cache_control", warnings: &warnings,
+            )
+            applyPatch(function.patch, to: &outer, target: .chatCompletions)
             return .object(outer)
         case .opaque(let opaque):
             guard opaque.protocol == .chatCompletions else {

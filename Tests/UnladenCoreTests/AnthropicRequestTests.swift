@@ -57,7 +57,7 @@ private func parse(_ text: String) throws(WireDecodingError) -> WireDecoded<Wire
         #expect(request.instructionsForm == .parts)
         #expect(request.instructions?.last == .text(WireText(
             "You are an interactive CLI tool that helps users with software engineering tasks.",
-            extra: ["cache_control": ["type": "ephemeral"]],
+            cacheControl: WireCacheControl(),
         )))
 
         let first = request.messages[1].parts
@@ -103,7 +103,8 @@ private func parse(_ text: String) throws(WireDecodingError) -> WireDecoded<Wire
             Issue.record("expected a function and a server tool")
             return
         }
-        #expect(bash.extra == ["cache_control": ["type": "ephemeral"]])
+        #expect(bash.extra.isEmpty)
+        #expect(bash.cacheControl == WireCacheControl())
         #expect(bash.parameters?["additionalProperties"] == false)
         #expect(search.value["type"] == "web_search_20250305")
     }

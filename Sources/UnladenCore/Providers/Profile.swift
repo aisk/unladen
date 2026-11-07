@@ -49,6 +49,20 @@ public struct Profile: Hashable, Sendable {
     /// instead of being written back, and so are fields only OpenAI's
     /// platform defines (`store`, `service_tier`, ...).
     public var strictUnknownFields: Bool?
+    /// Whether the upstream honours prompt-cache breakpoints
+    /// (`cache_control`) on Chat content parts and tools: OpenRouter and
+    /// other relays serving Claude. `false` drops them with a cache-hint
+    /// warning (never an error); `nil` writes them back only to a Chat
+    /// client's own request, like an unknown field (dropped too when
+    /// ``strictUnknownFields`` is set). Anthropic Messages always carries
+    /// breakpoints; Responses and Gemini have none (caching there is
+    /// automatic, or uses `cachedContent`).
+    public var chatCacheControl: Bool?
+    /// The most prompt-cache breakpoints one request may carry (Claude: 4).
+    /// The excess is left out with a cache-hint warning, keeping the
+    /// breakpoints on tools, instructions and leading system messages and
+    /// then the newest ones (see `WireTransforms.limitCacheBreakpoints`).
+    public var maxCacheBreakpoints: Int?
     /// The model is always called through this protocol, whatever the
     /// caller prefers (e.g. Claude on OpenRouter through Messages, for cache
     /// breakpoints).
@@ -85,6 +99,8 @@ public struct Profile: Hashable, Sendable {
         effortBudgets: [String: Int]? = nil,
         maxTokensField: MaxTokensField? = nil,
         strictUnknownFields: Bool? = nil,
+        chatCacheControl: Bool? = nil,
+        maxCacheBreakpoints: Int? = nil,
         forcedProtocol: APIProtocol? = nil,
         streaming: StreamingRequirement? = nil,
         acceptsUnsignedThinking: Bool? = nil,
@@ -105,6 +121,8 @@ public struct Profile: Hashable, Sendable {
         self.effortBudgets = effortBudgets
         self.maxTokensField = maxTokensField
         self.strictUnknownFields = strictUnknownFields
+        self.chatCacheControl = chatCacheControl
+        self.maxCacheBreakpoints = maxCacheBreakpoints
         self.forcedProtocol = forcedProtocol
         self.streaming = streaming
         self.acceptsUnsignedThinking = acceptsUnsignedThinking
@@ -133,6 +151,8 @@ public struct Profile: Hashable, Sendable {
             effortBudgets: effortBudgets ?? base.effortBudgets,
             maxTokensField: maxTokensField ?? base.maxTokensField,
             strictUnknownFields: strictUnknownFields ?? base.strictUnknownFields,
+            chatCacheControl: chatCacheControl ?? base.chatCacheControl,
+            maxCacheBreakpoints: maxCacheBreakpoints ?? base.maxCacheBreakpoints,
             forcedProtocol: forcedProtocol ?? base.forcedProtocol,
             streaming: streaming ?? base.streaming,
             acceptsUnsignedThinking: acceptsUnsignedThinking ?? base.acceptsUnsignedThinking,
@@ -149,6 +169,15 @@ public struct Profile: Hashable, Sendable {
 
     /// Effort names in ascending order, for clamping.
     public static let effortOrder = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+}
+
+extension Profile {
+    /// ``ChatRequestOptions/cacheControl`` for this Profile: its
+    /// ``chatCacheControl``, else `false` for an upstream that rejects
+    /// unknown fields, else `nil` (same protocol only).
+    var chatCacheControlOption: Bool? {
+        chatCacheControl ?? (strictUnknownFields == true ? false : nil)
+    }
 }
 
 /// A sampling or generation parameter a model may reject.

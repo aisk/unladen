@@ -68,7 +68,8 @@ enum AnthropicReplay {
 
 enum AnthropicDecode {
     /// Fields Anthropic defines that the wire model keeps in bags: no
-    /// unknown-field warning for them.
+    /// unknown-field warning for them. (`cache_control` is lifted into
+    /// ``WireCacheControl`` afterwards when its spelling allows.)
     static let quietBagKeys: Set<String> = ["cache_control", "citations"]
 
     /// The bag of `reader`'s unconsumed keys, warning only for keys that are
@@ -143,7 +144,9 @@ enum AnthropicDecode {
         case "text":
             guard case .string(let text)? = object["text"] else { return opaque("malformed text block kept as opaque") }
             _ = reader.raw("text")
-            return .text(WireText(text, extra: bag(reader, warnings: &warnings)))
+            var extra = bag(reader, warnings: &warnings)
+            let cache = WireCacheControl.lift(from: &extra)
+            return .text(WireText(text, extra: extra, cacheControl: cache))
 
         case "image", "document":
             guard let source = mediaSource(object["source"]) else {
@@ -156,6 +159,7 @@ enum AnthropicDecode {
                 media.filename = title
             }
             media.extra = bag(reader, quiet: ["context"], warnings: &warnings)
+            media.cacheControl = WireCacheControl.lift(from: &media.extra)
             return type == "image" ? .image(media) : .file(media)
 
         case "thinking":
@@ -183,7 +187,11 @@ enum AnthropicDecode {
             _ = reader.raw("id")
             _ = reader.raw("name")
             let arguments = reader.raw("input").map { String(decoding: $0.encoded(), as: UTF8.self) } ?? ""
-            return .toolCall(WireToolCall(id: AnthropicToolID.inbound(id), name: name, arguments: arguments, extra: bag(reader, warnings: &warnings)))
+            var extra = bag(reader, warnings: &warnings)
+            let cache = WireCacheControl.lift(from: &extra)
+            return .toolCall(WireToolCall(
+                id: AnthropicToolID.inbound(id), name: name, arguments: arguments, extra: extra, cacheControl: cache,
+            ))
 
         case "tool_result":
             guard case .string(let callID)? = object["tool_use_id"] else {
@@ -192,9 +200,11 @@ enum AnthropicDecode {
             _ = reader.raw("tool_use_id")
             let content = try content(reader.raw("content"), path: reader.path("content"), origin: origin, warnings: &warnings)
             let isError = try reader.bool("is_error")
+            var extra = bag(reader, warnings: &warnings)
+            let cache = WireCacheControl.lift(from: &extra)
             return .toolResult(WireToolResult(
                 callID: AnthropicToolID.inbound(callID), content: content.parts, contentForm: content.form, isError: isError,
-                extra: bag(reader, warnings: &warnings),
+                extra: extra, cacheControl: cache,
             ))
 
         default:
@@ -321,7 +331,9 @@ enum AnthropicEncode {
                 warnings.append(WireWarning(.droppedContent, "text signature cannot be carried by Anthropic", path: path))
             }
             appendExtra(text.extra, to: &object, include: include, path: path, warnings: &warnings)
-            let plain = text.extra.isEmpty || !include
+            writeCacheControl(text.cacheControl, to: &object, allowed: true, path: path, reason: "", warnings: &warnings)
+            applyPatch(text.patch, to: &object, target: .anthropicMessages)
+            let plain = (text.extra.isEmpty || !include) && text.cacheControl == nil && !hasPatch(text.patch, for: .anthropicMessages)
             return AnthropicBlock(json: .object(object), plainText: plain ? text.text : nil)
 
         case .refusal(let refusal):
@@ -329,6 +341,7 @@ enum AnthropicEncode {
             object["type"] = "text"
             object["text"] = .string(refusal.text)
             appendExtra(refusal.extra, to: &object, include: false, path: path, warnings: &warnings)
+            applyPatch(refusal.patch, to: &object, target: .anthropicMessages)
             return AnthropicBlock(json: .object(object))
 
         case .image(let media), .file(let media):
@@ -362,6 +375,8 @@ enum AnthropicEncode {
                 warnings.append(WireWarning(.droppedField, "Anthropic images have no file name", path: WirePath.key(path, "filename")))
             }
             appendExtra(media.extra, to: &object, include: include, path: path, warnings: &warnings)
+            writeCacheControl(media.cacheControl, to: &object, allowed: true, path: path, reason: "", warnings: &warnings)
+            applyPatch(media.patch, to: &object, target: .anthropicMessages)
             return AnthropicBlock(json: .object(object))
 
         case .reasoning(let reasoning):
@@ -395,6 +410,7 @@ enum AnthropicEncode {
                 return nil
             }
             appendExtra(reasoning.extra, to: &object, include: include, path: path, warnings: &warnings)
+            applyPatch(reasoning.patch, to: &object, target: .anthropicMessages)
             return AnthropicBlock(json: .object(object))
 
         case .toolCall(let call):
@@ -409,6 +425,8 @@ enum AnthropicEncode {
                 warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a tool_use block", path: path))
             }
             appendExtra(call.extra, to: &object, include: include, path: path, warnings: &warnings)
+            writeCacheControl(call.cacheControl, to: &object, allowed: true, path: path, reason: "", warnings: &warnings)
+            applyPatch(call.patch, to: &object, target: .anthropicMessages)
             return AnthropicBlock(json: .object(object))
 
         case .toolResult(let result):
@@ -431,6 +449,8 @@ enum AnthropicEncode {
                 warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a tool_result block", path: path))
             }
             appendExtra(result.extra, to: &object, include: include, path: path, warnings: &warnings)
+            writeCacheControl(result.cacheControl, to: &object, allowed: true, path: path, reason: "", warnings: &warnings)
+            applyPatch(result.patch, to: &object, target: .anthropicMessages)
             return AnthropicBlock(json: .object(object), isToolResult: true)
 
         case .opaque(let opaque):

@@ -74,10 +74,14 @@ import UnladenTestSupport
         let chat = try ChatCompletionsCodec.parseRequest(Fixtures.bytes("Chat/requests/vendor_extras.json")).value
         let built = AnthropicMessagesCodec.buildRequest(chat)
         #expect(built.json["provider"] == nil)
-        #expect(built.json["system"] == [["type": "text", "text": "You are terse."]], "Chat's cache_control is another protocol's bag")
+        #expect(
+            built.json["system"] == [["type": "text", "text": "You are terse.", "cache_control": ["type": "ephemeral"]]],
+            "a Chat breakpoint is typed, so Anthropic carries it",
+        )
+        #expect(built.json["tools"]?[0]?["cache_control"] == ["type": "ephemeral"])
         let dropped = built.warnings.map(\.path)
         #expect(dropped.contains("provider"))
-        #expect(dropped.contains("system[0].cache_control"))
+        #expect(!dropped.contains { $0.hasSuffix("cache_control") })
         #expect(dropped.contains("messages[4].prefix"))
         #expect(dropped.contains("top_k"), "Chat keeps top_k in its bag, which is Chat's alone")
         #expect(built.warnings.contains { $0.code == .droppedContent && $0.path == "messages[3].content[0]" })

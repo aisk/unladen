@@ -54,12 +54,22 @@
     public var contentForm: WireContentForm?
     /// Unknown keys of the message object, in decode order.
     public var extra: JSONObject
+    /// Caller JSON for each object the target writes for the message (see
+    /// ``WirePatch``).
+    public var patch: WirePatch?
 
-    public init(role: WireRole, parts: [WirePart], contentForm: WireContentForm? = nil, extra: JSONObject = [:]) {
+    public init(
+        role: WireRole,
+        parts: [WirePart],
+        contentForm: WireContentForm? = nil,
+        extra: JSONObject = [:],
+        patch: WirePatch? = nil,
+    ) {
         self.role = role
         self.parts = parts
         self.contentForm = contentForm
         self.extra = extra
+        self.patch = patch
     }
 }
 
@@ -88,8 +98,12 @@
     public var itemID: String?
     /// The system that produced ``signature`` and ``itemID``.
     public var origin: WireSystemID?
-    /// Unknown keys of the part object (e.g. `cache_control`).
+    /// Unknown keys of the part object (e.g. `citations`).
     public var extra: JSONObject
+    /// A prompt-cache breakpoint on this block (see ``WireCacheControl``).
+    public var cacheControl: WireCacheControl?
+    /// Caller JSON for the object the target writes for it (see ``WirePatch``).
+    public var patch: WirePatch?
 
     public init(
         _ text: String,
@@ -97,12 +111,16 @@
         itemID: String? = nil,
         origin: WireSystemID? = nil,
         extra: JSONObject = [:],
+        cacheControl: WireCacheControl? = nil,
+        patch: WirePatch? = nil,
     ) {
         self.text = text
         self.signature = signature
         self.itemID = itemID
         self.origin = origin
         self.extra = extra
+        self.cacheControl = cacheControl
+        self.patch = patch
     }
 }
 
@@ -117,6 +135,8 @@
     /// only by an encoder for the same protocol.
     public var sourceKey: String?
     public var extra: JSONObject
+    /// Caller JSON for the object the target writes for it (see ``WirePatch``).
+    public var patch: WirePatch?
 
     public init(
         _ text: String,
@@ -124,12 +144,14 @@
         origin: WireSystemID? = nil,
         sourceKey: String? = nil,
         extra: JSONObject = [:],
+        patch: WirePatch? = nil,
     ) {
         self.text = text
         self.itemID = itemID
         self.origin = origin
         self.sourceKey = sourceKey
         self.extra = extra
+        self.patch = patch
     }
 }
 
@@ -152,6 +174,10 @@
     public var filename: String?
     /// Unknown keys of the part object.
     public var extra: JSONObject
+    /// A prompt-cache breakpoint on this block (see ``WireCacheControl``).
+    public var cacheControl: WireCacheControl?
+    /// Caller JSON for the object the target writes for it (see ``WirePatch``).
+    public var patch: WirePatch?
 
     public init(
         source: WireMediaSource,
@@ -159,12 +185,16 @@
         detail: String? = nil,
         filename: String? = nil,
         extra: JSONObject = [:],
+        cacheControl: WireCacheControl? = nil,
+        patch: WirePatch? = nil,
     ) {
         self.source = source
         self.mediaType = mediaType
         self.detail = detail
         self.filename = filename
         self.extra = extra
+        self.cacheControl = cacheControl
+        self.patch = patch
     }
 }
 
@@ -205,6 +235,8 @@
     public var sourceKey: String?
     /// Unknown keys of the reasoning object, when it was an object.
     public var extra: JSONObject
+    /// Caller JSON for the object the target writes for it (see ``WirePatch``).
+    public var patch: WirePatch?
 
     public init(
         text: String,
@@ -215,6 +247,7 @@
         origin: WireSystemID? = nil,
         sourceKey: String? = nil,
         extra: JSONObject = [:],
+        patch: WirePatch? = nil,
     ) {
         self.text = text
         self.signature = signature
@@ -224,6 +257,7 @@
         self.origin = origin
         self.sourceKey = sourceKey
         self.extra = extra
+        self.patch = patch
     }
 
     /// `true` if this carries data only its origin can verify.
@@ -263,6 +297,10 @@
     public var origin: WireSystemID?
     /// Unknown keys of the call object.
     public var extra: JSONObject
+    /// A prompt-cache breakpoint on this block (see ``WireCacheControl``).
+    public var cacheControl: WireCacheControl?
+    /// Caller JSON for the object the target writes for it (see ``WirePatch``).
+    public var patch: WirePatch?
 
     public init(
         id: String,
@@ -274,6 +312,8 @@
         signature: String? = nil,
         origin: WireSystemID? = nil,
         extra: JSONObject = [:],
+        cacheControl: WireCacheControl? = nil,
+        patch: WirePatch? = nil,
     ) {
         self.id = id
         self.idSynthesized = idSynthesized
@@ -284,6 +324,8 @@
         self.signature = signature
         self.origin = origin
         self.extra = extra
+        self.cacheControl = cacheControl
+        self.patch = patch
     }
 }
 
@@ -311,6 +353,10 @@
     /// Unknown keys of the result object (for Chat, keys of the `tool`
     /// message go to ``WireMessage/extra``).
     public var extra: JSONObject
+    /// A prompt-cache breakpoint on this block (see ``WireCacheControl``).
+    public var cacheControl: WireCacheControl?
+    /// Caller JSON for the object the target writes for it (see ``WirePatch``).
+    public var patch: WirePatch?
 
     public init(
         callID: String,
@@ -323,6 +369,8 @@
         itemID: String? = nil,
         origin: WireSystemID? = nil,
         extra: JSONObject = [:],
+        cacheControl: WireCacheControl? = nil,
+        patch: WirePatch? = nil,
     ) {
         self.callID = callID
         self.callIDSynthesized = callIDSynthesized
@@ -334,6 +382,8 @@
         self.itemID = itemID
         self.origin = origin
         self.extra = extra
+        self.cacheControl = cacheControl
+        self.patch = patch
     }
 }
 

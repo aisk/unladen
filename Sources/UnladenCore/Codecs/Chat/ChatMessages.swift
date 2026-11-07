@@ -326,7 +326,9 @@ enum ChatDecode {
         case "text":
             guard case .string(let text)? = object["text"] else { return opaque("malformed text part kept as opaque") }
             _ = reader.raw("text")
-            return .text(WireText(text, extra: reader.remaining(warnings: &warnings)))
+            var extra = reader.remaining(warnings: &warnings)
+            let cache = WireCacheControl.lift(from: &extra)
+            return .text(WireText(text, extra: extra, cacheControl: cache))
 
         case "thinking":
             guard let texts = ChatMistral.thinkingText(object["thinking"]), let first = texts.first else {
@@ -360,6 +362,7 @@ enum ChatDecode {
                 media.mediaType = data.mediaType
             }
             media.extra = reader.remaining(warnings: &warnings)
+            media.cacheControl = WireCacheControl.lift(from: &media.extra)
             return .image(media)
 
         case "file":
@@ -388,6 +391,7 @@ enum ChatDecode {
             inner.dropRemaining(warnings: &warnings)
             media.filename = filename
             media.extra = reader.remaining(warnings: &warnings)
+            media.cacheControl = WireCacheControl.lift(from: &media.extra)
             return .file(media)
 
         default:
@@ -555,6 +559,7 @@ enum ChatEncode {
         emptyDefault: JSONValue?,
         joinTexts: Bool = false,
         include: Bool,
+        cache: Bool = false,
         path: String,
         warnings: inout [WireWarning],
     ) -> JSONValue? {
@@ -562,7 +567,7 @@ enum ChatEncode {
         var texts: [String] = []
         var allPlain = true
         for (i, part) in parts.enumerated() {
-            guard let item = self.part(part, include: include, path: WirePath.index(path, i), warnings: &warnings) else {
+            guard let item = self.part(part, include: include, cache: cache, path: WirePath.index(path, i), warnings: &warnings) else {
                 continue
             }
             // Mistral: a later text part of the `thinking` part before.
@@ -576,8 +581,11 @@ enum ChatEncode {
                 continue
             }
             items.append(item)
-            // Plain: nothing in the part's bag would be lost by a string.
-            if case .text(let text) = part, text.extra.isEmpty || !include {
+            // Plain: nothing in the part's bag, breakpoint or options would
+            // be lost by a string.
+            if case .text(let text) = part, text.extra.isEmpty || !include,
+               !(cache && text.cacheControl != nil), !hasPatch(text.patch, for: .chatCompletions)
+            {
                 texts.append(text.text)
             } else {
                 allPlain = false
@@ -612,10 +620,12 @@ enum ChatEncode {
     static func part(
         _ part: WirePart,
         include: Bool,
+        cache: Bool = false,
         path: String,
         warnings: inout [WireWarning],
     ) -> JSONValue? {
         var object = JSONObject()
+        let noCache = "this Chat upstream takes no cache_control"
         switch part {
         case .text(let text):
             object["type"] = "text"
@@ -624,11 +634,14 @@ enum ChatEncode {
                 warnings.append(WireWarning(.droppedContent, "text signature cannot be carried by Chat", path: path))
             }
             appendExtra(text.extra, to: &object, include: include, path: path, warnings: &warnings)
+            writeCacheControl(text.cacheControl, to: &object, allowed: cache, path: path, reason: noCache, warnings: &warnings)
+            applyPatch(text.patch, to: &object, target: .chatCompletions)
 
         case .refusal(let refusal):
             object["type"] = "refusal"
             object["refusal"] = .string(refusal.text)
             appendExtra(refusal.extra, to: &object, include: include, path: path, warnings: &warnings)
+            applyPatch(refusal.patch, to: &object, target: .chatCompletions)
 
         case .image(let media):
             let url: String
@@ -645,6 +658,8 @@ enum ChatEncode {
             object["type"] = "image_url"
             object["image_url"] = .object(image)
             appendExtra(media.extra, to: &object, include: include, path: path, warnings: &warnings)
+            writeCacheControl(media.cacheControl, to: &object, allowed: cache, path: path, reason: noCache, warnings: &warnings)
+            applyPatch(media.patch, to: &object, target: .chatCompletions)
 
         case .file(let media):
             var file = JSONObject()
@@ -661,6 +676,8 @@ enum ChatEncode {
             object["type"] = "file"
             object["file"] = .object(file)
             appendExtra(media.extra, to: &object, include: include, path: path, warnings: &warnings)
+            writeCacheControl(media.cacheControl, to: &object, allowed: cache, path: path, reason: noCache, warnings: &warnings)
+            applyPatch(media.patch, to: &object, target: .chatCompletions)
 
         case .opaque(let opaque):
             guard opaque.protocol == .chatCompletions else {
@@ -675,6 +692,7 @@ enum ChatEncode {
                 warnings.append(WireWarning(.droppedContent, "reasoning signature/encrypted data cannot be carried by Chat", path: path))
             }
             appendExtra(reasoning.extra, to: &thinking, include: include, path: path, warnings: &warnings)
+            applyPatch(reasoning.patch, to: &thinking, target: .chatCompletions)
             return .object(thinking)
 
         case .reasoning, .toolCall, .toolResult:
@@ -709,6 +727,8 @@ enum ChatEncode {
             warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a function call", path: path))
         }
         ChatGemini.appendBag(call.extra, signature: call.signature, write: writes, to: &object, include: include, path: path, warnings: &warnings)
+        dropCacheControl(call.cacheControl, path: path, reason: "Chat tool calls cannot carry one", warnings: &warnings)
+        applyPatch(call.patch, to: &object, target: .chatCompletions)
         return .object(object)
     }
 
@@ -722,6 +742,7 @@ enum ChatEncode {
     static func messages(
         _ message: WireMessage,
         include: Bool,
+        cache: Bool = false,
         trusted: Set<WireSystemID>? = nil,
         path: String,
         warnings: inout [WireWarning],
@@ -780,10 +801,22 @@ enum ChatEncode {
         for result in results {
             var object = JSONObject()
             object["role"] = "tool"
-            let content = content(
-                result.content, form: result.contentForm, emptyDefault: "",
-                include: include, path: WirePath.key(path, "content"), warnings: &warnings,
+            // A result's breakpoint goes on the last part of its message.
+            let carries = cache && result.cacheControl != nil
+            var content = content(
+                result.content, form: carries ? .parts : result.contentForm, emptyDefault: "",
+                include: include, cache: cache, path: WirePath.key(path, "content"), warnings: &warnings,
             )
+            if let cacheControl = result.cacheControl {
+                if carries, case .array(var items)? = content, case .object(var last)? = items.last {
+                    if !last.contains(key: WireCacheControl.key) { last[WireCacheControl.key] = cacheControl.json }
+                    items[items.count - 1] = .object(last)
+                    content = .array(items)
+                } else {
+                    let reason = carries ? "the tool message has no content part to carry it" : "this Chat upstream takes no cache_control"
+                    dropCacheControl(cacheControl, path: path, reason: reason, warnings: &warnings)
+                }
+            }
             if let content { object["content"] = content }
             object["tool_call_id"] = .string(result.callID)
             if result.isError == true {
@@ -796,6 +829,8 @@ enum ChatEncode {
             if message.role == .tool {
                 appendExtra(message.extra, to: &object, include: include, path: path, warnings: &warnings)
             }
+            applyPatch(result.patch, to: &object, target: .chatCompletions)
+            applyPatch(message.patch, to: &object, target: .chatCompletions)
             output.append(.object(object))
         }
         if message.role == .tool { return output }
@@ -813,7 +848,7 @@ enum ChatEncode {
         let emptyDefault: JSONValue? = isAssistant ? .null : ""
         if let content = content(
             rest, form: message.contentForm, emptyDefault: emptyDefault, joinTexts: isAssistant,
-            include: include, path: WirePath.key(path, "content"), warnings: &warnings,
+            include: include, cache: cache, path: WirePath.key(path, "content"), warnings: &warnings,
         ) {
             object["content"] = content
         }
@@ -868,6 +903,10 @@ enum ChatEncode {
         var extra = message.extra
         if extra[ChatGemini.key] == nil, let textExtraContent { extra[ChatGemini.key] = textExtraContent }
         ChatGemini.appendBag(extra, signature: textSignature, write: textSignature != nil, to: &object, include: include, path: path, warnings: &warnings)
+        // Reasoning and refusals are message fields here: no object of their own.
+        for item in reasoning { dropPatch(item.patch, target: .chatCompletions, path: path, warnings: &warnings) }
+        for item in refusals { dropPatch(item.patch, target: .chatCompletions, path: path, warnings: &warnings) }
+        applyPatch(message.patch, to: &object, target: .chatCompletions)
         output.append(.object(object))
         return output
     }

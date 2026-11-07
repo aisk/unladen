@@ -47,7 +47,9 @@ public enum Presets {
         return provider
     }
 
-    /// Claude models before 4.6: budget thinking.
+    /// Claude models before 4.6: budget thinking. Up to four cache
+    /// breakpoints, honoured in Chat requests too (relays such as
+    /// OpenRouter pass `cache_control` on to Claude).
     static let claudeDefaults = Profile(
         defaultMaxOutputTokens: 16000,
         maxOutputTokens: 64000,
@@ -57,6 +59,8 @@ public enum Presets {
         unsupportedParametersWhileReasoning: [.temperature, .topK],
         reasoningControl: .budget,
         effortBudgets: Profile.standardEffortBudgets,
+        chatCacheControl: true,
+        maxCacheBreakpoints: 4,
     )
 
     /// Claude model rules, keyed by the id the endpoint uses (`prefix` is
