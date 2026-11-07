@@ -218,6 +218,10 @@ public struct ReplayToken: Hashable, Sendable {
     let sourceKey: String?
     let idSynthesized: Bool
     let itemType: String?
+    /// Chat dialect data the typed fields do not hold (an OpenRouter
+    /// `reasoning_details` entry's `type`/`format`/`index`/`id`, the rest of
+    /// Gemini's `extra_content`), restored for Chat endpoints.
+    let dialect: JSONObject?
 
     init(
         system: String,
@@ -229,7 +233,9 @@ public struct ReplayToken: Hashable, Sendable {
         sourceKey: String? = nil,
         idSynthesized: Bool = false,
         itemType: String? = nil,
+        dialect: JSONObject? = nil,
     ) {
+        self.dialect = dialect
         self.system = system
         self.signature = signature
         self.encrypted = encrypted

@@ -17,9 +17,11 @@ public enum ProfileTransform: String, Hashable, Sendable, CaseIterable {
     /// "interrupted" error result; results answering no open call (or a
     /// call answered already) are dropped.
     case pairToolCalls
-    /// Reasoning fidelity data from systems the endpoint does not trust is
-    /// stripped (the text stays); Chat `reasoning_details` (bags, and the
-    /// parts decoded from them) become reasoning text. For upstreams that reject others' reasoning (Kimi).
+    /// Reasoning fidelity data from systems the endpoint does not trust
+    /// (by origin; a relay's is qualified by format) is stripped (the text
+    /// stays); Chat `reasoning_details` (bags, and the parts decoded from
+    /// them) become reasoning text. For upstreams that reject others'
+    /// reasoning (Kimi).
     case stripForeignReasoning
     /// Each assistant turn with tool calls, or continuing after tool results,
     /// gets reasoning text (`" "` if it had none), which the Chat encoder

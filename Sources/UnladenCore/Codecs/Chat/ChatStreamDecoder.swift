@@ -73,9 +73,17 @@
         var encrypted: String?
         var extra: JSONObject = [:]
         var hasLate = false
+        /// Stamped on the end metadata's signature or data.
+        var origin: WireSystemID?
     }
 
+    /// The open text, reasoning or refusal block (not a details entry).
     private var open: OpenBlock?
+    /// Open `reasoning_details` blocks, in start order: entries may
+    /// interleave by index, so each stays open until other content comes.
+    private var details: [OpenBlock] = []
+    /// Every details entry (`type#index`) that had a block.
+    private var seenDetails: Set<String> = []
     private var tools: [ToolState] = []
     private var toolByIndex: [Int: Int] = [:]
     private var finishReason: WireFinishReason?
@@ -210,14 +218,19 @@
     private mutating func decodeDelta(_ delta: JSONObject, into events: inout [WireEvent]) {
         let details = reasoningDetails(delta[ChatReasoningDetails.key])
         // Some relays send the same thought under both names; take one.
-        // OpenRouter repeats the details' text in the plain field.
+        // Details with text are the reasoning (as in non-streaming
+        // replies); the plain field OpenRouter repeats it in is then only
+        // its spelling.
+        let detailsHaveText = ChatReasoningDetails.text(details) != nil
         var plainKey: String?
         for key in chatReasoningKeys {
             if case .string(let text)? = delta[key] {
-                if !details.isEmpty, text == details.map(\.text).joined() {
-                    plainKey = key
-                } else if !text.isEmpty {
-                    appendText(.reasoning, text, sourceKey: key, into: &events)
+                if !text.isEmpty {
+                    if detailsHaveText {
+                        plainKey = key
+                    } else {
+                        appendText(.reasoning, text, sourceKey: key, into: &events)
+                    }
                 }
                 break
             }
@@ -307,7 +320,7 @@
             block = newBlock("refusal")
             events.append(.refusalStart(id: block, refusal: WireRefusal("", sourceKey: "refusal")))
         }
-        open = OpenBlock(kind: kind, block: block, sourceKey: sourceKey)
+        open = OpenBlock(kind: kind, block: block, sourceKey: sourceKey, origin: origin)
         return block
     }
 
@@ -331,10 +344,13 @@
     }
 
     /// Appends a `reasoning_details` entry to its block (`type` and
-    /// `index`), starting it if it is not the open one.
+    /// `index`), starting one for an entry not seen before. A fragment for
+    /// an entry whose block has ended, or one with nothing to start a block
+    /// with (a signature alone), is dropped with a warning.
     private mutating func appendDetail(_ entry: ChatReasoningDetails.Entry, position: Int, sourceKey: String?, into events: inout [WireEvent]) {
         let detail = "\(entry.type)#\(entry.meta["index"]?.numberValue?.int ?? position)"
-        if var current = open, current.detail == detail {
+        if let slot = details.firstIndex(where: { $0.detail == detail }) {
+            var current = details[slot]
             if !entry.text.isEmpty { events.append(.reasoningDelta(id: current.block, delta: entry.text)) }
             if let signature = entry.signature {
                 current.signature = signature
@@ -352,15 +368,29 @@
                 current.extra[ChatReasoningDetails.key] = .object(merged)
                 current.hasLate = true
             }
-            open = current
+            details[slot] = current
             return
         }
-        closeOpen(into: &events)
+        let starts = !entry.text.isEmpty || entry.data != nil
+        guard starts, !seenDetails.contains(detail) else {
+            if entry.signature != nil || entry.data != nil || !entry.text.isEmpty {
+                warnings.append(WireWarning(
+                    .malformedStream, "`reasoning_details` fragment for \(detail) has no open block; dropped",
+                    path: "choices[].delta.reasoning_details",
+                ))
+            }
+            return
+        }
+        closeText(into: &events)
+        seenDetails.insert(detail)
         let block = newBlock("reasoning")
         var first = entry
         first.text = ""
         events.append(.reasoningStart(id: block, reasoning: ChatReasoningDetails.reasoning(first, origin: origin, sourceKey: sourceKey)))
-        open = OpenBlock(kind: .reasoning, block: block, sourceKey: sourceKey, detail: detail, detailMeta: entry.meta)
+        details.append(OpenBlock(
+            kind: .reasoning, block: block, sourceKey: sourceKey, detail: detail, detailMeta: entry.meta,
+            origin: ChatReasoningDetails.origin(origin, meta: entry.meta),
+        ))
         if !entry.text.isEmpty { events.append(.reasoningDelta(id: block, delta: entry.text)) }
     }
 
@@ -368,7 +398,7 @@
     /// go to the open text or reasoning block, or an empty text (or, for a
     /// thought, reasoning) block; a signature ends the block.
     private mutating func signOpen(_ gemini: ChatGemini.Split, into events: inout [WireEvent]) {
-        if open == nil || open?.kind == .refusal || open?.detail != nil {
+        if open == nil || open?.kind == .refusal {
             closeOpen(into: &events)
             _ = startBlock(
                 gemini.thought ? .reasoning : .text,
@@ -385,7 +415,7 @@
         }
         current.signature = gemini.signature ?? current.signature
         open = current
-        if gemini.signature != nil { closeOpen(into: &events) }
+        if gemini.signature != nil { closeText(into: &events) }
     }
 
     private static func delta(_ kind: TextKind, _ block: String, _ text: String) -> WireEvent {
@@ -396,10 +426,22 @@
         }
     }
 
+    /// Ends every open text, reasoning and refusal block.
     private mutating func closeOpen(into events: inout [WireEvent]) {
+        closeText(into: &events)
+        for block in details { end(block, into: &events) }
+        details = []
+    }
+
+    /// Ends the open block that is not a details entry.
+    private mutating func closeText(into events: inout [WireEvent]) {
         guard let current = open else { return }
         open = nil
-        let signedBy = current.signature != nil || current.encrypted != nil ? origin : nil
+        end(current, into: &events)
+    }
+
+    private func end(_ current: OpenBlock, into events: inout [WireEvent]) {
+        let signedBy = current.signature != nil || current.encrypted != nil ? current.origin : nil
         switch current.kind {
         case .text:
             let late = current.hasLate ? WireText("", signature: current.signature, origin: signedBy, extra: current.extra) : nil

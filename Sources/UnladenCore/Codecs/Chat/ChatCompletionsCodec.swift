@@ -13,7 +13,14 @@
 /// response's `id`, `object`, `created`, `model`, `choices`, `usage`), then
 /// the remaining known fields in API-reference (alphabetical) order, then
 /// unknown fields in their decode order.
-@_spi(Wire) public enum ChatCompletionsCodec {}
+@_spi(Wire) public enum ChatCompletionsCodec {
+    /// Bag keys of a part that hold dialect data a replay needs besides its
+    /// typed fields: the `reasoning_details` entry's `type`, `format`,
+    /// `index`… and the rest of Gemini's `extra_content`. A caller that
+    /// keeps parts without their bags (the library's replay tokens) keeps
+    /// these, to send the part back to a Chat endpoint.
+    public static let replayBagKeys: [String] = [ChatReasoningDetails.key, ChatGemini.key]
+}
 
 /// Settings for building a Chat request that the wire model does not carry.
 /// Profiles supply them per endpoint and model.
@@ -23,9 +30,15 @@
     /// spelling, since the upstream accepts only this one; `nil` keeps the
     /// same-protocol spelling, else `max_completion_tokens`.
     public var maxTokensKey: String?
+    /// Systems whose dialect replay data (Gemini `extra_content`
+    /// signatures, OpenRouter `reasoning_details`) the upstream accepts
+    /// (the endpoint trust set; see ``ChatReplay``). Data a Chat client
+    /// sent itself goes on to a Chat upstream regardless.
+    public var trustedOrigins: Set<WireSystemID>
 
-    public init(maxTokensKey: String? = nil) {
+    public init(maxTokensKey: String? = nil, trustedOrigins: Set<WireSystemID> = []) {
         self.maxTokensKey = maxTokensKey
+        self.trustedOrigins = trustedOrigins
     }
 }
 
@@ -222,7 +235,7 @@ extension ChatCompletionsCodec {
             let system = WireMessage(
                 role: .system, parts: instructions, contentForm: request.instructionsForm, extra: request.instructionsExtra,
             )
-            messages += ChatEncode.messages(system, include: include, path: "instructions", warnings: &warnings)
+            messages += ChatEncode.messages(system, include: include, trusted: options.trustedOrigins, path: "instructions", warnings: &warnings)
         }
         // Another protocol may split one model turn into several messages
         // (Responses: one item each); Chat needs it whole, so tool calls
@@ -240,7 +253,7 @@ extension ChatCompletionsCodec {
             }
         }
         for (message, i) in merged {
-            messages += ChatEncode.messages(message, include: include, path: WirePath.index("messages", i), warnings: &warnings)
+            messages += ChatEncode.messages(message, include: include, trusted: options.trustedOrigins, path: WirePath.index("messages", i), warnings: &warnings)
         }
         object["messages"] = .array(messages)
 
@@ -481,7 +494,11 @@ extension ChatCompletionsCodec {
         for i in message.parts.indices {
             switch message.parts[i] {
             case .reasoning(var reasoning) where reasoning.hasFidelityData:
-                reasoning.origin = origin
+                if case .object(let meta)? = reasoning.extra[ChatReasoningDetails.key] {
+                    reasoning.origin = ChatReasoningDetails.origin(origin, meta: meta)
+                } else {
+                    reasoning.origin = origin
+                }
                 message.parts[i] = .reasoning(reasoning)
             case .toolCall(var call) where call.signature != nil || call.itemID != nil:
                 call.origin = origin

@@ -230,7 +230,7 @@ public struct LanguageModel: Sendable {
         var semantic = request
         let (messages, notices) = WireConversion.forTarget(request.messages, trusted: endpoint.trustedOrigins)
         semantic.messages = messages
-        let wire = try WireConversion.request(semantic, model: target.model)
+        let wire = try WireConversion.request(semantic, model: target.model, chatDialect: endpoint.apiProtocol.wire == .chatCompletions)
 
         let upstream = UpstreamCall(target: target, apiKey: apiKey, transport: transport)
         var prepared: UpstreamRequest

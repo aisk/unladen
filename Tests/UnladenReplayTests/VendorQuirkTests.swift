@@ -224,6 +224,17 @@ import UnladenTestSupport
         #expect(answered.isSubset(of: Set(callIDs)))
     }
 
+    /// Mistral rejects unknown fields (422 `extra_forbidden`): a Gemini
+    /// OpenAI-compatible history goes without the `extra_content` its tool
+    /// call signature came in, though the Chat codec types it.
+    @Test func mistralGetsNoGeminiExtraContent() throws {
+        let turn2 = try recordedRequest("gemini-openai/signature-stream-turn2")
+        #expect(turn2.messages.contains { $0.parts.contains { if case .toolCall(let call) = $0 { call.signature != nil } else { false } } })
+        let (_, body, warnings) = try prepare(turn2, for: "mistral/mistral-large-latest")
+        #expect(!keys(body).contains("extra_content"))
+        #expect(warnings.contains { $0.code == .unsupportedByModel && $0.message.contains("extra_content") })
+    }
+
     // MARK: Kimi, Groq, xAI
 
     /// Kimi turns away other vendors' `reasoning_details` (magpie

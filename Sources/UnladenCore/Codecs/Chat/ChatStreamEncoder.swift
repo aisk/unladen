@@ -48,6 +48,8 @@ package struct ChatCompletionsStreamEncoder: Sendable {
     }
 
     private var reasoningByBlock: [String: ReasoningOut] = [:]
+    /// Start metadata of same-protocol text blocks, written at their end.
+    private var textByBlock: [String: WireText] = [:]
     private var warned: Set<String> = []
 
     package init(defaults: ChatResponseDefaults, includeUsage: Bool) {
@@ -72,9 +74,19 @@ package struct ChatCompletionsStreamEncoder: Sendable {
                 appendExtra(metadata.extra, to: &ignored, include: false, path: "", warnings: &warnings)
             }
 
-        case .textEnd(_, let text?) where sameProtocol:
+        case .textStart(let block, let text) where sameProtocol:
+            // Kept for the end (a whole reply replayed as events signs the
+            // start; a stream signs the end).
+            if text.signature != nil || !text.extra.isEmpty { textByBlock[block] = text }
+
+        case .textEnd(let block, let late) where sameProtocol:
             // A Chat upstream's text signature is Gemini's: back into a
             // delta's `extra_content`, with the rest of it.
+            var text = textByBlock.removeValue(forKey: block) ?? WireText("")
+            if let late {
+                if let value = late.signature { text.signature = value }
+                for (key, value) in late.extra { text.extra[key] = value }
+            }
             var extra = text.extra
             if let joined = ChatGemini.join(rest: extra.removeValue(forKey: ChatGemini.key), signature: text.signature) {
                 content([ChatGemini.key: joined], into: &output)
@@ -228,7 +240,7 @@ package struct ChatCompletionsStreamEncoder: Sendable {
         fragment["type"] = "function"
         fragment["function"] = ["name": .string(call.name), "arguments": .string(arguments)]
         if call.signature != nil, !sameProtocol { dropSignature("tool call") }
-        ChatGemini.appendBag(call.extra, signature: call.signature, to: &fragment, include: sameProtocol, path: "tool_calls[\(index)]", warnings: &warnings)
+        ChatGemini.appendBag(call.extra, signature: call.signature, write: sameProtocol, to: &fragment, include: sameProtocol, path: "tool_calls[\(index)]", warnings: &warnings)
         var output: [SSEElement] = []
         content(["tool_calls": [.object(fragment)]], into: &output)
         return output

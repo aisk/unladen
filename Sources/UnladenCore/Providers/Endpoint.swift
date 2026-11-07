@@ -73,6 +73,10 @@ public struct Endpoint: Hashable, Sendable {
     /// Systems whose signatures and encrypted reasoning this endpoint
     /// accepts. Defaults to ``system`` alone. Claude direct, Bedrock and
     /// Vertex do not accept each other's; OpenAI and its Codex backend do.
+    /// A relay's reasoning is qualified by its format
+    /// (`openrouter:anthropic-claude-v1`, see the Chat codec's
+    /// `reasoning_details`): only an endpoint that lists that id takes it,
+    /// except the relay's own Chat API, which takes all its formats.
     public var trustedOrigins: Set<String>
     /// Endpoint-level Profile defaults; a matching model rule's Profile is
     /// merged over it (see ``Provider``).

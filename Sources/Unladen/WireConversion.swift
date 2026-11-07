@@ -15,10 +15,13 @@ enum WireConversion {
 
     /// The wire request for `request`, addressed to `model`. The caller
     /// applies ``forTarget(_:trusted:)`` to the messages first.
-    static func request(_ request: ModelRequest, model: String) throws(UnladenError) -> WireRequest {
+    /// - Parameter chatDialect: restore the Chat dialect data replay tokens
+    ///   keep (``ReplayToken/dialect``); for Chat endpoints only, as other
+    ///   encoders would report it dropped.
+    static func request(_ request: ModelRequest, model: String, chatDialect: Bool = false) throws(UnladenError) -> WireRequest {
         var messages: [WireMessage] = []
         for (i, message) in request.messages.enumerated() {
-            messages.append(try wireMessage(message, path: "messages[\(i)]"))
+            messages.append(try wireMessage(message, path: "messages[\(i)]", chatDialect: chatDialect))
         }
         var wire = WireRequest(model: model, messages: messages)
         if !request.tools.isEmpty {
@@ -75,7 +78,7 @@ enum WireConversion {
         return number
     }
 
-    static func wireMessage(_ message: Message, path: String) throws(UnladenError) -> WireMessage {
+    static func wireMessage(_ message: Message, path: String, chatDialect: Bool = false) throws(UnladenError) -> WireMessage {
         let role: WireRole = switch message.role {
         case .system: .system
         case .user: .user
@@ -88,7 +91,7 @@ enum WireConversion {
             guard allowed(part, in: message.role) else {
                 throw .invalidRequest("\(partPath): a \(message.role.rawValue) message cannot hold \(kind(of: part))")
             }
-            parts.append(try wirePart(part, path: partPath))
+            parts.append(try wirePart(part, path: partPath, chatDialect: chatDialect))
         }
         return WireMessage(role: role, parts: parts)
     }
@@ -116,10 +119,11 @@ enum WireConversion {
         }
     }
 
-    static func wirePart(_ part: ContentPart, path: String) throws(UnladenError) -> WirePart {
+    static func wirePart(_ part: ContentPart, path: String, chatDialect: Bool = false) throws(UnladenError) -> WirePart {
+        let bag = { (token: ReplayToken?) -> JSONObject in chatDialect ? token?.dialect ?? [:] : [:] }
         switch part {
         case .text(let text, let token):
-            return .text(WireText(text, signature: token?.signature, itemID: token?.itemID, origin: token?.origin))
+            return .text(WireText(text, signature: token?.signature, itemID: token?.itemID, origin: token?.origin, extra: bag(token)))
         case .image(let media):
             return .image(wireMedia(media))
         case .file(let media):
@@ -127,7 +131,7 @@ enum WireConversion {
         case .reasoning(let text, let token):
             return .reasoning(WireReasoning(
                 text: text, signature: token?.signature, encrypted: token?.encrypted, itemID: token?.itemID,
-                summaryIndex: token?.summaryIndex, origin: token?.origin, sourceKey: token?.sourceKey,
+                summaryIndex: token?.summaryIndex, origin: token?.origin, sourceKey: token?.sourceKey, extra: bag(token),
             ))
         case .refusal(let text, let token):
             return .refusal(WireRefusal(text, itemID: token?.itemID, origin: token?.origin, sourceKey: token?.sourceKey))
@@ -136,6 +140,7 @@ enum WireConversion {
             return .toolCall(WireToolCall(
                 id: call.id, idSynthesized: token?.idSynthesized ?? false, name: call.name, arguments: call.arguments,
                 itemType: token?.itemType, itemID: token?.itemID, signature: token?.signature, origin: token?.origin,
+                extra: bag(token),
             ))
         case .toolResult(let result):
             var content: [WirePart] = []
@@ -231,7 +236,9 @@ enum WireConversion {
     static func part(_ part: WirePart, system: String) -> ContentPart? {
         switch part {
         case .text(let text):
-            return .text(text.text, replay: token(system: system, signature: text.signature, itemID: text.itemID, origin: text.origin))
+            return .text(text.text, replay: token(
+                system: system, signature: text.signature, itemID: text.itemID, origin: text.origin, dialect: dialect(text.extra),
+            ))
         case .image(let media):
             return .image(self.media(media))
         case .file(let media):
@@ -241,6 +248,7 @@ enum WireConversion {
             return .reasoning(reasoning.text, replay: ReplayToken(
                 system: system, signature: reasoning.signature, encrypted: reasoning.encrypted, itemID: reasoning.itemID,
                 origin: reasoning.origin, summaryIndex: reasoning.summaryIndex, sourceKey: reasoning.sourceKey,
+                dialect: dialect(reasoning.extra),
             ))
         case .refusal(let refusal):
             return .refusal(refusal.text, replay: token(system: system, itemID: refusal.itemID, origin: refusal.origin, sourceKey: refusal.sourceKey))
@@ -261,7 +269,7 @@ enum WireConversion {
             id: call.id, name: call.name, arguments: call.arguments,
             replay: token(
                 system: system, signature: call.signature, itemID: call.itemID, origin: call.origin,
-                idSynthesized: call.idSynthesized, itemType: call.itemType,
+                idSynthesized: call.idSynthesized, itemType: call.itemType, dialect: dialect(call.extra),
             ),
         )
     }
@@ -275,12 +283,21 @@ enum WireConversion {
         sourceKey: String? = nil,
         idSynthesized: Bool = false,
         itemType: String? = nil,
+        dialect: JSONObject? = nil,
     ) -> ReplayToken? {
-        guard signature != nil || itemID != nil || origin != nil || sourceKey != nil || idSynthesized || itemType != nil else { return nil }
+        guard signature != nil || itemID != nil || origin != nil || sourceKey != nil || idSynthesized || itemType != nil || dialect != nil
+        else { return nil }
         return ReplayToken(
             system: system, signature: signature, itemID: itemID, origin: origin,
-            sourceKey: sourceKey, idSynthesized: idSynthesized, itemType: itemType,
+            sourceKey: sourceKey, idSynthesized: idSynthesized, itemType: itemType, dialect: dialect,
         )
+    }
+
+    /// The bag keys a Chat replay needs (``ReplayToken/dialect``), `nil` if none.
+    static func dialect(_ extra: JSONObject) -> JSONObject? {
+        var kept = JSONObject()
+        for key in ChatCompletionsCodec.replayBagKeys { kept[key] = extra[key] }
+        return kept.isEmpty ? nil : kept
     }
 
     static func media(_ media: WireMedia) -> Media {

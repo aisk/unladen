@@ -4,7 +4,17 @@ extension WireTransforms {
     /// Profile with ``Profile/strictUnknownFields``; only meaningful when the
     /// target is the request's source protocol (other encoders drop bags
     /// anyway).
-    public static func stripUnknownFields(_ request: inout WireRequest, warnings: inout [WireWarning]) {
+    ///
+    /// For a Chat `target`, the text and tool-call signatures the Chat
+    /// codec types out of Gemini's `extra_content` go too (with their
+    /// origin): the encoder would write that key back.
+    public static func stripUnknownFields(_ request: inout WireRequest, target: WireProtocol, warnings: inout [WireWarning]) {
+        func clearSignature(_ signature: inout String?, _ origin: inout WireSystemID?, _ path: String) {
+            guard target == .chatCompletions, signature != nil else { return }
+            signature = nil
+            origin = nil
+            warnings.append(WireWarning(.unsupportedByModel, "upstream rejects unknown fields; dropped `extra_content`", path: path))
+        }
         func clear(_ bag: inout JSONObject, _ path: String) {
             let keys = bag.keys.enumerated().filter { !bag.values[$0.offset].isNull }.map(\.element)
             if !keys.isEmpty {
@@ -17,11 +27,17 @@ extension WireTransforms {
             for i in parts.indices {
                 let partPath = WirePath.index(path, i)
                 switch parts[i] {
-                case .text(var value): clear(&value.extra, partPath); parts[i] = .text(value)
+                case .text(var value):
+                    clear(&value.extra, partPath)
+                    clearSignature(&value.signature, &value.origin, partPath)
+                    parts[i] = .text(value)
                 case .image(var value): clear(&value.extra, partPath); parts[i] = .image(value)
                 case .file(var value): clear(&value.extra, partPath); parts[i] = .file(value)
                 case .reasoning(var value): clear(&value.extra, partPath); parts[i] = .reasoning(value)
-                case .toolCall(var value): clear(&value.extra, partPath); parts[i] = .toolCall(value)
+                case .toolCall(var value):
+                    clear(&value.extra, partPath)
+                    clearSignature(&value.signature, &value.origin, partPath)
+                    parts[i] = .toolCall(value)
                 case .refusal(var value): clear(&value.extra, partPath); parts[i] = .refusal(value)
                 case .toolResult(var value):
                     clear(&value.extra, partPath)

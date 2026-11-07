@@ -1,5 +1,5 @@
 import Testing
-@_spi(Wire) import UnladenCore
+@_spi(Wire) @testable import UnladenCore
 import UnladenTestSupport
 
 /// Vendor dialects of Chat Completions the codecs type: Gemini's
@@ -22,6 +22,14 @@ import UnladenTestSupport
         let (again, _) = try decodeChatStream(elements, origin: origin)
         #expect(WireResponseAccumulator(again).response.message == WireResponseAccumulator(events).response.message)
         return elements
+    }
+
+    private func keys(_ value: JSONValue) -> Set<String> {
+        switch value {
+        case .array(let items): items.reduce(into: Set()) { $0.formUnion(keys($1)) }
+        case .object(let object): object.reduce(into: Set(object.keys)) { $0.formUnion(keys($1.value)) }
+        default: []
+        }
     }
 
     private func deltas(_ elements: [SSEElement]) throws -> [JSONValue] {
@@ -126,11 +134,11 @@ import UnladenTestSupport
         let message = WireResponseAccumulator(events).response.message
         #expect(message.parts == [
             .reasoning(WireReasoning(
-                text: "Thinking.", signature: "EqQB", origin: "openrouter", sourceKey: "reasoning",
+                text: "Thinking.", signature: "EqQB", origin: "openrouter:anthropic-claude-v1", sourceKey: "reasoning",
                 extra: ["reasoning_details": ["type": "reasoning.text", "format": "anthropic-claude-v1", "index": 0]],
             )),
             .reasoning(WireReasoning(
-                text: "", encrypted: "gAAAA", origin: "openrouter",
+                text: "", encrypted: "gAAAA", origin: "openrouter:openai-responses-v1",
                 extra: ["reasoning_details": ["type": "reasoning.encrypted", "id": "rs_1", "format": "openai-responses-v1", "index": 1]],
             )),
             .text(WireText("10")),
@@ -149,14 +157,57 @@ import UnladenTestSupport
         #expect(replyMessage?["reasoning_details"]?.arrayValue?.count == 2)
         #expect(replyMessage?["reasoning_details"]?[0]?["signature"] == "EqQB")
 
-        // Replayed on an endpoint that trusts OpenRouter (its Messages API):
-        // the signature reaches Anthropic.
+        // The origin names the format: an Anthropic endpoint configured to
+        // trust OpenRouter's Claude signatures takes it…
         let request = WireRequest(model: "claude", messages: [
             WireMessage(role: .user, parts: [.text(WireText("Primes?"))]),
             WireMessage(role: .assistant, parts: Array(message.parts.prefix(1)) + [.text(WireText("10"))]),
         ])
-        let anthropic = AnthropicMessagesCodec.buildRequest(request, options: AnthropicRequestOptions(trustedReasoningOrigins: ["openrouter"]))
-        #expect(anthropic.json["messages"]?[1]?["content"]?[0] == ["type": "thinking", "thinking": "Thinking.", "signature": "EqQB"])
+        let trusting = AnthropicMessagesCodec.buildRequest(
+            request, options: AnthropicRequestOptions(trustedReasoningOrigins: ["openrouter:anthropic-claude-v1"]),
+        )
+        #expect(trusting.json["messages"]?[1]?["content"]?[0] == ["type": "thinking", "thinking": "Thinking.", "signature": "EqQB"])
+        // …OpenRouter's Messages endpoint by default (trusting `openrouter`) does not.
+        let plain = AnthropicMessagesCodec.buildRequest(request, options: AnthropicRequestOptions(trustedReasoningOrigins: ["openrouter"]))
+        #expect(!keys(plain.json).contains("signature"))
+    }
+
+    /// Another vendor's reasoning behind the same relay never reaches
+    /// Anthropic: OpenAI encrypted data, a Gemini signature.
+    @Test func openRouterOtherFormatsDoNotLeakToAnthropic() throws {
+        func reply(_ details: JSONValue, model: String) throws -> WireMessage {
+            let body: JSONValue = [
+                "id": "gen", "object": "chat.completion", "created": 1, "model": .string(model),
+                "choices": [["index": 0, "finish_reason": "stop", "message": [
+                    "role": "assistant", "content": "Answer.", "reasoning_details": details,
+                ]]],
+            ]
+            return try ChatCompletionsCodec.parseResponse(body, origin: "openrouter").value.message
+        }
+        let openAI = try reply([
+            ["type": "reasoning.summary", "summary": "Summary.", "format": "openai-responses-v1", "index": 0],
+            ["type": "reasoning.encrypted", "data": "gAAAA", "id": "rs_1", "format": "openai-responses-v1", "index": 0],
+        ], model: "openai/gpt-5-mini")
+        let gemini = try reply([
+            ["type": "reasoning.text", "text": "Thought.", "signature": "GEMSIG", "format": "google-gemini-v1", "index": 0],
+        ], model: "google/gemini-3-pro")
+        let options = AnthropicRequestOptions(trustedReasoningOrigins: ["openrouter", "openrouter:anthropic-claude-v1"])
+        for message in [openAI, gemini] {
+            let request = WireRequest(model: "claude", messages: [
+                WireMessage(role: .user, parts: [.text(WireText("Q?"))]), message,
+                WireMessage(role: .user, parts: [.text(WireText("Again?"))]),
+            ])
+            let blocks = AnthropicMessagesCodec.buildRequest(request, options: options).json["messages"]?[1]?["content"]?.arrayValue ?? []
+            #expect(!blocks.contains { $0["type"] == "redacted_thinking" || $0["signature"] == "GEMSIG" || $0["data"] == "gAAAA" })
+        }
+        // OpenRouter's own Chat API takes them all back.
+        let request = WireRequest(model: "openai/gpt-5-mini", messages: [WireMessage(role: .user, parts: [.text(WireText("Q?"))]), openAI])
+        let chat = ChatCompletionsCodec.buildRequest(request, options: ChatRequestOptions(trustedOrigins: ["openrouter"]))
+        #expect(chat.json["messages"]?[1]?["reasoning_details"]?[1]?["data"] == "gAAAA")
+        // An endpoint that does not trust it gets the text only.
+        let untrusting = ChatCompletionsCodec.buildRequest(request).json["messages"]?[1]
+        #expect(untrusting?["reasoning_details"]?.arrayValue?.count == 1)
+        #expect(!keys(untrusting ?? nil).contains("data"))
     }
 
     @Test func openRouterDetailsWithoutPlainFieldAccumulateText() throws {
@@ -186,14 +237,15 @@ import UnladenTestSupport
         #expect(response.message.extra.isEmpty)
         #expect(response.message.parts.count == 3)
         #expect(response.message.parts[1] == .reasoning(WireReasoning(
-            text: "", encrypted: "gAAAA", origin: "openrouter",
+            text: "", encrypted: "gAAAA", origin: "openrouter:openai-responses-v1",
             extra: ["reasoning_details": ["type": "reasoning.encrypted", "id": "rs_1", "format": "openai-responses-v1", "index": 0]],
         )))
         let encoded = ChatCompletionsCodec.encodeResponse(response, defaults: testDefaults)
         #expect(encoded.warnings.isEmpty, "\(encoded.warnings)")
         #expect(encoded.json.canonical == body.canonical)
 
-        // Details that disagree with the plain field stay in the bag.
+        // The details are the reasoning; a plain field that disagrees is
+        // only their spelling (as in streams).
         var mismatched = body
         if case .object(var root) = mismatched, case .array(var choices)? = root["choices"], case .object(var choice) = choices[0],
            case .object(var message)? = choice["message"]
@@ -204,9 +256,77 @@ import UnladenTestSupport
             root["choices"] = .array(choices)
             mismatched = .object(root)
         }
-        let kept = try ChatCompletionsCodec.parseResponse(mismatched).value
-        #expect(kept.message.extra["reasoning_details"] != nil)
-        #expect(kept.message.parts.first == .reasoning(WireReasoning(text: "Something else.", sourceKey: "reasoning")))
+        let typed = try ChatCompletionsCodec.parseResponse(mismatched).value
+        #expect(typed.message.extra.isEmpty)
+        #expect(typed.message.parts.first == .reasoning(WireReasoning(
+            text: "Summary.", sourceKey: "reasoning",
+            extra: ["reasoning_details": ["type": "reasoning.summary", "format": "openai-responses-v1", "index": 0]],
+        )))
+    }
+
+    @Test func streamDetailsAreTheReasoningOverAPlainFieldThatDisagrees() throws {
+        let (events, _) = try decodeChatStream(sse([
+            chunk(#"{"role":"assistant","reasoning":"Hello","reasoning_details":[{"type":"reasoning.text","text":"Hello ","index":0}]}"#),
+            chunk(#"{"content":"Hi"}"#, finish: #""stop""#),
+        ]), origin: "openrouter")
+        #expect(WireResponseAccumulator(events).response.message.parts.first == .reasoning(WireReasoning(
+            text: "Hello ", sourceKey: "reasoning", extra: ["reasoning_details": ["type": "reasoning.text", "index": 0]],
+        )))
+    }
+
+    @Test func plainFieldBesideEncryptedOnlyDetailsIsItsOwnReasoning() throws {
+        let (events, _) = try decodeChatStream(sse([
+            chunk(#"{"role":"assistant","reasoning":"","reasoning_details":[{"type":"reasoning.encrypted","data":"gAAAA","format":"openai-responses-v1","index":0}]}"#),
+            chunk(#"{"reasoning":"Plain.","reasoning_details":[{"type":"reasoning.encrypted","data":"gAAAA","format":"openai-responses-v1","index":1}]}"#),
+            chunk(#"{"content":"Hi"}"#, finish: #""stop""#),
+        ]), origin: "openrouter")
+        let parts = WireResponseAccumulator(events).response.message.parts
+        // An empty plain field is no spelling hint.
+        guard case .reasoning(let first) = parts.first else { Issue.record("\(parts)"); return }
+        #expect(first.sourceKey == nil)
+        #expect(first.encrypted == "gAAAA")
+        #expect(parts.contains(.reasoning(WireReasoning(text: "Plain.", sourceKey: "reasoning"))))
+    }
+
+    @Test func interleavedDetailsKeepEachBlockAndItsLateSignature() throws {
+        let (events, warnings) = try decodeChatStream(sse([
+            chunk(#"{"role":"assistant","reasoning_details":[{"type":"reasoning.text","text":"A","format":"anthropic-claude-v1","index":0}]}"#),
+            chunk(#"{"reasoning_details":[{"type":"reasoning.text","text":"B","format":"anthropic-claude-v1","index":1}]}"#),
+            chunk(#"{"reasoning_details":[{"type":"reasoning.text","signature":"SIG0","format":"anthropic-claude-v1","index":0}]}"#),
+            chunk(#"{"content":"Hi"}"#),
+            chunk(#"{"reasoning_details":[{"type":"reasoning.text","signature":"LATE","format":"anthropic-claude-v1","index":1}]}"#, finish: #""stop""#),
+        ]), origin: "openrouter")
+        #expect(checkEventSequence(events) == [])
+        let reasoning = WireResponseAccumulator(events).response.message.parts.compactMap { part -> WireReasoning? in
+            if case .reasoning(let value) = part { value } else { nil }
+        }
+        #expect(reasoning.map(\.text) == ["A", "B"])
+        #expect(reasoning.map(\.signature) == ["SIG0", nil])
+        // A signature for a block already ended starts no empty block.
+        #expect(warnings.map(\.code) == [.malformedStream])
+        _ = try expectStableStream(events, origin: "openrouter")
+    }
+
+    /// A whole OpenRouter reply replayed as a Chat stream decodes back to
+    /// the same turn.
+    @Test func openRouterReplyReplayedAsAStream() throws {
+        let body: JSONValue = [
+            "id": "gen", "object": "chat.completion", "created": 1, "model": "openai/gpt-5-mini",
+            "choices": [["index": 0, "finish_reason": "stop", "message": [
+                "role": "assistant", "content": "Answer.", "reasoning": "Summary.",
+                "reasoning_details": [
+                    ["type": "reasoning.summary", "summary": "Summary.", "format": "openai-responses-v1", "index": 0],
+                    ["type": "reasoning.encrypted", "data": "gAAAA", "id": "rs_1", "format": "openai-responses-v1", "index": 0],
+                ],
+            ]]],
+        ]
+        let response = try ChatCompletionsCodec.parseResponse(body, origin: "openrouter").value
+        var warnings: [WireWarning] = []
+        let events = WireEvents.of(response, protocolName: "chat", warnings: &warnings)
+        let (elements, encodeWarnings) = encodeChatStream(events)
+        #expect(encodeWarnings.isEmpty, "\(encodeWarnings)")
+        let (again, _) = try decodeChatStream(elements, origin: "openrouter")
+        #expect(WireResponseAccumulator(again).response.message.parts == response.message.parts)
     }
 
     @Test func kimiStripsTypedReasoningDetails() {
@@ -221,6 +341,60 @@ import UnladenTestSupport
         WireTransforms.stripForeignReasoning(&request, trusted: ["moonshot"], warnings: &warnings)
         #expect(request.messages[0].parts.first == .reasoning(WireReasoning(text: "Thought.", sourceKey: "reasoning")))
         #expect(warnings.map(\.code) == [.droppedContent])
+    }
+
+    @Test func geminiMessageThoughtMarkerStaysInTheBag() throws {
+        let body: JSONValue = [
+            "id": "r", "object": "chat.completion", "created": 1, "model": "gemini-3",
+            "choices": [["index": 0, "finish_reason": "stop", "message": [
+                "role": "assistant", "content": "Thinking.",
+                "extra_content": ["google": ["thought_signature": "msig", "thought": true]],
+            ]]],
+        ]
+        let response = try ChatCompletionsCodec.parseResponse(body, origin: "gemini").value
+        #expect(response.message.parts == [.text(WireText("Thinking.", signature: "msig", origin: "gemini"))])
+        #expect(response.message.extra == ["extra_content": ["google": ["thought": true]]])
+        let encoded = ChatCompletionsCodec.encodeResponse(response, defaults: testDefaults)
+        #expect(encoded.json.canonical == body.canonical)
+    }
+
+    /// A whole Gemini reply replayed as a Chat stream (a stream client, a
+    /// non-streaming upstream) keeps the text signature, which is on the
+    /// text's start there.
+    @Test func geminiReplySignatureSurvivesAsAStream() throws {
+        let response = WireResponse(
+            message: WireMessage(role: .assistant, parts: [.text(WireText("Sunny.", signature: "msig", origin: "gemini"))]),
+            id: "r", model: "gemini-3", created: 1, finishReason: WireFinishReason(.stop, raw: "stop"), source: .chatCompletions,
+        )
+        let events: [WireEvent] = [
+            .responseMetadata(WireResponseMetadata(source: .chatCompletions)),
+            .textStart(id: "t", text: WireText("", signature: "msig", origin: "gemini")),
+            .textDelta(id: "t", delta: "Sunny."),
+            .textEnd(id: "t", text: nil),
+            .finish(WireFinish(reason: response.finishReason)),
+        ]
+        let written = try deltas(expectStableStream(events, origin: "gemini"))
+        #expect(written.contains { $0["extra_content"] == ["google": ["thought_signature": "msig"]] })
+    }
+
+    /// Strict upstreams (Mistral) get no `extra_content`, typed or not.
+    @Test func strictUnknownFieldsDropsTypedGeminiSignatures() throws {
+        let body: JSONValue = [
+            "model": "mistral-large-latest",
+            "messages": [
+                ["role": "user", "content": "weather?"],
+                ["role": "assistant", "content": "Let me check.", "extra_content": ["google": ["thought_signature": "T"]], "tool_calls": [[
+                    "id": "call_1", "type": "function", "function": ["name": "get_weather", "arguments": "{}"],
+                    "extra_content": ["google": ["thought_signature": "SIG"]],
+                ]]],
+                ["role": "tool", "tool_call_id": "call_1", "content": "sunny"],
+            ],
+        ]
+        var request = try ChatCompletionsCodec.parseRequest(body).value
+        var warnings: [WireWarning] = []
+        WireTransforms.stripUnknownFields(&request, target: .chatCompletions, warnings: &warnings)
+        #expect(!keys(ChatCompletionsCodec.buildRequest(request).json).contains("extra_content"))
+        #expect(warnings.filter { $0.code == .unsupportedByModel }.count == 2)
     }
 
     // MARK: Mistral thinking parts

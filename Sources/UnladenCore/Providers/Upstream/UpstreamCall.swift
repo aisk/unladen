@@ -138,7 +138,7 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
         }
         if profile.strictUnknownFields == true {
             WireTransforms.stripOpenAIPlatformFields(&request, warnings: &outcome.warnings)
-            if request.source == wire { WireTransforms.stripUnknownFields(&request, warnings: &outcome.warnings) }
+            if request.source == wire { WireTransforms.stripUnknownFields(&request, target: wire, warnings: &outcome.warnings) }
         }
 
         let streams = switch profile.streaming {
@@ -157,7 +157,9 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
         let suffix: String
         switch wire {
         case .chatCompletions:
-            encoded = ChatCompletionsCodec.buildRequest(request, options: ChatRequestOptions(maxTokensKey: profile.maxTokensField?.rawValue))
+            encoded = ChatCompletionsCodec.buildRequest(request, options: ChatRequestOptions(
+                maxTokensKey: profile.maxTokensField?.rawValue, trustedOrigins: endpoint.trustedOrigins,
+            ))
             suffix = "/chat/completions"
         case .responses:
             encoded = ResponsesCodec.buildRequest(request, options: ResponsesRequestOptions(trustedReasoningOrigins: endpoint.trustedOrigins))

@@ -131,7 +131,7 @@ extension ReplayToken: Codable {
         }
         guard let version = object["v"]?.numberValue?.int else { throw corrupted("no version") }
         guard version == Self.codingVersion else { throw corrupted("unsupported version \(version)") }
-        let known: Set<String> = ["v", "system", "signature", "encrypted", "itemID", "origin", "summaryIndex", "sourceKey", "idSynthesized", "itemType"]
+        let known: Set<String> = ["v", "system", "signature", "encrypted", "itemID", "origin", "summaryIndex", "sourceKey", "idSynthesized", "itemType", "dialect"]
         if let unknown = object.keys.first(where: { !known.contains($0) }) { throw corrupted("unknown field `\(unknown)`") }
 
         func field(_ key: String) throws -> String? {
@@ -140,6 +140,12 @@ extension ReplayToken: Codable {
             return string
         }
         guard let system = try field("system") else { throw corrupted("no system") }
+        // Optional, so tokens written before it was added still read.
+        func dialect() throws -> JSONObject? {
+            guard let value = object["dialect"] else { return nil }
+            guard let dialect = value.objectValue else { throw corrupted("`dialect` is not an object") }
+            return dialect
+        }
         var summaryIndex: Int?
         if let value = object["summaryIndex"] {
             guard let index = value.numberValue?.int else { throw corrupted("`summaryIndex` is not an integer") }
@@ -160,6 +166,7 @@ extension ReplayToken: Codable {
             sourceKey: try field("sourceKey"),
             idSynthesized: idSynthesized,
             itemType: try field("itemType"),
+            dialect: try dialect(),
         )
     }
 
@@ -173,6 +180,7 @@ extension ReplayToken: Codable {
         if let sourceKey { object["sourceKey"] = .string(sourceKey) }
         if idSynthesized { object["idSynthesized"] = .bool(true) }
         if let itemType { object["itemType"] = .string(itemType) }
+        if let dialect { object["dialect"] = .object(dialect) }
         var container = encoder.singleValueContainer()
         try container.encode(Base64.encode(JSONValue.object(object).encoded()))
     }
