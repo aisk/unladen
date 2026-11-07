@@ -96,13 +96,16 @@ private func serve(
 /// error shape.
 private func authenticate(_ request: Request, gateway: Gateway, as clientProtocol: WireProtocol) -> Response? {
     guard let expected = gateway.configuration.apiKey else { return nil }
-    if presentedKeys(request).contains(where: { constantTimeEqual($0, expected) }) { return nil }
+    let keys = presentedKeys(request, acceptingQueryKey: clientProtocol == .gemini)
+    if keys.contains(where: { constantTimeEqual($0, expected) }) { return nil }
     return Gateway.errorResponse(clientProtocol, status: 401, message: "invalid or missing gateway API key")
 }
 
 /// Keys a client may present: `Authorization: Bearer`, `x-api-key`,
-/// `x-goog-api-key`, Gemini's `?key=`.
-func presentedKeys(_ request: Request) -> [String] {
+/// `x-goog-api-key`, and, with `acceptingQueryKey` (Gemini routes only:
+/// no other protocol's clients send it, and a key in a URL ends up in
+/// logs), `?key=`.
+func presentedKeys(_ request: Request, acceptingQueryKey: Bool) -> [String] {
     var keys: [String] = []
     if let authorization = request.headers[.authorization] {
         let parts = authorization.split(separator: " ", maxSplits: 1)
@@ -111,7 +114,7 @@ func presentedKeys(_ request: Request) -> [String] {
     for name in ["x-api-key", "x-goog-api-key"] {
         if let field = HTTPField.Name(name), let value = request.headers[field] { keys.append(value) }
     }
-    if let key = request.uri.queryParameters.get("key") { keys.append(key) }
+    if acceptingQueryKey, let key = request.uri.queryParameters.get("key") { keys.append(key) }
     return keys
 }
 

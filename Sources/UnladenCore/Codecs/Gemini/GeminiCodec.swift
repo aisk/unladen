@@ -118,12 +118,30 @@
 extension GeminiCodec {
     /// The request path for `model`: `/v1beta/models/{model}:generateContent`
     /// or, streaming, `/v1beta/models/{model}:streamGenerateContent?alt=sse`.
-    /// A `models/` prefix on `model` is not repeated.
+    /// A `models/` prefix on `model` is not repeated. The rest is
+    /// percent-encoded as one path segment (everything but RFC 3986
+    /// unreserved characters, `/` included), so no model id can reach
+    /// another path or add a query.
     public static func path(model: String, stream: Bool) -> String {
-        let name = model.hasPrefix("models/") ? String(model.dropFirst(7)) : model
+        let name = percentEncodedSegment(model.hasPrefix("models/") ? String(model.dropFirst(7)) : model)
         return stream
             ? "/v1beta/models/\(name):streamGenerateContent?alt=sse"
             : "/v1beta/models/\(name):generateContent"
+    }
+
+    static func percentEncodedSegment(_ value: String) -> String {
+        let hex = Array("0123456789ABCDEF".utf8)
+        var out: [UInt8] = []
+        for byte in value.utf8 {
+            switch byte {
+            case UInt8(ascii: "A")...UInt8(ascii: "Z"), UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "0")...UInt8(ascii: "9"),
+                 UInt8(ascii: "-"), UInt8(ascii: "."), UInt8(ascii: "_"), UInt8(ascii: "~"):
+                out.append(byte)
+            default:
+                out += [UInt8(ascii: "%"), hex[Int(byte >> 4)], hex[Int(byte & 0x0F)]]
+            }
+        }
+        return String(decoding: out, as: UTF8.self)
     }
 
     /// Splits a client's request path (`…/models/{model}:generateContent`

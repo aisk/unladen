@@ -1,7 +1,7 @@
 @_spi(Wire) import UnladenCore
 
 /// Who wrote a message.
-public enum Role: String, Hashable, Sendable, CaseIterable {
+public enum Role: String, Hashable, Sendable, CaseIterable, Codable {
     /// Instructions for the model. Text only.
     case system
     /// The user: text, images and files.
@@ -23,7 +23,7 @@ public enum Role: String, Hashable, Sendable, CaseIterable {
 /// let response = try await model.generate(history)
 /// history.append(response.message)
 /// ```
-public struct Message: Hashable, Sendable {
+public struct Message: Hashable, Sendable, Codable {
     public var role: Role
     /// In order. Which kinds of part a role may hold is listed on ``Role``;
     /// anything else is rejected with ``UnladenError/invalidRequest(_:)``.
@@ -132,7 +132,7 @@ public struct Media: Hashable, Sendable {
 }
 
 /// A tool call made by the model.
-public struct ToolCall: Hashable, Sendable {
+public struct ToolCall: Hashable, Sendable, Codable {
     /// The id a ``ToolResult`` answers. Unique within a response.
     public var id: String
     public var name: String
@@ -160,7 +160,7 @@ public struct ToolCall: Hashable, Sendable {
 }
 
 /// The output of a tool, answering a ``ToolCall``.
-public struct ToolResult: Hashable, Sendable {
+public struct ToolResult: Hashable, Sendable, Codable {
     /// The ``ToolCall/id`` this answers.
     public var callID: String
     /// The tool's name (Gemini needs it; ``init(call:output:isError:)`` fills it).
@@ -199,7 +199,8 @@ public struct ToolResult: Hashable, Sendable {
 ///
 /// Opaque on purpose: it has no public initialiser or setters, so it can
 /// only come from a response and survives as long as the part holding it
-/// is kept. When the history is sent to a provider that does not accept
+/// is kept. `Codable`, so a history can be saved and loaded: it encodes as
+/// one versioned opaque string, not as readable fields. When the history is sent to a provider that does not accept
 /// data from ``system`` (another vendor, after a fallback), the library
 /// drops it before encoding: reasoning from that system is left out and
 /// other parts lose only the token. That is reported as a

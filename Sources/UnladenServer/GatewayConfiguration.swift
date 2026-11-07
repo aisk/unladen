@@ -14,10 +14,12 @@ struct GatewayConfiguration: Sendable {
     /// with a retryable error.
     var fallbacks: [String] = []
     /// When set, clients must present it (`Authorization: Bearer`,
-    /// `x-api-key`, `x-goog-api-key` or Gemini's `?key=`).
+    /// `x-api-key`, `x-goog-api-key`, or `?key=` on Gemini routes).
     var apiKey: String?
-    /// Reject requests whose translation produced warnings instead of
-    /// forwarding them with an `x-unladen-warnings` header.
+    /// Skip candidates the request cannot be carried to exactly (lossy
+    /// warnings; kept unknown fields, `adjusted` rewrites and cache hints
+    /// do not count), and answer 400 when no candidate is left, instead of
+    /// forwarding with an `x-unladen-warnings` header.
     var strict = false
     /// How long a streaming client may go without an event before it is
     /// sent a keepalive.

@@ -150,12 +150,18 @@ struct CandidatePlanner: Sendable {
     var configuration: GatewayConfiguration
 
     /// The model references to try for `clientModel`, in order.
-    func references(for clientModel: String) -> [String] {
+    ///
+    /// - Throws: a 400 when `clientModel` names a known provider but a
+    ///   model id that fails validation (``ModelID``): it is turned away,
+    ///   not served by the default model.
+    func references(for clientModel: String) throws(PlanningError) -> [String] {
         var references: [String] = []
-        if (try? configuration.registry.resolve(clientModel)) != nil {
+        do {
+            _ = try configuration.registry.resolve(clientModel)
             references.append(clientModel)
-        } else if let model = configuration.defaultModel {
-            references.append(model)
+        } catch {
+            if case .invalidModelID(_, let reason) = error { throw Self.invalidModel(clientModel, reason) }
+            if let model = configuration.defaultModel { references.append(model) }
         }
         for fallback in configuration.fallbacks where !references.contains(fallback) {
             references.append(fallback)
@@ -164,7 +170,7 @@ struct CandidatePlanner: Sendable {
     }
 
     func candidates(for clientModel: String, clientProtocol: WireProtocol) throws(PlanningError) -> [Candidate] {
-        let references = references(for: clientModel)
+        let references = try references(for: clientModel)
         guard !references.isEmpty else {
             throw PlanningError(
                 status: 404,
@@ -178,6 +184,7 @@ struct CandidatePlanner: Sendable {
             do {
                 target = try configuration.registry.resolve(reference, preferring: APIProtocol(clientProtocol))
             } catch {
+                if case .invalidModelID(_, let reason) = error { throw Self.invalidModel(reference, reason) }
                 continue
             }
             if target.endpoint.auth == .none {
@@ -200,5 +207,9 @@ struct CandidatePlanner: Sendable {
             )
         }
         return candidates
+    }
+
+    static func invalidModel(_ reference: String, _ reason: String) -> PlanningError {
+        PlanningError(status: 400, message: "invalid model `\(reference)`: \(reason)")
     }
 }

@@ -63,9 +63,6 @@ struct Gateway: Sendable {
         let stream = request.stream == true
         line.clientModel = request.model
         line.stream = stream
-        if configuration.strict, !decoded.warnings.isEmpty {
-            return fail(400, "strict mode: the request cannot be carried exactly: \(WarningHeader.summary(decoded.warnings))", warnings: decoded.warnings)
-        }
 
         let candidates: [Candidate]
         do {
@@ -80,7 +77,9 @@ struct Gateway: Sendable {
         let outcome: AttemptOutcome
         do {
             outcome = try await monitor.run {
-                try await self.attempt(request, candidates: ordered, stream: stream, clientHeaders: headers)
+                try await self.attempt(
+                    request, decodeWarnings: decoded.warnings, candidates: ordered, stream: stream, clientHeaders: headers,
+                )
             }
         } catch {
             return fail(499, "client disconnected", warnings: decoded.warnings)
@@ -93,15 +92,18 @@ struct Gateway: Sendable {
             monitor.uninstall()
             line.status = response.status.code
             line.warnings = decoded.warnings.count
-            if case .upstream(_, let error) = failure { line.note = "upstream: \(ErrorShape.upstreamMessage(error.body))" }
+            if case .upstream(_, let error) = failure {
+                line.note = "upstream \(error.status.code): \(Self.redactingSecrets(ErrorShape.upstreamMessage(error.body)))"
+            }
             if case .gateway(_, let message, _) = failure { line.note = message }
             if case .strict(let warnings) = failure { line.warnings += warnings.count }
             log.emit(line.text)
             return response
 
-        case .reply(let candidate, let reply):
+        case .reply(let served):
+            let (candidate, reply) = (served.candidate, served.reply)
             line.candidate = candidate.reference
-            let warnings = decoded.warnings + reply.warnings
+            let warnings = served.requestWarnings + served.responseWarnings
             let defaults = ReplyDefaults(clientProtocol: clientProtocol, model: request.model, candidate: candidate)
             var fields = HTTPFields()
             fields[Self.modelHeader] = candidate.reference
@@ -109,10 +111,13 @@ struct Gateway: Sendable {
             case .response(let response):
                 monitor.uninstall()
                 let encoded = ClientCodec.encodeResponse(response, for: clientProtocol, defaults: defaults)
-                let all = warnings + encoded.warnings
+                let responseWarnings = WireWarning.merged(decoded: served.responseWarnings, encoded: encoded.warnings)
+                let all = served.requestWarnings + responseWarnings
                 for warning in all { log.emit("warning: \(warning)") }
                 fields[.contentType] = "application/json"
-                if !all.isEmpty { fields[WarningHeader.name] = WarningHeader.value(all) }
+                if !all.isEmpty {
+                    fields[WarningHeader.name] = WarningHeader.value(request: served.requestWarnings, response: responseWarnings)
+                }
                 line.status = 200
                 line.warnings = all.count
                 log.emit(line.text)
@@ -122,9 +127,10 @@ struct Gateway: Sendable {
                 for warning in warnings { log.emit("warning: \(warning)") }
                 fields[.contentType] = "text/event-stream"
                 fields[.cacheControl] = "no-cache"
-                if !warnings.isEmpty { fields[WarningHeader.name] = WarningHeader.value(warnings) }
+                let header = WarningHeader.value(request: served.requestWarnings, response: served.responseWarnings)
+                if !warnings.isEmpty { fields[WarningHeader.name] = header }
                 let leading: [SSEElement] = !warnings.isEmpty && clientProtocol.toleratesComments
-                    ? [.comment("unladen-warnings: \(WarningHeader.value(warnings))")]
+                    ? [.comment("unladen-warnings: \(header)")]
                     : []
                 let encoder = ClientStreamEncoder(
                     for: clientProtocol, defaults: defaults, includeUsage: request.streamOptions?.includeUsage ?? false,
@@ -162,8 +168,20 @@ struct Gateway: Sendable {
     // MARK: Fallback loop
 
     enum AttemptOutcome: Sendable {
-        case reply(Candidate, UpstreamReply)
+        case reply(Served)
         case failure(AttemptFailure)
+    }
+
+    /// The candidate that answered, and the warnings of its exchange.
+    struct Served: Sendable {
+        var candidate: Candidate
+        var reply: UpstreamReply
+        /// Decoding the client's request plus transforming and encoding it
+        /// for this candidate, merged (``WireWarning/merged(decoded:encoded:)``).
+        var requestWarnings: [WireWarning]
+        /// Decoding the upstream's reply (complete replies; a stream's are
+        /// reported at its end).
+        var responseWarnings: [WireWarning]
     }
 
     enum AttemptFailure: Sendable {
@@ -171,7 +189,8 @@ struct Gateway: Sendable {
         case upstream(Candidate, UpstreamHTTPError)
         /// A failure without an upstream reply to forward.
         case gateway(status: Int, message: String, candidate: Candidate?)
-        /// `--strict`: every candidate's request carried warnings.
+        /// `--strict`: every candidate would have lost part of the request;
+        /// the first candidate's lossy warnings.
         case strict([WireWarning])
 
         var candidate: Candidate? {
@@ -197,7 +216,18 @@ struct Gateway: Sendable {
     /// Tries `candidates` in order until one returns a 2xx head. Each gets
     /// its own copy of `request` (value semantics), transformed and encoded
     /// for its endpoint.
-    func attempt(_ request: WireRequest, candidates: [Candidate], stream: Bool, clientHeaders: HTTPFields) async throws -> AttemptOutcome {
+    ///
+    /// With `--strict`, a candidate whose request would lose something
+    /// (``WireWarning/isEscalatedWhenStrict``, judged on the decoding
+    /// warnings and its own transform and encoding warnings) is skipped
+    /// without being called.
+    func attempt(
+        _ request: WireRequest,
+        decodeWarnings: [WireWarning] = [],
+        candidates: [Candidate],
+        stream: Bool,
+        clientHeaders: HTTPFields,
+    ) async throws -> AttemptOutcome {
         var last: AttemptFailure?
         var strictWarnings: [WireWarning]?
         for candidate in candidates {
@@ -210,14 +240,21 @@ struct Gateway: Sendable {
                 last = .gateway(status: 500, message: "cannot call \(candidate.reference): \(error)", candidate: candidate)
                 continue
             }
-            if configuration.strict, !prepared.warnings.isEmpty {
-                strictWarnings = strictWarnings ?? prepared.warnings
-                continue
+            let requestWarnings = WireWarning.merged(decoded: decodeWarnings, encoded: prepared.warnings)
+            if configuration.strict {
+                let lossy = requestWarnings.filter(\.isEscalatedWhenStrict)
+                if !lossy.isEmpty {
+                    strictWarnings = strictWarnings ?? lossy
+                    continue
+                }
             }
             do {
                 let reply = try await call.send(prepared, stream: stream)
                 health.recordSuccess(candidate.healthKey)
-                return .reply(candidate, reply)
+                return .reply(Served(
+                    candidate: candidate, reply: reply, requestWarnings: requestWarnings,
+                    responseWarnings: Array(reply.warnings.dropFirst(prepared.warnings.count)),
+                ))
             } catch let error as UpstreamError {
                 switch error {
                 case .http(let http):
@@ -237,6 +274,11 @@ struct Gateway: Sendable {
                 case .invalidBaseURL(let url):
                     last = .gateway(status: 500, message: "invalid base URL \(url)", candidate: candidate)
                 }
+            } catch let error as HTTPResponseBodyTooLargeError {
+                health.recordFailure(candidate.healthKey, cooldown: HealthStore.failureCooldown)
+                last = .gateway(
+                    status: 502, message: "\(candidate.reference) sent a reply larger than \(error.maxBytes) bytes", candidate: candidate,
+                )
             } catch {
                 if Task.isCancelled || error is CancellationError { throw CancellationError() }
                 health.recordFailure(candidate.healthKey, cooldown: HealthStore.failureCooldown)
@@ -257,8 +299,23 @@ struct Gateway: Sendable {
         "retry-after", "request-id", "x-request-id", "x-goog-request-id", "openai-request-id",
     ]
 
+    /// Upstream statuses that mean the gateway's own key was refused.
+    static let credentialStatuses: Set<Int> = [401, 402, 403]
+
+    /// The client's response for a request no candidate served.
+    ///
+    /// An upstream 401/402/403 is about the gateway's key, not the
+    /// client's: the client gets a 502 with a gateway message, never the
+    /// upstream's body (which can quote part of the key).
     func failureResponse(_ failure: AttemptFailure, clientProtocol: WireProtocol, warnings: [WireWarning]) -> Response {
         switch failure {
+        case .upstream(let candidate, let error) where Self.credentialStatuses.contains(error.status.code):
+            var response = Self.errorResponse(
+                clientProtocol, status: 502,
+                message: "upstream rejected the gateway's credentials for \(candidate.reference)", warnings: warnings,
+            )
+            response.headers[Self.modelHeader] = candidate.reference
+            return response
         case .upstream(let candidate, let error):
             var fields = HTTPFields()
             for name in Self.forwardedErrorHeaders {
@@ -270,7 +327,7 @@ struct Gateway: Sendable {
                 fields.append(field)
             }
             fields[Self.modelHeader] = candidate.reference
-            if !warnings.isEmpty { fields[WarningHeader.name] = WarningHeader.value(warnings) }
+            if !warnings.isEmpty { fields[WarningHeader.name] = WarningHeader.value(request: warnings) }
             let body: [UInt8]
             if candidate.upstreamProtocol == clientProtocol {
                 // Same protocol: the upstream's error, verbatim.
@@ -283,18 +340,17 @@ struct Gateway: Sendable {
             return Response(status: error.status, headers: fields, body: ResponseBody(byteBuffer: ByteBuffer(bytes: body)))
         case .gateway(let status, let message, _):
             return Self.errorResponse(clientProtocol, status: status, message: message, warnings: warnings)
-        case .strict(let more):
-            let all = warnings + more
+        case .strict(let lossy):
             return Self.errorResponse(
                 clientProtocol, status: 400,
-                message: "strict mode: the request cannot be carried exactly: \(WarningHeader.summary(all))", warnings: all,
+                message: "strict mode: the request cannot be carried exactly: \(WarningHeader.summary(lossy))", warnings: lossy,
             )
         }
     }
 
     static func errorResponse(_ clientProtocol: WireProtocol, status: Int, message: String, warnings: [WireWarning] = []) -> Response {
         var fields: HTTPFields = [.contentType: "application/json"]
-        if !warnings.isEmpty { fields[WarningHeader.name] = WarningHeader.value(warnings) }
+        if !warnings.isEmpty { fields[WarningHeader.name] = WarningHeader.value(request: warnings) }
         return Response(
             status: HTTPResponse.Status(code: status),
             headers: fields,
@@ -412,10 +468,54 @@ struct Gateway: Sendable {
         for element in elements { SSEWriter.encode(element, into: &bytes) }
         return ByteBuffer(bytes: bytes)
     }
+
+    // MARK: Redaction
+
+    /// `text` with anything that looks like an API key replaced by
+    /// `[redacted]`, for logging upstream error messages: words with a
+    /// vendor key prefix (`sk-`, `AIza`, `xai-`…), masked keys (`****`), and
+    /// long runs of letters and digits.
+    static func redactingSecrets(_ text: String) -> String {
+        let separators: Set<Character> = [" ", "\t", "\n", "\r", "\"", "'", "`", ",", ";", "(", ")", "[", "]", "{", "}", "<", ">", "="]
+        var out = ""
+        var word = ""
+        func flush() {
+            var core = Substring(word)
+            var trailing = ""
+            while let last = core.last, [".", ":", "!", "?"].contains(last) {
+                trailing = String(last) + trailing
+                core = core.dropLast()
+            }
+            out += (isSecret(core) ? "[redacted]" : String(core)) + trailing
+            word = ""
+        }
+        for character in text {
+            if separators.contains(character) {
+                flush()
+                out.append(character)
+            } else {
+                word.append(character)
+            }
+        }
+        flush()
+        return out
+    }
+
+    static let keyPrefixes = ["sk-", "sk_", "pk-", "rk-", "AIza", "xai-", "gsk_", "key-", "ya29."]
+
+    static func isSecret(_ word: Substring) -> Bool {
+        guard word.count >= 8 else { return false }
+        if keyPrefixes.contains(where: { word.hasPrefix($0) }) { return true }
+        if word.contains("***") || word.contains("…") { return true }
+        let keyish = word.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+        return keyish && word.count >= 32 && word.contains(where: \.isNumber) && word.contains(where: \.isLetter)
+    }
 }
 
 /// The `x-unladen-warnings` header: a count and the warnings, compact,
-/// ASCII, truncated.
+/// ASCII, truncated. Each is labelled `request:` (decoding the client's
+/// request, transforming and encoding it for the upstream) or `response:`
+/// (decoding the upstream's reply, encoding it for the client).
 enum WarningHeader {
     static let name = HTTPField.Name("x-unladen-warnings")!
     static let limit = 1024
@@ -424,8 +524,9 @@ enum WarningHeader {
         warnings.map(\.description).joined(separator: "; ")
     }
 
-    static func value(_ warnings: [WireWarning]) -> String {
-        var text = "\(warnings.count): " + summary(warnings)
+    static func value(request: [WireWarning], response: [WireWarning] = []) -> String {
+        let labelled = request.map { "request: \($0)" } + response.map { "response: \($0)" }
+        var text = "\(labelled.count): " + labelled.joined(separator: "; ")
         text = String(text.unicodeScalars.map { $0.isASCII && $0.value >= 0x20 && $0.value != 0x7F ? Character($0) : "?" })
         if text.utf8.count > limit {
             text = String(text.prefix(limit - 3)) + "..."

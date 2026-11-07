@@ -1,3 +1,5 @@
+@_spi(Wire) import UnladenCore
+
 /// The result of ``LanguageModel/generate(_:)``, or of a collected stream.
 public struct ModelResponse: Hashable, Sendable {
     /// The assistant turn, replay tokens included: append it to the history
@@ -156,18 +158,16 @@ public struct CallWarning: Hashable, Sendable, CustomStringConvertible {
     /// `true` for a dropped prompt-cache hint (`prompt_cache_key`,
     /// `cache_control`…), which only costs money, never correctness.
     public var isCacheHint: Bool {
-        guard code == .droppedField || code == .droppedContent else { return false }
-        let last = path.split(separator: ".").last.map(String.init) ?? path
-        return CallWarning.cacheHintFields.contains(last)
+        WireWarning(WireWarning.Code(rawValue: code.rawValue), message, path: path).isCacheHint
     }
 
-    static let cacheHintFields: Set<String> = ["prompt_cache_key", "prompt_cache_retention", "cache_control", "cachedContent"]
-
     /// Whether ``WarningPolicy/strict`` turns this request-side warning into
-    /// an error: everything except cache hints, ``Code/adjusted`` and
-    /// ``Code/replayDataDropped``.
+    /// an error: everything except cache hints, ``Code/adjusted``,
+    /// ``Code/replayDataDropped`` and the lossless ``Code/unknownField`` and
+    /// ``Code/opaqueContent`` notes (the classification the gateway's
+    /// `--strict` uses too).
     public var isEscalatedWhenStrict: Bool {
-        !(isCacheHint || code == .adjusted || code == .replayDataDropped)
+        code != .replayDataDropped && WireWarning(WireWarning.Code(rawValue: code.rawValue), message, path: path).isEscalatedWhenStrict
     }
 
     public var description: String {

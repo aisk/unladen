@@ -207,7 +207,7 @@ import UnladenTestSupport
     /// "Tool call id was toolu_… but must be a-z, A-Z, 0-9, with a length
     /// of 9"); pydantic-ai rewrites foreign ids (recorded as
     /// `mistral/foreign-tool-ids`, accepted). A Claude tool turn sent to
-    /// Mistral must do the same.
+    /// Mistral gets the same (the `mistralToolIDs` transform).
     @Test func mistralGetsNineCharacterToolCallIDs() throws {
         let claude = try recordedRequest("anthropic/tool-thinking-turn2-sonnet-5-5")
         let (_, body, _) = try prepare(claude, for: "mistral/mistral-small-latest")
@@ -215,11 +215,13 @@ import UnladenTestSupport
         let ids = messages.flatMap { ($0["tool_calls"]?.arrayValue ?? []).compactMap { $0["id"]?.stringValue } }
             + messages.compactMap { $0["tool_call_id"]?.stringValue }
         #expect(!ids.isEmpty)
-        withKnownIssue("Unladen sends foreign tool call ids to Mistral as they are") {
-            for id in ids {
-                #expect(id.count == 9 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }, "\(id)")
-            }
+        for id in ids {
+            #expect(id.count == 9 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }, "\(id)")
         }
+        // Each result still answers its call.
+        let callIDs = messages.flatMap { ($0["tool_calls"]?.arrayValue ?? []).compactMap { $0["id"]?.stringValue } }
+        let answered = Set(messages.compactMap { $0["tool_call_id"]?.stringValue })
+        #expect(answered.isSubset(of: Set(callIDs)))
     }
 
     // MARK: Kimi, Groq, xAI

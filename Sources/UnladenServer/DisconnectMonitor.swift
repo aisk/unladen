@@ -9,6 +9,13 @@
 // connection while the request body has been consumed) and the connection
 // closing (`channelInactive`), and tells a `DisconnectMonitor`, which
 // cancels the work registered with it.
+//
+// A half-close counts as a disconnect, on purpose: it is the only signal a
+// client that gave up before the response head sends (curl ^C, an HTTP
+// client timing out), and reacting to it is what cancels the upstream
+// request then. The cost: a client that half-closes its side after sending
+// the request but still waits for the response (`shutdown(SHUT_WR)`, rare
+// for HTTP clients) has its request cancelled. `unladen --help` says so.
 
 import NIOConcurrencyHelpers
 import NIOCore
@@ -121,6 +128,8 @@ final class DisconnectHandler: ChannelInboundHandler, RemovableChannelHandler, @
     weak var monitor: DisconnectMonitor?
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        // The client's half-close (end of its input) is treated as a
+        // disconnect: see the note at the top of the file.
         if let event = event as? ChannelEvent, event == .inputClosed {
             monitor?.fire()
         }

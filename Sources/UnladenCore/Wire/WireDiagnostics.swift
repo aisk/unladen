@@ -48,6 +48,57 @@
     }
 }
 
+// MARK: - Classification
+
+extension WireWarning {
+    /// Last path components of prompt-cache hints (`prompt_cache_key`,
+    /// `cache_control`…): dropping one only costs money, never correctness.
+    public static let cacheHintFields: Set<String> = ["prompt_cache_key", "prompt_cache_retention", "cache_control", "cachedContent"]
+
+    /// `true` for a dropped prompt-cache hint.
+    public var isCacheHint: Bool {
+        guard code == .droppedField || code == .droppedContent else { return false }
+        let last = path.split(separator: ".").last.map(String.init) ?? path
+        return Self.cacheHintFields.contains(last)
+    }
+
+    /// Whether a strict policy turns this request-side warning into an
+    /// error: everything that loses or changes what the model sees.
+    /// Lossless notes are not: an unknown field or opaque content kept
+    /// (``Code/unknownField``, ``Code/opaqueContent``), a meaning-preserving
+    /// ``Code/adjusted`` rewrite, and dropped cache hints.
+    public var isEscalatedWhenStrict: Bool {
+        !(code == .unknownField || code == .opaqueContent || code == .adjusted || isCacheHint)
+    }
+
+    /// `decoded` (a client request's or upstream reply's decoding notes)
+    /// followed by `encoded` (what re-encoding it reported), without
+    /// saying the same thing twice: a decoder's "kept" note
+    /// (``Code/unknownField``, ``Code/opaqueContent``) is left out when the
+    /// encoder reported losing the same field or content (same path, or for
+    /// an unknown field the same key), so each field gets one warning, the
+    /// one that tells what happened to it.
+    public static func merged(decoded: [WireWarning], encoded: [WireWarning]) -> [WireWarning] {
+        let lost = encoded.filter { $0.code != .unknownField && $0.code != .opaqueContent && $0.code != .adjusted }
+        let lostPaths = Set(lost.map(\.path))
+        let lostKeys = Set(lost.filter { $0.code == .droppedField || $0.code == .lossyConversion }.map(\.lastPathKey))
+        let kept = decoded.filter { warning in
+            switch warning.code {
+            case .unknownField: !(lostPaths.contains(warning.path) || lostKeys.contains(warning.lastPathKey))
+            case .opaqueContent: !lostPaths.contains(warning.path)
+            default: true
+            }
+        }
+        return kept + encoded
+    }
+
+    /// The last key of ``path`` (`messages[2].foo` → `foo`).
+    var lastPathKey: String {
+        let last = path.split(separator: ".").last.map(String.init) ?? path
+        return String(last.prefix { $0 != "[" })
+    }
+}
+
 /// A decoder failure: the input is not something the protocol allows.
 ///
 /// The gateway maps this to HTTP 400. Content that is valid but unknown

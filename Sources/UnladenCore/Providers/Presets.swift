@@ -65,6 +65,9 @@ public enum Presets {
         )
         return [
             ModelRule(.prefix(prefix + "gpt-5"), Profile(effortLevels: ["minimal", "low", "medium", "high"]).merged(over: reasoning)),
+            // The ChatGPT model (`gpt-5-chat-latest`): no reasoning, sampling
+            // parameters as usual.
+            ModelRule(.prefix(prefix + "gpt-5-chat"), Profile(supportsReasoning: false)),
             ModelRule(.prefix(prefix + "gpt-5.1"), Profile(effortLevels: ["none", "low", "medium", "high"]).merged(over: reasoning)),
             ModelRule(.prefix(prefix + "gpt-5.2"), Profile(effortLevels: ["none", "low", "medium", "high", "xhigh"]).merged(over: reasoning)),
             ModelRule(.prefix(prefix + "o1"), Profile(effortLevels: ["low", "medium", "high"]).merged(over: reasoning)),
@@ -188,7 +191,7 @@ public enum Presets {
         endpoints: [
             // 422 extra_forbidden on any field it does not know.
             Endpoint(system: "mistral", apiProtocol: .chatCompletions, baseURL: "https://api.mistral.ai/v1",
-                     defaults: Profile(maxTokensField: .maxTokens, strictUnknownFields: true, transforms: base)),
+                     defaults: Profile(maxTokensField: .maxTokens, strictUnknownFields: true, transforms: base + [.mistralToolIDs])),
         ],
     )
 

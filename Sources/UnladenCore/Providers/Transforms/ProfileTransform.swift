@@ -40,6 +40,14 @@ public enum ProfileTransform: String, Hashable, Sendable, CaseIterable {
     /// Removes parameters, tools, reasoning settings and images the model
     /// does not support, per the Profile's capability data.
     case dropUnsupportedParams
+    /// Tool call ids that are not exactly nine ASCII letters and digits
+    /// (`toolu_…`, `call_…`) are rewritten, with the results answering
+    /// them, to nine-character ids derived from a hash of the original
+    /// (collisions resolved deterministically); valid ids are kept. The
+    /// same history always gets the same ids. Mistral rejects any other
+    /// id; its own reply ids are valid everywhere, so replies need no
+    /// mapping back.
+    case mistralToolIDs
 }
 
 /// What a transform needs to know about its target.
@@ -95,6 +103,8 @@ extension ProfileTransform {
             WireTransforms.mapReasoningEffort(&request, profile: context.profile, warnings: &outcome.warnings)
         case .dropUnsupportedParams:
             WireTransforms.dropUnsupportedParams(&request, profile: context.profile, warnings: &outcome.warnings)
+        case .mistralToolIDs:
+            WireTransforms.mistralToolIDs(&request)
         }
     }
 

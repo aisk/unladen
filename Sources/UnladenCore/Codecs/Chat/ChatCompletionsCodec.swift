@@ -322,7 +322,14 @@ extension ChatCompletionsCodec {
         if let effort = reasoning.effort {
             object["reasoning_effort"] = .string(effort)
         }
-        if reasoning.budgetTokens != nil || reasoning.enabled != nil || reasoning.visible != nil
+        // An effort implies reasoning on (`none`: off), so an `enabled`
+        // that agrees with it says nothing more.
+        let enabledIsImplied = switch reasoning.enabled {
+        case nil: true
+        case true?: reasoning.effort != nil && reasoning.effort != "none"
+        case false?: reasoning.effort == "none"
+        }
+        if reasoning.budgetTokens != nil || !enabledIsImplied || reasoning.visible != nil
             || reasoning.summary != nil || !reasoning.extra.isEmpty
         {
             warnings.append(WireWarning(.droppedField, "Chat `reasoning_effort` carries only an effort level", path: "reasoning_effort"))

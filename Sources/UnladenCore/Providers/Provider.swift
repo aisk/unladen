@@ -60,6 +60,7 @@ public struct Provider: Hashable, Sendable {
             endpoint = preferred.flatMap { want in endpoints.first { $0.apiProtocol == want } } ?? endpoints.first
         }
         guard let endpoint else { throw .noEndpoint(provider: id) }
+        try ModelID.validate(model, for: endpoint.apiProtocol)
         let profile = rule.map { $0.profile.merged(over: endpoint.defaults) } ?? endpoint.defaults
         return ResolvedModel(provider: id, model: model, endpoint: endpoint, profile: profile)
     }
@@ -88,6 +89,38 @@ public enum ModelReferenceError: Error, Hashable, Sendable {
     case unknownProvider(String)
     case noEndpoint(provider: String)
     case forcedProtocolUnavailable(provider: String, model: String, APIProtocol)
+    /// The model id holds something that could leave its place in the
+    /// upstream request (see ``ModelID/validate(_:for:)``).
+    case invalidModelID(String, reason: String)
+}
+
+/// Model id checks, applied when a reference is resolved.
+public enum ModelID {
+    /// Throws ``ModelReferenceError/invalidModelID(_:reason:)`` unless
+    /// `model` is a plain id.
+    ///
+    /// Rejected anywhere: an empty id, control characters, whitespace, `?`,
+    /// `#`, `\`, and empty, `.` or `..` path segments. `/` is allowed where
+    /// the id goes into the JSON body (OpenRouter's `anthropic/claude-…`);
+    /// Gemini puts the id in the URL path, so there only a leading
+    /// `models/` is (it is not repeated in the path).
+    public static func validate(_ model: String, for apiProtocol: APIProtocol) throws(ModelReferenceError) {
+        func reject(_ reason: String) -> ModelReferenceError { .invalidModelID(model, reason: reason) }
+        guard !model.isEmpty else { throw reject("empty") }
+        for scalar in model.unicodeScalars {
+            if scalar.value < 0x20 || (0x7F...0x9F).contains(scalar.value) { throw reject("control character") }
+            if scalar.properties.isWhitespace { throw reject("whitespace") }
+            if scalar == "?" || scalar == "#" || scalar == "\\" { throw reject("`\(scalar)` is not allowed") }
+        }
+        let segments = model.split(separator: "/", omittingEmptySubsequences: false)
+        for segment in segments where segment.isEmpty || segment == "." || segment == ".." {
+            throw reject(segment.isEmpty ? "empty path segment" : "`\(segment)` path segment")
+        }
+        if apiProtocol == .gemini {
+            let name = model.hasPrefix("models/") ? model.dropFirst(7) : Substring(model)
+            if name.contains("/") { throw reject("`/` is not allowed in a Gemini model id") }
+        }
+    }
 }
 
 /// The providers a library client or gateway knows about: a value, so each

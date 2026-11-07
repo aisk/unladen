@@ -399,6 +399,82 @@
         request.reasoning = reasoning
     }
 
+    // MARK: - mistralToolIDs
+
+    /// Whether `id` is a Mistral tool call id: nine ASCII letters and digits.
+    static func isMistralToolID(_ id: String) -> Bool {
+        id.utf8.count == 9 && id.utf8.allSatisfy { byte in
+            (UInt8(ascii: "a")...UInt8(ascii: "z")).contains(byte) || (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte)
+                || (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
+        }
+    }
+
+    /// Nine base-62 digits of the 64-bit FNV-1a hash of `id` (and `attempt`,
+    /// when retrying after a collision).
+    static func mistralToolID(for id: String, attempt: Int) -> String {
+        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
+        var bytes = Array(id.utf8)
+        if attempt > 0 { bytes += [0] + Array(String(attempt).utf8) }
+        for byte in bytes {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01B3
+        }
+        let digits = Array("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".utf8)
+        var out: [UInt8] = []
+        for _ in 0..<9 {
+            out.append(digits[Int(hash % 62)])
+            hash /= 62
+        }
+        return String(decoding: out, as: UTF8.self)
+    }
+
+    /// See ``ProfileTransform/mistralToolIDs``.
+    public static func mistralToolIDs(_ request: inout WireRequest) {
+        // Ids in order of first appearance, calls before results.
+        var order: [String] = []
+        var seen: Set<String> = []
+        for message in request.messages {
+            for part in message.parts {
+                if case .toolCall(let call) = part, seen.insert(call.id).inserted { order.append(call.id) }
+            }
+        }
+        for message in request.messages {
+            for part in message.parts {
+                if case .toolResult(let result) = part, seen.insert(result.callID).inserted { order.append(result.callID) }
+            }
+        }
+        // Valid ids keep theirs; the others take the first free hash.
+        var taken = Set(order.filter(isMistralToolID))
+        var mapping: [String: String] = [:]
+        for id in order where !isMistralToolID(id) {
+            var attempt = 0
+            var candidate = mistralToolID(for: id, attempt: attempt)
+            while taken.contains(candidate) {
+                attempt += 1
+                candidate = mistralToolID(for: id, attempt: attempt)
+            }
+            taken.insert(candidate)
+            mapping[id] = candidate
+        }
+        guard !mapping.isEmpty else { return }
+        for i in request.messages.indices {
+            for j in request.messages[i].parts.indices {
+                switch request.messages[i].parts[j] {
+                case .toolCall(var call):
+                    guard let id = mapping[call.id] else { continue }
+                    call.id = id
+                    request.messages[i].parts[j] = .toolCall(call)
+                case .toolResult(var result):
+                    guard let id = mapping[result.callID] else { continue }
+                    result.callID = id
+                    request.messages[i].parts[j] = .toolResult(result)
+                default:
+                    continue
+                }
+            }
+        }
+    }
+
     // MARK: - dropUnsupportedParams
 
     /// `true` when thinking is switched on (not by an effort alone).
