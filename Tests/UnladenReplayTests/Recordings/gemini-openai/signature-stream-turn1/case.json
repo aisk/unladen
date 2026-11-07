@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_openai/test_compatible_api_gemini_3_tool_call_thought_signature[True].yaml",
     "interaction": 0
   },
@@ -20,7 +20,7 @@
   "facts": {
     "text": "",
     "reasoning": "",
-    "signedReasoning": false,
+    "signedReasoning": true,
     "toolCalls": [
       {
         "name": "get_weather",

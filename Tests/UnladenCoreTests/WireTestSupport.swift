@@ -30,8 +30,8 @@ enum Fixtures {
     }
 }
 
-func decodeChatStream(_ elements: [SSEElement]) throws -> (events: [WireEvent], warnings: [WireWarning]) {
-    var decoder = ChatCompletionsStreamDecoder()
+func decodeChatStream(_ elements: [SSEElement], origin: WireSystemID? = nil) throws -> (events: [WireEvent], warnings: [WireWarning]) {
+    var decoder = ChatCompletionsStreamDecoder(origin: origin)
     var events: [WireEvent] = []
     for element in elements {
         events += try decoder.decode(element)

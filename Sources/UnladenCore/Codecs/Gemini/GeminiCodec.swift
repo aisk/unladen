@@ -820,8 +820,10 @@ extension GeminiCodec {
     ///
     /// - The first candidate is the reply (others are dropped with a
     ///   warning); its unknown keys (`safetyRatings`, `citationMetadata`,
-    ///   `groundingMetadata`, `avgLogprobs`…) and `promptFeedback` go to
-    ///   ``WireResponse/choiceExtra``; `index` is dropped.
+    ///   `groundingMetadata`, `avgLogprobs`, `index`…) and `promptFeedback`
+    ///   go to ``WireResponse/choiceExtra``.
+    /// - Content without `parts` is ``WireContentForm/absent`` (written back
+    ///   without them by the same protocol).
     /// - `STOP` with function calls is ``WireFinishReason/Unified/toolCalls``;
     ///   a prompt blocked before any candidate (`promptFeedback.blockReason`)
     ///   is ``WireFinishReason/Unified/contentFilter`` without a raw value.
@@ -858,7 +860,6 @@ extension GeminiCodec {
                 throw WireDecodingError(.typeMismatch(expected: "an object"), path: "candidates[0]")
             }
             var inner = FieldReader(candidate, path: "candidates[0]")
-            _ = try inner.int("index")
             if let content = try inner.object("content") {
                 var contentReader = FieldReader(content, path: "candidates[0].content")
                 _ = try contentReader.string("role")
@@ -874,7 +875,10 @@ extension GeminiCodec {
                     calls += 1
                     parts[i] = .toolCall(call)
                 }
-                response.message = WireMessage(role: .assistant, parts: parts, extra: contentReader.remaining(warnings: &warnings))
+                response.message = WireMessage(
+                    role: .assistant, parts: parts, contentForm: content["parts"] == nil ? .absent : nil,
+                    extra: contentReader.remaining(warnings: &warnings),
+                )
             }
             if let reason = try inner.string("finishReason") {
                 let hasCalls = response.message.parts.contains { if case .toolCall = $0 { true } else { false } }
@@ -913,7 +917,8 @@ extension GeminiCodec {
             if let value = GeminiEncode.part(part, context: context, path: path, warnings: &warnings) { parts.append(value) }
         }
         let object = GeminiChunk.make(
-            parts: parts, contentExtra: response.message.extra, reason: response.finishReason, writeReason: true,
+            parts: parts, absentParts: include && response.message.contentForm == .absent && parts.isEmpty,
+            contentExtra: response.message.extra, reason: response.finishReason, writeReason: true,
             choiceExtra: response.choiceExtra, usage: response.usage, include: include,
             id: response.id ?? defaults.id, model: response.model ?? defaults.model, extra: response.extra, warnings: &warnings,
         )
@@ -925,6 +930,7 @@ extension GeminiCodec {
 enum GeminiChunk {
     static func make(
         parts: [JSONValue],
+        absentParts: Bool = false,
         contentExtra: JSONObject = [:],
         reason: WireFinishReason?,
         writeReason: Bool,
@@ -945,7 +951,7 @@ enum GeminiChunk {
         let blocked = include && writeReason && GeminiFinish.isBlockedPrompt(choiceExtra, reason: reason, hasParts: !parts.isEmpty)
         if !blocked {
             var content = JSONObject()
-            content["parts"] = .array(parts)
+            if !absentParts { content["parts"] = .array(parts) }
             content["role"] = "model"
             appendExtra(contentExtra, to: &content, include: include, path: "candidates[0].content", warnings: &warnings)
             var candidate = JSONObject()

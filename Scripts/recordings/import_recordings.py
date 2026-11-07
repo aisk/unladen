@@ -302,6 +302,22 @@ def is_thought(message):
     return ((message.get("extra_content") or {}).get("google") or {}).get("thought") is True
 
 
+def gemini_signed(holder):
+    """Gemini's OpenAI-compatible API gives a thought signature in
+    `extra_content.google.thought_signature` (on messages, stream deltas and
+    tool calls)."""
+    return bool(((holder.get("extra_content") or {}).get("google") or {}).get("thought_signature"))
+
+
+def chat_signed(message):
+    """Signed reasoning in a Chat message or delta: a Gemini thought
+    signature (on it or its tool calls), or an OpenRouter
+    `reasoning_details` entry with a signature or encrypted data."""
+    if gemini_signed(message) or any(gemini_signed(call) for call in message.get("tool_calls") or []):
+        return True
+    return any(entry.get("signature") or entry.get("data") for entry in message.get("reasoning_details") or [])
+
+
 def chat_usage(facts, usage):
     if isinstance(usage, dict):
         facts.input = usage.get("prompt_tokens", facts.input)
@@ -325,6 +341,7 @@ def chat_facts(json_body, text_body):
             chat_content(facts, message.get("content"))
         if message.get("refusal"):
             facts.refusal.append(message["refusal"])
+        facts.signed = chat_signed(message)
         for call in message.get("tool_calls") or []:
             function = call.get("function", {})
             facts.calls.append((function.get("name"), function.get("arguments") or ""))
@@ -350,6 +367,7 @@ def chat_facts(json_body, text_body):
                 chat_content(facts, delta.get("content"))
             if delta.get("refusal"):
                 facts.refusal.append(delta["refusal"])
+            facts.signed = facts.signed or chat_signed(delta)
             for position, call in enumerate(delta.get("tool_calls") or []):
                 index = call.get("index", position)
                 entry = current.get(index)

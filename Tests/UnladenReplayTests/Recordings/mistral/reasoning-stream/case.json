@@ -11,11 +11,6 @@
   "protocol": "chat",
   "status": 200,
   "target": "mistral/magistral-small-latest",
-  "expect": {
-    "accepted": {
-      "streamRoundTrip": "Mistral thinking parts are re-encoded as `reasoning_content` (what Chat clients read), so the re-decoded reasoning has that source key."
-    }
-  },
   "model": null,
   "stream": true,
   "facts": {

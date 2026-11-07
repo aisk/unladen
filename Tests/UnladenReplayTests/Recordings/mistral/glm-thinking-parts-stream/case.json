@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_mistral/test_mistral_stream_parallel_tool_calls[zai-glm-5-3].yaml",
     "interaction": 0
   },
@@ -13,8 +13,7 @@
   "target": "mistral/zai-glm-5-3",
   "expect": {
     "accepted": {
-      "decodeWarnings": "GLM on api.mistral.ai repeats the choice `index` inside `delta`; the warning is for that key, nothing is lost.",
-      "streamRoundTrip": "Mistral thinking parts are re-encoded as `reasoning_content` (what Chat clients read), so the re-decoded reasoning has that source key."
+      "decodeWarnings": "GLM on api.mistral.ai repeats the choice `index` inside `delta`; the warning is for that key, nothing is lost."
     },
     "requestChanges": {
       "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",

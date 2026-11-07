@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_openrouter/test_openrouter_stream_error.yaml",
     "interaction": 0
   },
@@ -12,9 +12,6 @@
   "status": 200,
   "target": "openrouter/minimax/minimax-m2:free",
   "expect": {
-    "knownIssues": {
-      "decodeWarnings": "OpenRouter `reasoning_details` in stream deltas are dropped, so a streamed turn's structured (signed) reasoning cannot be replayed."
-    },
     "accepted": {
       "streamRoundTrip": "OpenRouter sent finish_reason `length` and then an error chunk; re-encoded, the error ends the stream and the earlier finish reason is not written again."
     }

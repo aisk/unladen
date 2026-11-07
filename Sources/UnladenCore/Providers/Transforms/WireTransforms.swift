@@ -134,6 +134,18 @@
             let path = "messages[\(i)]"
             var parts: [WirePart] = []
             for part in request.messages[i].parts {
+                // Typed `reasoning_details` entries go the way of the bag
+                // below, whoever produced them.
+                if case .reasoning(var reasoning) = part, reasoning.extra.removeValue(forKey: ChatReasoningDetails.key) != nil {
+                    if reasoning.hasSignedData {
+                        warnings.append(WireWarning(.droppedContent, "`reasoning_details` data removed; its text kept", path: path))
+                    }
+                    reasoning.signature = nil
+                    reasoning.encrypted = nil
+                    reasoning.origin = nil
+                    if !reasoning.text.isEmpty { parts.append(.reasoning(reasoning)) }
+                    continue
+                }
                 guard case .reasoning(var reasoning) = part, let origin = reasoning.origin, !trusted.contains(origin) else {
                     parts.append(part)
                     continue

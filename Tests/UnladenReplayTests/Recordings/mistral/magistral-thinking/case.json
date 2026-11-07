@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_mistral/test_mistral_model_thinking_part.yaml",
     "interaction": 1
   },
@@ -12,9 +12,6 @@
   "status": 200,
   "target": "mistral/magistral-medium-latest",
   "expect": {
-    "knownIssues": {
-      "facts.reasoning": "Non-streaming Mistral `thinking` content parts stay opaque: kept for Chat clients, but not reasoning for other protocols (streams are decoded)."
-    },
     "requestChanges": {
       "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
       "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",

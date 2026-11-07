@@ -10,6 +10,16 @@
 ///   calls are otherwise left open until the end: a fragment for a new
 ///   index does not prove the previous call complete;
 /// - `reasoning_content` (DeepSeek) and `reasoning` (OpenRouter) deltas;
+/// - OpenRouter `reasoning_details` (see ``ChatReasoningDetails``): each
+///   entry (`type` and `index`) is one reasoning block, its fragments
+///   appended, its signature and encrypted data typed with ``origin``; the
+///   plain `reasoning` text sent beside them is not read twice;
+/// - Gemini's `extra_content` (see ``ChatGemini``): `google.thought` makes
+///   the delta's `content` a reasoning block, `google.thought_signature`
+///   signs the open text or reasoning block and ends it (as Gemini signs a
+///   part with its last chunk; with no block open, an empty text block is
+///   signed); the rest stays in the block's bag;
+/// - Mistral typed content parts (`text`, `thinking`; see ``ChatMistral``);
 /// - `refusal` deltas;
 /// - the usage-only final chunk of `stream_options.include_usage` (and
 ///   usage on any chunk; the last one wins);
@@ -25,7 +35,8 @@
 ///
 /// Only the first choice index seen is followed; others produce a warning.
 @_spi(Wire) public struct ChatCompletionsStreamDecoder: WireStreamDecoder {
-    /// System id stamped on fidelity data (reserved; plain Chat has none).
+    /// System id stamped on fidelity data (Gemini's thought signatures,
+    /// OpenRouter's `reasoning_details` signatures and encrypted data).
     public var origin: WireSystemID?
     public private(set) var warnings: [WireWarning] = []
 
@@ -37,6 +48,7 @@
         var id: String?
         var name: String
         var extra: JSONObject
+        var signature: String?
         /// Set once started; holds the arguments received so far.
         var call: WireToolCall?
         var bufferedArguments: String
@@ -47,7 +59,23 @@
     private var done = false
     private var choiceIndex: Int?
     private var nextBlock = 0
-    private var open: (kind: TextKind, block: String, sourceKey: String?)?
+    /// The open text, reasoning or refusal block.
+    private struct OpenBlock: Sendable {
+        var kind: TextKind
+        var block: String
+        var sourceKey: String?
+        /// The `reasoning_details` entry (`type#index`) this block holds.
+        var detail: String?
+        /// The entry's `type`, `format`, `index`… as the block started.
+        var detailMeta: JSONObject = [:]
+        /// Metadata for the end event.
+        var signature: String?
+        var encrypted: String?
+        var extra: JSONObject = [:]
+        var hasLate = false
+    }
+
+    private var open: OpenBlock?
     private var tools: [ToolState] = []
     private var toolByIndex: [Int: Int] = [:]
     private var finishReason: WireFinishReason?
@@ -55,7 +83,7 @@
     private var usage: WireUsage?
     private var warned: Set<String> = []
 
-    private static let knownDeltaKeys = Set(["role", "content", "refusal", "tool_calls"] + chatReasoningKeys)
+    private static let knownDeltaKeys = Set(["role", "content", "refusal", "tool_calls", ChatGemini.key, ChatReasoningDetails.key] + chatReasoningKeys)
     private static let knownChoiceKeys: Set<String> = ["index", "delta", "finish_reason", "logprobs"]
     private static let knownChunkKeys: Set<String> = ["id", "object", "created", "model", "choices", "usage"]
 
@@ -180,27 +208,46 @@
     }
 
     private mutating func decodeDelta(_ delta: JSONObject, into events: inout [WireEvent]) {
+        let details = reasoningDetails(delta[ChatReasoningDetails.key])
         // Some relays send the same thought under both names; take one.
+        // OpenRouter repeats the details' text in the plain field.
+        var plainKey: String?
         for key in chatReasoningKeys {
             if case .string(let text)? = delta[key] {
-                if !text.isEmpty { appendText(.reasoning, text, sourceKey: key, into: &events) }
+                if !details.isEmpty, text == details.map(\.text).joined() {
+                    plainKey = key
+                } else if !text.isEmpty {
+                    appendText(.reasoning, text, sourceKey: key, into: &events)
+                }
                 break
             }
         }
+        for (position, entry) in details.enumerated() {
+            appendDetail(entry, position: position, sourceKey: plainKey, into: &events)
+        }
+        let gemini = ChatGemini.split(delta[ChatGemini.key])
         switch delta["content"] {
         case .string(let text)?:
-            if !text.isEmpty { appendText(.text, text, sourceKey: nil, into: &events) }
+            if !text.isEmpty {
+                if gemini.thought {
+                    appendText(.reasoning, text, sourceKey: ChatGemini.thoughtSourceKey, into: &events)
+                } else {
+                    appendText(.text, text, sourceKey: nil, into: &events)
+                }
+            }
         case .array(let parts)?:
             // Mistral streams typed parts (Magistral, and GLM on
             // api.mistral.ai): text parts, and `thinking` parts that hold
-            // the thought as a list of text parts. Both go on as text.
+            // the thought as a list of text parts.
             for part in parts {
                 switch part["type"]?.stringValue {
                 case "text":
                     if case .string(let text)? = part["text"], !text.isEmpty { appendText(.text, text, sourceKey: nil, into: &events) }
                 case "thinking":
                     for inner in part["thinking"]?.arrayValue ?? [] where inner["type"] == "text" {
-                        if case .string(let text)? = inner["text"], !text.isEmpty { appendText(.reasoning, text, sourceKey: nil, into: &events) }
+                        if case .string(let text)? = inner["text"], !text.isEmpty {
+                            appendText(.reasoning, text, sourceKey: ChatMistral.thinkingSourceKey, into: &events)
+                        }
                     }
                 default:
                     warnOnce("content-array", WireWarning(.unsupportedValue, "a stream delta content part other than text or thinking is not carried", path: "choices[].delta.content"))
@@ -208,6 +255,9 @@
             }
         default:
             break
+        }
+        if gemini.signature != nil || gemini.rest != nil {
+            signOpen(gemini, into: &events)
         }
         if case .string(let text)? = delta["refusal"], !text.isEmpty {
             appendText(.refusal, text, sourceKey: nil, into: &events)
@@ -234,11 +284,17 @@
                 endTool(slot, into: &events)
             }
         }
-        if let open, open.kind == kind, open.sourceKey == sourceKey {
+        if let open, open.kind == kind, open.sourceKey == sourceKey, open.detail == nil {
             events.append(Self.delta(kind, open.block, text))
             return
         }
         closeOpen(into: &events)
+        let block = startBlock(kind, sourceKey: sourceKey, into: &events)
+        events.append(Self.delta(kind, block, text))
+    }
+
+    /// Starts a block (the open one must be closed) and returns its id.
+    private mutating func startBlock(_ kind: TextKind, sourceKey: String?, into events: inout [WireEvent]) -> String {
         let block: String
         switch kind {
         case .text:
@@ -251,8 +307,85 @@
             block = newBlock("refusal")
             events.append(.refusalStart(id: block, refusal: WireRefusal("", sourceKey: "refusal")))
         }
-        open = (kind, block, sourceKey)
-        events.append(Self.delta(kind, block, text))
+        open = OpenBlock(kind: kind, block: block, sourceKey: sourceKey)
+        return block
+    }
+
+    /// The readable entries of a delta's `reasoning_details`.
+    private mutating func reasoningDetails(_ value: JSONValue?) -> [ChatReasoningDetails.Entry] {
+        switch value {
+        case nil, .null?:
+            return []
+        case .array(let items)?:
+            return items.compactMap { item in
+                let entry = ChatReasoningDetails.entry(item)
+                if entry == nil {
+                    warnOnce("details-entry", WireWarning(.droppedContent, "a `reasoning_details` entry of an unknown type or shape is not carried", path: "choices[].delta.reasoning_details"))
+                }
+                return entry
+            }
+        default:
+            warnOnce("details", WireWarning(.droppedField, "stream delta field `reasoning_details` is not a list", path: "choices[].delta.reasoning_details"))
+            return []
+        }
+    }
+
+    /// Appends a `reasoning_details` entry to its block (`type` and
+    /// `index`), starting it if it is not the open one.
+    private mutating func appendDetail(_ entry: ChatReasoningDetails.Entry, position: Int, sourceKey: String?, into events: inout [WireEvent]) {
+        let detail = "\(entry.type)#\(entry.meta["index"]?.numberValue?.int ?? position)"
+        if var current = open, current.detail == detail {
+            if !entry.text.isEmpty { events.append(.reasoningDelta(id: current.block, delta: entry.text)) }
+            if let signature = entry.signature {
+                current.signature = signature
+                current.hasLate = true
+            }
+            if let data = entry.data {
+                current.encrypted = data
+                current.hasLate = true
+            }
+            // Keys sent with a later fragment (an `id`…) go with the end.
+            let known = current.extra[ChatReasoningDetails.key]?.objectValue ?? current.detailMeta
+            var merged = known
+            for (key, value) in entry.meta { merged[key] = value }
+            if merged != known {
+                current.extra[ChatReasoningDetails.key] = .object(merged)
+                current.hasLate = true
+            }
+            open = current
+            return
+        }
+        closeOpen(into: &events)
+        let block = newBlock("reasoning")
+        var first = entry
+        first.text = ""
+        events.append(.reasoningStart(id: block, reasoning: ChatReasoningDetails.reasoning(first, origin: origin, sourceKey: sourceKey)))
+        open = OpenBlock(kind: .reasoning, block: block, sourceKey: sourceKey, detail: detail, detailMeta: entry.meta)
+        if !entry.text.isEmpty { events.append(.reasoningDelta(id: block, delta: entry.text)) }
+    }
+
+    /// Gemini's delta-level `extra_content`: the signature (and the rest)
+    /// go to the open text or reasoning block, or an empty text (or, for a
+    /// thought, reasoning) block; a signature ends the block.
+    private mutating func signOpen(_ gemini: ChatGemini.Split, into events: inout [WireEvent]) {
+        if open == nil || open?.kind == .refusal || open?.detail != nil {
+            closeOpen(into: &events)
+            _ = startBlock(
+                gemini.thought ? .reasoning : .text,
+                sourceKey: gemini.thought ? ChatGemini.thoughtSourceKey : nil, into: &events,
+            )
+        }
+        guard var current = open else { return }
+        current.hasLate = true
+        if let rest = gemini.rest {
+            current.extra[ChatGemini.key] = rest
+            if !rest.isNull {
+                warnOnce("extra_content", WireWarning(.unknownField, "kept unknown field `\(ChatGemini.key)`", path: "choices[].delta.\(ChatGemini.key)"))
+            }
+        }
+        current.signature = gemini.signature ?? current.signature
+        open = current
+        if gemini.signature != nil { closeOpen(into: &events) }
     }
 
     private static func delta(_ kind: TextKind, _ block: String, _ text: String) -> WireEvent {
@@ -266,10 +399,18 @@
     private mutating func closeOpen(into events: inout [WireEvent]) {
         guard let current = open else { return }
         open = nil
+        let signedBy = current.signature != nil || current.encrypted != nil ? origin : nil
         switch current.kind {
-        case .text: events.append(.textEnd(id: current.block, text: nil))
-        case .reasoning: events.append(.reasoningEnd(id: current.block, reasoning: nil))
-        case .refusal: events.append(.refusalEnd(id: current.block, refusal: nil))
+        case .text:
+            let late = current.hasLate ? WireText("", signature: current.signature, origin: signedBy, extra: current.extra) : nil
+            events.append(.textEnd(id: current.block, text: late))
+        case .reasoning:
+            let late = current.hasLate
+                ? WireReasoning(text: "", signature: current.signature, encrypted: current.encrypted, origin: signedBy, extra: current.extra)
+                : nil
+            events.append(.reasoningEnd(id: current.block, reasoning: late))
+        case .refusal:
+            events.append(.refusalEnd(id: current.block, refusal: nil))
         }
     }
 
@@ -280,9 +421,15 @@
         let name = function?["name"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
         let arguments = function?["arguments"]?.stringValue ?? ""
 
+        let gemini = ChatGemini.split(fragment[ChatGemini.key])
         if let slot = toolByIndex[index], !tools[slot].ended,
            id == nil || tools[slot].id == nil || id == tools[slot].id
         {
+            if let signature = gemini.signature {
+                tools[slot].signature = signature
+                tools[slot].call?.signature = signature
+                tools[slot].call?.origin = origin
+            }
             if tools[slot].call != nil {
                 if !arguments.isEmpty {
                     tools[slot].call?.arguments += arguments
@@ -308,11 +455,12 @@
             endTool(slot, into: &events)
         }
         var extra = JSONObject()
-        for (key, value) in fragment where !["index", "id", "type", "function"].contains(key) {
+        for (key, value) in fragment where !["index", "id", "type", "function", ChatGemini.key].contains(key) {
             extra[key] = value
         }
+        if let rest = gemini.rest { extra[ChatGemini.key] = rest }
         tools.append(ToolState(
-            block: newBlock("tool"), index: index, id: id, name: name ?? "", extra: extra,
+            block: newBlock("tool"), index: index, id: id, name: name ?? "", extra: extra, signature: gemini.signature,
             call: nil, bufferedArguments: arguments, ended: false,
         ))
         toolByIndex[index] = tools.count - 1
@@ -326,7 +474,10 @@
         if state.id == nil {
             warnings.append(WireWarning(.malformedStream, "tool call at index \(state.index) has no id; using `\(id)`"))
         }
-        var call = WireToolCall(id: id, idSynthesized: state.id == nil, name: state.name, arguments: "", extra: state.extra)
+        var call = WireToolCall(
+            id: id, idSynthesized: state.id == nil, name: state.name, arguments: "",
+            signature: state.signature, origin: state.signature == nil ? nil : origin, extra: state.extra,
+        )
         events.append(.toolInputStart(id: state.block, call: call))
         if !state.bufferedArguments.isEmpty {
             events.append(.toolInputDelta(id: state.block, delta: state.bufferedArguments))

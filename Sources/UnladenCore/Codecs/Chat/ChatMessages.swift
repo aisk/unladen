@@ -6,6 +6,234 @@
 /// GitHub Copilot's `reasoning_text`.
 let chatReasoningKeys = ["reasoning_content", "reasoning", "reasoning_text"]
 
+/// Mistral's typed content parts (Magistral, and GLM on api.mistral.ai):
+/// `{"type": "thinking", "thinking": [{"type": "text", "text": …}]}`.
+///
+/// Decoded as ``WireReasoning`` with ``thinkingSourceKey``, which the Chat
+/// encoders write back as such a part for the same protocol.
+enum ChatMistral {
+    static let thinkingSourceKey = "thinking"
+
+    /// The text of a `thinking` list, `nil` unless it holds only plain text parts.
+    static func thinkingText(_ value: JSONValue?) -> [String]? {
+        guard case .array(let items)? = value else { return nil }
+        var texts: [String] = []
+        for item in items {
+            guard case .object(let object) = item, object.count == 2, object["type"] == "text",
+                  case .string(let text)? = object["text"]
+            else { return nil }
+            texts.append(text)
+        }
+        return texts
+    }
+
+    static func thinking(_ text: String) -> JSONValue {
+        ["type": "thinking", "thinking": [textPart(text)]]
+    }
+
+    static func textPart(_ text: String) -> JSONValue {
+        ["type": "text", "text": .string(text)]
+    }
+
+    /// A `thinking` part with several text parts decodes to one reasoning
+    /// part each, with their position in ``WireReasoning/summaryIndex`` (as
+    /// Responses summary parts); the first comes from
+    /// ``ChatDecode/part(_:path:warnings:)``, these are the rest.
+    static func followingThinking(_ item: JSONValue) -> [WirePart] {
+        guard item["type"] == "thinking", let texts = thinkingText(item["thinking"]), texts.count > 1 else { return [] }
+        return texts.enumerated().dropFirst().map { i, text in
+            .reasoning(WireReasoning(text: text, summaryIndex: i, sourceKey: thinkingSourceKey))
+        }
+    }
+
+    /// Whether `part` continues the `thinking` part encoded before it.
+    static func continues(_ part: WirePart) -> Bool {
+        guard case .reasoning(let reasoning) = part, reasoning.sourceKey == thinkingSourceKey else { return false }
+        return (reasoning.summaryIndex ?? 0) > 0
+    }
+}
+
+/// Gemini's OpenAI-compatible dialect: `extra_content.google` carries a
+/// thought signature (`thought_signature`) on tool calls, on assistant
+/// messages and on stream deltas, and marks a delta's `content` as thought
+/// text (`thought: true`).
+///
+/// Decoders type the signature (``WireText/signature``,
+/// ``WireToolCall/signature``, ``WireReasoning/signature``) and keep the
+/// rest of `extra_content` in the part's bag under ``key``; the Chat
+/// encoders put the signature back for the same protocol.
+enum ChatGemini {
+    static let key = "extra_content"
+    /// ``WireReasoning/sourceKey`` of thought text that came in a stream
+    /// delta's `content`, marked as a thought.
+    static let thoughtSourceKey = "extra_content.google.thought"
+
+    struct Split: Equatable {
+        var signature: String?
+        var thought = false
+        /// What is left of `extra_content`, `nil` if nothing.
+        var rest: JSONValue?
+    }
+
+    /// Takes the signature and the thought marker out of `extra_content`.
+    static func split(_ value: JSONValue?) -> Split {
+        guard case .object(var object)? = value else { return Split(rest: value) }
+        var split = Split()
+        if case .object(var google)? = object["google"] {
+            if case .string(let signature)? = google["thought_signature"] {
+                split.signature = signature
+                google["thought_signature"] = nil
+            }
+            if google["thought"] == true {
+                split.thought = true
+                google["thought"] = nil
+            }
+            object["google"] = google.isEmpty ? nil : .object(google)
+        }
+        split.rest = object.isEmpty ? nil : .object(object)
+        return split
+    }
+
+    /// Keeps the rest of `extra_content` in a part's bag (a lossless
+    /// unknown field, as ``FieldReader/remaining(warnings:)`` notes them).
+    static func keep(_ rest: JSONValue?, in bag: inout JSONObject, path: String, warnings: inout [WireWarning]) {
+        guard let rest else { return }
+        bag[key] = rest
+        if !rest.isNull { warnings.append(WireWarning(.unknownField, "kept unknown field `\(key)`", path: path)) }
+    }
+
+    /// Writes a part's bag with `extra_content` rebuilt around `signature`
+    /// (same protocol only; otherwise the bag is dropped with warnings).
+    static func appendBag(
+        _ extra: JSONObject,
+        signature: String?,
+        thought: Bool = false,
+        to object: inout JSONObject,
+        include: Bool,
+        path: String,
+        warnings: inout [WireWarning],
+    ) {
+        var extra = extra
+        if include, let joined = join(rest: extra.removeValue(forKey: key), signature: signature, thought: thought) {
+            extra[key] = joined
+        }
+        appendExtra(extra, to: &object, include: include, path: path, warnings: &warnings)
+    }
+
+    /// `extra_content` with the signature (and marker) put back into `rest`.
+    static func join(rest: JSONValue?, signature: String?, thought: Bool = false) -> JSONValue? {
+        guard signature != nil || thought else { return rest }
+        var object = rest?.objectValue ?? [:]
+        var google = object["google"]?.objectValue ?? [:]
+        if thought { google["thought"] = true }
+        if let signature { google["thought_signature"] = .string(signature) }
+        object["google"] = .object(google)
+        return .object(object)
+    }
+}
+
+/// OpenRouter's `reasoning_details` (also used by other Chat relays): a
+/// list of `reasoning.text` (`text`, `signature`), `reasoning.summary`
+/// (`summary`) and `reasoning.encrypted` (`data`) entries, each with a
+/// `format` naming the upstream's representation and an `index`.
+///
+/// Each entry is one ``WireReasoning``: its text, signature or encrypted
+/// data typed (the decoder's origin stamped on them), its other keys
+/// (`type`, `format`, `index`, `id`…) in the part's bag under ``key``, from
+/// which the Chat encoders rebuild the entry for the same protocol.
+enum ChatReasoningDetails {
+    static let key = "reasoning_details"
+
+    struct Entry: Equatable {
+        /// The entry without its text, signature or data.
+        var meta: JSONObject
+        var type: String
+        var text: String
+        var signature: String?
+        var data: String?
+    }
+
+    /// The key holding an entry type's text.
+    static func textKey(_ type: String) -> String? {
+        switch type {
+        case "reasoning.text": "text"
+        case "reasoning.summary": "summary"
+        default: nil
+        }
+    }
+
+    /// Reads one entry; `nil` for an unknown type or a malformed entry.
+    static func entry(_ value: JSONValue) -> Entry? {
+        guard case .object(var object) = value, case .string(let type)? = object["type"] else { return nil }
+        var malformed = false
+        func take(_ key: String) -> String? {
+            switch object[key] {
+            case .string(let text)?:
+                object[key] = nil
+                return text
+            case nil, .null?:
+                return nil
+            default:
+                malformed = true
+                return nil
+            }
+        }
+        var entry = Entry(meta: [:], type: type, text: "")
+        switch type {
+        case "reasoning.text":
+            entry.text = take("text") ?? ""
+            entry.signature = take("signature")
+        case "reasoning.summary":
+            entry.text = take("summary") ?? ""
+        case "reasoning.encrypted":
+            entry.data = take("data")
+        default:
+            return nil
+        }
+        guard !malformed else { return nil }
+        entry.meta = object
+        return entry
+    }
+
+    /// Reads a whole list; `nil` unless every entry reads.
+    static func entries(_ value: JSONValue?) -> [Entry]? {
+        guard case .array(let items)? = value else { return nil }
+        var entries: [Entry] = []
+        for item in items {
+            guard let entry = entry(item) else { return nil }
+            entries.append(entry)
+        }
+        return entries
+    }
+
+    static func reasoning(_ entry: Entry, origin: WireSystemID?, sourceKey: String? = nil) -> WireReasoning {
+        let signed = entry.signature != nil || entry.data != nil
+        return WireReasoning(
+            text: entry.text, signature: entry.signature, encrypted: entry.data,
+            origin: signed ? origin : nil, sourceKey: sourceKey, extra: [key: .object(entry.meta)],
+        )
+    }
+
+    /// An entry from its bag `meta` and the given fields (`nil` ones left out).
+    static func encode(meta: JSONObject, text: String?, signature: String?, data: String?) -> JSONValue {
+        var object = meta
+        let type = meta["type"]?.stringValue ?? ""
+        if let text, let key = textKey(type), !object.contains(key: key) { object[key] = .string(text) }
+        if let signature { object["signature"] = .string(signature) }
+        if let data { object["data"] = .string(data) }
+        return .object(object)
+    }
+
+    /// The entry a reasoning part decoded from one would be, if it was
+    /// (its bag holds the entry's meta) and its data fits the entry type.
+    static func encode(_ reasoning: WireReasoning) -> JSONValue? {
+        guard case .object(let meta)? = reasoning.extra[key], let type = meta["type"]?.stringValue else { return nil }
+        if reasoning.signature != nil, type != "reasoning.text" { return nil }
+        if reasoning.encrypted != nil, type != "reasoning.encrypted" { return nil }
+        return encode(meta: meta, text: reasoning.text, signature: reasoning.signature, data: reasoning.encrypted)
+    }
+}
+
 // MARK: - Decoding
 
 enum ChatDecode {
@@ -26,6 +254,7 @@ enum ChatDecode {
             parts.reserveCapacity(items.count)
             for (i, item) in items.enumerated() {
                 parts.append(try part(item, path: WirePath.index(path, i), warnings: &warnings))
+                parts += ChatMistral.followingThinking(item)
             }
             return (parts, .parts)
         default:
@@ -57,6 +286,18 @@ enum ChatDecode {
             guard case .string(let text)? = object["text"] else { return opaque("malformed text part kept as opaque") }
             _ = reader.raw("text")
             return .text(WireText(text, extra: reader.remaining(warnings: &warnings)))
+
+        case "thinking":
+            guard let texts = ChatMistral.thinkingText(object["thinking"]), let first = texts.first else {
+                return opaque("thinking part with content other than text kept as opaque")
+            }
+            _ = reader.raw("thinking")
+            // Several text parts: the first here, the rest after it (see
+            // ``thinkingParts(_:)``).
+            return .reasoning(WireReasoning(
+                text: first, summaryIndex: texts.count > 1 ? 0 : nil,
+                sourceKey: ChatMistral.thinkingSourceKey, extra: reader.remaining(warnings: &warnings),
+            ))
 
         case "refusal":
             guard case .string(let text)? = object["refusal"] else { return opaque("malformed refusal part kept as opaque") }
@@ -152,9 +393,12 @@ enum ChatDecode {
         if id == nil {
             warnings.append(WireWarning(.lossyConversion, "tool call without an id given `\(syntheticID)`", path: path))
         }
+        let gemini = ChatGemini.split(reader.raw(ChatGemini.key))
+        var extra = reader.remaining(warnings: &warnings)
+        ChatGemini.keep(gemini.rest, in: &extra, path: reader.path(ChatGemini.key), warnings: &warnings)
         return .toolCall(WireToolCall(
             id: id ?? syntheticID, idSynthesized: id == nil, name: name, arguments: arguments,
-            extra: reader.remaining(warnings: &warnings),
+            signature: gemini.signature, extra: extra,
         ))
     }
 
@@ -184,15 +428,37 @@ enum ChatDecode {
         var parts: [WirePart] = []
         if role == .assistant {
             // Either spelling; a second one present too stays in the bag.
-            for key in chatReasoningKeys {
-                if case .string(let text)? = object[key] {
-                    _ = reader.raw(key)
-                    parts.append(.reasoning(WireReasoning(text: text, sourceKey: key)))
-                    break
+            let plain = chatReasoningKeys.lazy.compactMap { key in object[key]?.stringValue.map { (key: key, text: $0) } }.first
+            // `reasoning_details` are typed when they all read and say the
+            // same as the plain field (OpenRouter sends both); otherwise
+            // they stay in the bag.
+            let details = ChatReasoningDetails.entries(object[ChatReasoningDetails.key]).flatMap { entries in
+                entries.isEmpty || (plain != nil && plain?.text != entries.map(\.text).joined()) ? nil : entries
+            }
+            if let details {
+                _ = reader.raw(ChatReasoningDetails.key)
+                if let plain { _ = reader.raw(plain.key) }
+                for (i, entry) in details.enumerated() {
+                    parts.append(.reasoning(ChatReasoningDetails.reasoning(entry, origin: nil, sourceKey: i == 0 ? plain?.key : nil)))
                 }
+            } else if let plain {
+                _ = reader.raw(plain.key)
+                parts.append(.reasoning(WireReasoning(text: plain.text, sourceKey: plain.key)))
             }
         }
-        let content = try content(reader.raw("content"), path: reader.path("content"), warnings: &warnings)
+        var content = try content(reader.raw("content"), path: reader.path("content"), warnings: &warnings)
+        // Gemini signs the message's text (non-streaming replies): the
+        // signature goes on the last text part, the rest of
+        // `extra_content` stays in the message's bag.
+        let gemini = role == .assistant ? ChatGemini.split(object[ChatGemini.key]) : ChatGemini.Split()
+        if let signature = gemini.signature,
+           let last = content.parts.lastIndex(where: { if case .text = $0 { true } else { false } }),
+           case .text(var text) = content.parts[last]
+        {
+            _ = reader.raw(ChatGemini.key)
+            text.signature = signature
+            content.parts[last] = .text(text)
+        }
         parts += content.parts
         if role == .assistant {
             if let refusal = try reader.string("refusal") {
@@ -209,7 +475,11 @@ enum ChatDecode {
                 }
             }
         }
-        return WireMessage(role: role, parts: parts, contentForm: content.form, extra: reader.remaining(warnings: &warnings))
+        var extra = reader.remaining(warnings: &warnings)
+        if reader.consumed.contains(ChatGemini.key) {
+            ChatGemini.keep(gemini.rest, in: &extra, path: reader.path(ChatGemini.key), warnings: &warnings)
+        }
+        return WireMessage(role: role, parts: parts, contentForm: content.form, extra: extra)
     }
 }
 
@@ -239,6 +509,16 @@ enum ChatEncode {
         var allPlain = true
         for (i, part) in parts.enumerated() {
             guard let item = self.part(part, include: include, path: WirePath.index(path, i), warnings: &warnings) else {
+                continue
+            }
+            // Mistral: a later text part of the `thinking` part before.
+            if ChatMistral.continues(part), case .object(var previous)? = items.last, previous["type"] == "thinking",
+               case .array(var list)? = previous["thinking"], case .array(let more)? = item["thinking"]
+            {
+                list += more
+                previous["thinking"] = .array(list)
+                items[items.count - 1] = .object(previous)
+                allPlain = false
                 continue
             }
             items.append(item)
@@ -335,6 +615,14 @@ enum ChatEncode {
             }
             return opaque.value
 
+        case .reasoning(let reasoning) where include && reasoning.sourceKey == ChatMistral.thinkingSourceKey:
+            guard case .object(var thinking) = ChatMistral.thinking(reasoning.text) else { return nil }
+            if reasoning.hasSignedData {
+                warnings.append(WireWarning(.droppedContent, "reasoning signature/encrypted data cannot be carried by Chat", path: path))
+            }
+            appendExtra(reasoning.extra, to: &thinking, include: include, path: path, warnings: &warnings)
+            return .object(thinking)
+
         case .reasoning, .toolCall, .toolResult:
             warnings.append(WireWarning(.droppedContent, "part cannot appear in Chat content", path: path))
             return nil
@@ -357,13 +645,15 @@ enum ChatEncode {
         object["id"] = .string(call.id)
         object["type"] = "function"
         object["function"] = .object(function)
-        if call.signature != nil {
+        // Same protocol: a signature can only have come from Gemini's
+        // dialect (`extra_content`), and goes back there.
+        if call.signature != nil, !include {
             warnings.append(WireWarning(.droppedContent, "tool call signature cannot be carried by Chat", path: path))
         }
         if let itemType = call.itemType {
             warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a function call", path: path))
         }
-        appendExtra(call.extra, to: &object, include: include, path: path, warnings: &warnings)
+        ChatGemini.appendBag(call.extra, signature: call.signature, to: &object, include: include, path: path, warnings: &warnings)
         return .object(object)
     }
 
@@ -389,13 +679,29 @@ enum ChatEncode {
         var results: [WireToolResult] = []
         let isAssistant = message.role == .assistant
         let callsPath = WirePath.key(path, "tool_calls")
+        var textSignature: String?
+        var textExtraContent: JSONValue?
 
         for part in message.parts {
             switch part {
             case .toolResult(let result):
                 results.append(result)
-            case .reasoning(let value) where isAssistant:
+            case .reasoning(let value) where isAssistant && !(include && value.sourceKey == ChatMistral.thinkingSourceKey):
+                // Same protocol, Mistral's `thinking` content parts stay in
+                // the content (``part(_:include:path:warnings:)``).
                 reasoning.append(value)
+            case .text(var text) where isAssistant && include && (text.signature != nil || text.extra[ChatGemini.key] != nil):
+                // Gemini's text signature (and the rest of its
+                // `extra_content`) belongs to the message.
+                if let signature = text.signature {
+                    if textSignature != nil {
+                        warnings.append(WireWarning(.droppedContent, "only one text signature fits a Chat message", path: path))
+                    }
+                    textSignature = signature
+                }
+                if let value = text.extra.removeValue(forKey: ChatGemini.key), textExtraContent == nil { textExtraContent = value }
+                text.signature = nil
+                rest.append(.text(text))
             case .toolCall(let call) where isAssistant:
                 calls.append(toolCall(call, include: include, path: WirePath.index(callsPath, calls.count), warnings: &warnings))
             case .refusal(let refusal) where isAssistant && !(include && refusal.sourceKey == nil):
@@ -465,21 +771,33 @@ enum ChatEncode {
                 appendExtra(item.extra, to: &unused, include: false, path: path, warnings: &warnings)
             }
         } else if !reasoning.isEmpty {
+            // Same protocol: parts decoded from `reasoning_details` go back
+            // there, with their signatures and encrypted data.
+            var entries: [JSONValue] = []
+            var plain: [WireReasoning] = []
+            for item in reasoning {
+                if include, let entry = ChatReasoningDetails.encode(item) { entries.append(entry) } else { plain.append(item) }
+            }
             let sourceKey = include ? reasoning.first?.sourceKey : nil
-            let key = sourceKey.flatMap { chatReasoningKeys.contains($0) ? $0 : nil } ?? "reasoning_content"
+            let spelling = sourceKey.flatMap { chatReasoningKeys.contains($0) ? $0 : nil }
+            let key = spelling ?? "reasoning_content"
             let keyPath = WirePath.key(path, key)
-            object[key] = .string(reasoningText)
-            if reasoning.count > 1 {
+            // Details alone (no plain field in the source) need no string.
+            if spelling != nil || !plain.isEmpty || entries.isEmpty {
+                object[key] = .string(reasoningText)
+            }
+            if plain.count > 1 {
                 warnings.append(WireWarning(.lossyConversion, "reasoning blocks joined into one string", path: keyPath))
             }
-            if reasoning.contains(where: \.hasSignedData) {
+            if plain.contains(where: \.hasSignedData) {
                 warnings.append(WireWarning(.droppedContent, "reasoning signature/encrypted data cannot be carried by Chat", path: keyPath))
             }
-            for item in reasoning {
+            for item in plain {
                 // Chat reasoning is a plain string: an object's bag has no place.
                 var unused = JSONObject()
                 appendExtra(item.extra, to: &unused, include: false, path: keyPath, warnings: &warnings)
             }
+            if !entries.isEmpty { object[ChatReasoningDetails.key] = .array(entries) }
         }
         if !refusals.isEmpty {
             object["refusal"] = .string(refusals.map(\.text).joined())
@@ -487,7 +805,9 @@ enum ChatEncode {
         if !calls.isEmpty {
             object["tool_calls"] = .array(calls)
         }
-        appendExtra(message.extra, to: &object, include: include, path: path, warnings: &warnings)
+        var extra = message.extra
+        if extra[ChatGemini.key] == nil, let textExtraContent { extra[ChatGemini.key] = textExtraContent }
+        ChatGemini.appendBag(extra, signature: textSignature, to: &object, include: include, path: path, warnings: &warnings)
         output.append(.object(object))
         return output
     }

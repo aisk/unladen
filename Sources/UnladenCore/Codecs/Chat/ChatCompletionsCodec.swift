@@ -420,7 +420,8 @@ extension ChatCompletionsCodec {
     /// Decodes a non-streaming upstream reply.
     ///
     /// - Parameter origin: the system id to stamp on fidelity data (none in
-    ///   plain Chat; reserved for dialects that carry signatures).
+    ///   plain Chat; the dialects that carry signatures: Gemini's
+    ///   `extra_content`, OpenRouter's `reasoning_details`).
     public static func parseResponse(
         _ body: some Collection<UInt8>,
         origin: WireSystemID? = nil,
@@ -485,6 +486,9 @@ extension ChatCompletionsCodec {
             case .toolCall(var call) where call.signature != nil || call.itemID != nil:
                 call.origin = origin
                 message.parts[i] = .toolCall(call)
+            case .text(var text) where text.signature != nil:
+                text.origin = origin
+                message.parts[i] = .text(text)
             default:
                 break
             }

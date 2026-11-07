@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_openrouter/test_openrouter_streaming_reasoning.yaml",
     "interaction": 0
   },
@@ -11,11 +11,6 @@
   "protocol": "chat",
   "status": 200,
   "target": "openrouter/anthropic/claude-sonnet-5",
-  "expect": {
-    "knownIssues": {
-      "decodeWarnings": "OpenRouter `reasoning_details` in stream deltas are dropped, so Claude's signature cannot be replayed after a streamed turn."
-    }
-  },
   "model": "anthropic/claude-sonnet-5",
   "host": "openrouter.ai",
   "path": "/api/v1/chat/completions",
@@ -26,7 +21,7 @@
   "facts": {
     "text": "10",
     "reasoning": "Listing out primes between 100 and 150, I count ten total: 101, 103, 107, 109, 113, 127, 131, 137, 139, 149.\n\n",
-    "signedReasoning": false,
+    "signedReasoning": true,
     "toolCalls": [],
     "finish": "stop",
     "usage": {

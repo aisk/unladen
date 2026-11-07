@@ -18,8 +18,8 @@ public enum ProfileTransform: String, Hashable, Sendable, CaseIterable {
     /// call answered already) are dropped.
     case pairToolCalls
     /// Reasoning fidelity data from systems the endpoint does not trust is
-    /// stripped (the text stays); Chat `reasoning_details` bags become
-    /// reasoning text. For upstreams that reject others' reasoning (Kimi).
+    /// stripped (the text stays); Chat `reasoning_details` (bags, and the
+    /// parts decoded from them) become reasoning text. For upstreams that reject others' reasoning (Kimi).
     case stripForeignReasoning
     /// Each assistant turn with tool calls, or continuing after tool results,
     /// gets reasoning text (`" "` if it had none), which the Chat encoder

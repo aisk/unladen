@@ -10,7 +10,11 @@
 ///   is known), then `data: [DONE]`.
 /// - Reasoning goes out as `reasoning_content` (or `reasoning`, if that is
 ///   what a Chat upstream used); signatures and encrypted reasoning cannot
-///   be carried and produce a warning.
+///   be carried and produce a warning, except what a Chat upstream sent in
+///   its own dialect, which goes back there: OpenRouter `reasoning_details`
+///   (``ChatReasoningDetails``), Gemini's `extra_content` thought marker and
+///   signatures (``ChatGemini``), Mistral `thinking` parts
+///   (``ChatMistral``).
 /// - Unknown fields from the upstream (``WireResponseMetadata/extra``, usage
 ///   and finish bags, tool-call bags, Chat opaque tool calls) and spelling
 ///   hints are written only if the metadata says the source was Chat.
@@ -31,7 +35,19 @@ package struct ChatCompletionsStreamEncoder: Sendable {
     private var errored = false
     private var nextToolIndex = 0
     private var toolIndexByBlock: [String: Int] = [:]
-    private var reasoningKeyByBlock: [String: String] = [:]
+    /// How a reasoning block is written, and its end metadata so far.
+    private struct ReasoningOut: Sendable {
+        /// The plain field (`reasoning_content`…), if one is written.
+        var key: String?
+        var style: Style
+        var signature: String?
+        var encrypted: String?
+        var extra: JSONObject
+
+        enum Style: Sendable { case plain, details(JSONObject), thought, thinking }
+    }
+
+    private var reasoningByBlock: [String: ReasoningOut] = [:]
     private var warned: Set<String> = []
 
     package init(defaults: ChatResponseDefaults, includeUsage: Bool) {
@@ -56,6 +72,15 @@ package struct ChatCompletionsStreamEncoder: Sendable {
                 appendExtra(metadata.extra, to: &ignored, include: false, path: "", warnings: &warnings)
             }
 
+        case .textEnd(_, let text?) where sameProtocol:
+            // A Chat upstream's text signature is Gemini's: back into a
+            // delta's `extra_content`, with the rest of it.
+            var extra = text.extra
+            if let joined = ChatGemini.join(rest: extra.removeValue(forKey: ChatGemini.key), signature: text.signature) {
+                content([ChatGemini.key: joined], into: &output)
+            }
+            if !extra.isEmpty { dropExtra(extra) }
+
         case .textStart(_, let text), .textEnd(_, let text?):
             if text.signature != nil { dropSignature("text") }
             if !text.extra.isEmpty { dropExtra(text.extra) }
@@ -73,21 +98,55 @@ package struct ChatCompletionsStreamEncoder: Sendable {
             if !delta.isEmpty { content(["refusal": .string(delta)], into: &output) }
 
         case .reasoningStart(let block, let reasoning):
-            let key = sameProtocol ? reasoning.sourceKey.flatMap { chatReasoningKeys.contains($0) ? $0 : nil } : nil
-            reasoningKeyByBlock[block] = key ?? "reasoning_content"
-            if reasoning.hasSignedData { dropFidelity(block) }
+            var out = ReasoningOut(
+                key: nil, style: .plain, signature: reasoning.signature, encrypted: reasoning.encrypted, extra: reasoning.extra,
+            )
+            let spelling = sameProtocol ? reasoning.sourceKey.flatMap { chatReasoningKeys.contains($0) ? $0 : nil } : nil
+            if sameProtocol, case .object(let meta)? = reasoning.extra[ChatReasoningDetails.key] {
+                out.style = .details(meta)
+                out.key = spelling
+                out.extra[ChatReasoningDetails.key] = nil
+            } else if sameProtocol, reasoning.sourceKey == ChatGemini.thoughtSourceKey {
+                out.style = .thought
+            } else if sameProtocol, reasoning.sourceKey == ChatMistral.thinkingSourceKey {
+                out.style = .thinking
+            } else {
+                out.key = spelling ?? "reasoning_content"
+            }
+            reasoningByBlock[block] = out
 
         case .reasoningDelta(let block, let delta):
-            if !delta.isEmpty {
-                content([reasoningKeyByBlock[block] ?? "reasoning_content": .string(delta)], into: &output)
+            if !delta.isEmpty, let out = reasoningByBlock[block] {
+                var object = JSONObject()
+                if let key = out.key { object[key] = .string(delta) }
+                switch out.style {
+                case .plain:
+                    break
+                case .details(let meta):
+                    object[ChatReasoningDetails.key] = [ChatReasoningDetails.encode(meta: meta, text: delta, signature: nil, data: nil)]
+                case .thought:
+                    object["content"] = .string(delta)
+                    object[ChatGemini.key] = ChatGemini.join(rest: nil, signature: nil, thought: true)
+                case .thinking:
+                    object["content"] = [ChatMistral.thinking(delta)]
+                }
+                content(object, into: &output)
             }
 
-        case .reasoningSignatureDelta(let block, _):
-            dropFidelity(block)
+        case .reasoningSignatureDelta(let block, let delta):
+            if var out = reasoningByBlock[block] {
+                out.signature = (out.signature ?? "") + delta
+                reasoningByBlock[block] = out
+            }
 
-        case .reasoningEnd(let block, let reasoning):
-            if reasoning?.hasSignedData == true { dropFidelity(block) }
-
+        case .reasoningEnd(let block, let late):
+            guard var out = reasoningByBlock.removeValue(forKey: block) else { break }
+            if let late {
+                if let value = late.signature { out.signature = value }
+                if let value = late.encrypted { out.encrypted = value }
+                for (key, value) in late.extra { out.extra[key] = value }
+            }
+            output += endReasoning(block, out)
         case .toolInputStart(let block, let call):
             output += startTool(block: block, call: call, arguments: "")
 
@@ -168,10 +227,40 @@ package struct ChatCompletionsStreamEncoder: Sendable {
         fragment["id"] = .string(call.id)
         fragment["type"] = "function"
         fragment["function"] = ["name": .string(call.name), "arguments": .string(arguments)]
-        if call.signature != nil { dropSignature("tool call") }
-        appendExtra(call.extra, to: &fragment, include: sameProtocol, path: "tool_calls[\(index)]", warnings: &warnings)
+        if call.signature != nil, !sameProtocol { dropSignature("tool call") }
+        ChatGemini.appendBag(call.extra, signature: call.signature, to: &fragment, include: sameProtocol, path: "tool_calls[\(index)]", warnings: &warnings)
         var output: [SSEElement] = []
         content(["tool_calls": [.object(fragment)]], into: &output)
+        return output
+    }
+
+    /// The end of a reasoning block: its signature or encrypted data, if
+    /// the block's dialect can carry them (same protocol), as a last delta.
+    private mutating func endReasoning(_ block: String, _ out: ReasoningOut) -> [SSEElement] {
+        var output: [SSEElement] = []
+        let signed = out.signature != nil || out.encrypted != nil
+        switch out.style {
+        case .details(let started):
+            // Keys learned late (an `id`…) come with the end metadata.
+            let meta = out.extra[ChatReasoningDetails.key]?.objectValue ?? started
+            let type = meta["type"]?.stringValue
+            if out.signature != nil && type != "reasoning.text" || out.encrypted != nil && type != "reasoning.encrypted" {
+                dropFidelity(block)
+            } else if signed || meta != started {
+                let entry = ChatReasoningDetails.encode(meta: meta, text: nil, signature: out.signature, data: out.encrypted)
+                content([ChatReasoningDetails.key: [entry]], into: &output)
+            }
+        case .thought, .plain:
+            if sameProtocol, out.encrypted == nil {
+                if let joined = ChatGemini.join(rest: out.extra[ChatGemini.key], signature: out.signature) {
+                    content([ChatGemini.key: joined], into: &output)
+                }
+            } else if signed {
+                dropFidelity(block)
+            }
+        case .thinking:
+            if signed { dropFidelity(block) }
+        }
         return output
     }
 

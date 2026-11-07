@@ -285,12 +285,7 @@
       "path": "tests/models/cassettes/test_google/test_google_model_max_tokens.yaml",
       "interaction": 0,
       "protocol": "gemini",
-      "target": "gemini/gemini-2.5-flash",
-      "expect": {
-        "knownIssues": {
-          "roundTrip": "Gemini reply decoder drops `candidates[0].index`, so a same-protocol reply loses it."
-        }
-      }
+      "target": "gemini/gemini-2.5-flash"
     },
     {
       "id": "gemini/stream-text",
@@ -306,12 +301,7 @@
       "path": "tests/models/cassettes/test_google/test_google_model_thinking_part.yaml",
       "interaction": 0,
       "protocol": "gemini",
-      "target": "gemini/gemini-3-pro-preview",
-      "expect": {
-        "knownIssues": {
-          "roundTrip": "Gemini reply decoder drops `candidates[0].index`, so a same-protocol reply loses it."
-        }
-      }
+      "target": "gemini/gemini-3-pro-preview"
     },
     {
       "id": "gemini/thinking-max-tokens-empty",
@@ -319,12 +309,7 @@
       "path": "tests/models/cassettes/test_google/test_google_model_max_tokens_thinking_model_empty_response.yaml",
       "interaction": 0,
       "protocol": "gemini",
-      "target": "gemini/gemini-2.5-pro",
-      "expect": {
-        "knownIssues": {
-          "roundTrip": "Gemini reply decoder drops `candidates[0].index`; content without `parts` is written back with `parts: []`."
-        }
-      }
+      "target": "gemini/gemini-2.5-pro"
     },
     {
       "id": "gemini/prompt-blocked",
@@ -456,9 +441,6 @@
       "protocol": "chat",
       "target": "mistral/magistral-medium-latest",
       "expect": {
-        "knownIssues": {
-          "facts.reasoning": "Non-streaming Mistral `thinking` content parts stay opaque: kept for Chat clients, but not reasoning for other protocols (streams are decoded)."
-        },
         "requestChanges": {
           "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
           "$.presence_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
@@ -514,8 +496,7 @@
       "target": "mistral/zai-glm-5-3",
       "expect": {
         "accepted": {
-          "decodeWarnings": "GLM on api.mistral.ai repeats the choice `index` inside `delta`; the warning is for that key, nothing is lost.",
-          "streamRoundTrip": "Mistral thinking parts are re-encoded as `reasoning_content` (what Chat clients read), so the re-decoded reasoning has that source key."
+          "decodeWarnings": "GLM on api.mistral.ai repeats the choice `index` inside `delta`; the warning is for that key, nothing is lost."
         },
         "requestChanges": {
           "$.frequency_penalty": "the recorded client wrote an explicit null; Unladen leaves the parameter out (same meaning)",
@@ -551,11 +532,6 @@
       "path": "packages/mistral/src/__fixtures__/mistral-reasoning.chunks.txt",
       "kind": "chunks",
       "protocol": "chat",
-      "expect": {
-        "accepted": {
-          "streamRoundTrip": "Mistral thinking parts are re-encoded as `reasoning_content` (what Chat clients read), so the re-decoded reasoning has that source key."
-        }
-      },
       "target": "mistral/magistral-small-latest"
     },
     {
@@ -604,12 +580,7 @@
       "path": "tests/models/cassettes/test_openrouter/test_openrouter_streaming_reasoning.yaml",
       "interaction": 0,
       "protocol": "chat",
-      "target": "openrouter/anthropic/claude-sonnet-5",
-      "expect": {
-        "knownIssues": {
-          "decodeWarnings": "OpenRouter `reasoning_details` in stream deltas are dropped, so Claude's signature cannot be replayed after a streamed turn."
-        }
-      }
+      "target": "openrouter/anthropic/claude-sonnet-5"
     },
     {
       "id": "openrouter/reasoning-details-replay",
@@ -635,9 +606,6 @@
       "protocol": "chat",
       "target": "openrouter/minimax/minimax-m2:free",
       "expect": {
-        "knownIssues": {
-          "decodeWarnings": "OpenRouter `reasoning_details` in stream deltas are dropped, so a streamed turn's structured (signed) reasoning cannot be replayed."
-        },
         "accepted": {
           "streamRoundTrip": "OpenRouter sent finish_reason `length` and then an error chunk; re-encoded, the error ends the stream and the earlier finish reason is not written again."
         }
@@ -729,12 +697,7 @@
       "source": "pydantic-ai",
       "path": "tests/models/cassettes/test_openai/test_compatible_api_gemini_3_tool_call_thought_signature[True].yaml",
       "interaction": 1,
-      "protocol": "chat",
-      "expect": {
-        "knownIssues": {
-          "decodeWarnings": "Chat stream decoder drops delta-level `extra_content` (Gemini's OpenAI-compatible API puts thought signatures and the thought marker there)."
-        }
-      }
+      "protocol": "chat"
     },
     {
       "id": "gemini-openai/vertex-thoughts-stream",
@@ -742,14 +705,7 @@
       "path": "internal/gateway/testdata/vertex_openai_thoughts.sse",
       "kind": "sse",
       "protocol": "chat",
-      "model": "google/gemini-3.8-flash",
-      "expect": {
-        "knownIssues": {
-          "facts.text": "Gemini OpenAI-compatible `extra_content.google.thought` is not read: thought text is decoded as answer text.",
-          "facts.reasoning": "Gemini OpenAI-compatible `extra_content.google.thought` is not read: thought text is decoded as answer text.",
-          "decodeWarnings": "Chat stream decoder drops delta-level `extra_content`."
-        }
-      }
+      "model": "google/gemini-3.8-flash"
     },
     {
       "id": "copilot/gemini-thinking-stream",
