@@ -37,8 +37,14 @@
 /// (``Profile/maxCacheBreakpoints``). More are trimmed, not sent to fail:
 /// the breakpoints on tools and leading system messages are kept first, then
 /// the newest ones; each one left out is reported as a cache hint.
-/// Anthropic also requires 1-hour entries to come before 5-minute ones;
-/// that is passed through for the API to judge.
+/// Claude also requires 1-hour entries to come before 5-minute ones, in
+/// prompt order (tools, system, messages): a shorter TTL that a 1-hour
+/// breakpoint follows is raised to one hour, reported as a
+/// ``CallWarning/Code/adjusted`` warning.
+///
+/// **Tool results.** A breakpoint on a part of ``ToolResult/output`` marks
+/// the whole result (Anthropic's `tool_result` block; on Chat, the last part
+/// of its `tool` message).
 public struct CacheBreakpoint: Hashable, Sendable, Codable {
     /// How long the cache entry lives.
     public struct TTL: RawRepresentable, Hashable, Sendable, ExpressibleByStringLiteral, Codable {

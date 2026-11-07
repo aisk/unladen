@@ -752,6 +752,9 @@ enum ChatEncode {
         var rest: [WirePart] = []
         var reasoning: [WireReasoning] = []
         var refusals: [WireRefusal] = []
+        // Where each reasoning and refusal part was in the message.
+        var reasoningIndices: [Int] = []
+        var refusalIndices: [Int] = []
         // Function calls and opaque (non-function) calls, in order.
         var calls: [JSONValue] = []
         var results: [WireToolResult] = []
@@ -760,7 +763,7 @@ enum ChatEncode {
         var textSignature: String?
         var textExtraContent: JSONValue?
 
-        for part in message.parts {
+        for (index, part) in message.parts.enumerated() {
             switch part {
             case .toolResult(let result):
                 results.append(result)
@@ -768,6 +771,7 @@ enum ChatEncode {
                 // Same protocol, Mistral's `thinking` content parts stay in
                 // the content (``part(_:include:path:warnings:)``).
                 reasoning.append(value)
+                reasoningIndices.append(index)
             case .text(var text) where isAssistant
                 && (text.signature != nil && replay.accepts(text.origin) || include && text.extra[ChatGemini.key] != nil):
                 // Gemini's text signature (and the rest of its
@@ -787,6 +791,7 @@ enum ChatEncode {
                 // Same protocol: back where it came from (a content part has
                 // no sourceKey). Otherwise the message field, valid everywhere.
                 refusals.append(refusal)
+                refusalIndices.append(index)
             case .opaque(let opaque) where opaque.slot == "tool_calls":
                 if opaque.protocol == .chatCompletions, isAssistant {
                     calls.append(opaque.value)
@@ -812,6 +817,9 @@ enum ChatEncode {
                     if !last.contains(key: WireCacheControl.key) { last[WireCacheControl.key] = cacheControl.json }
                     items[items.count - 1] = .object(last)
                     content = .array(items)
+                } else if carries, content == nil || content == "" || content == .array([]) {
+                    // An empty result: an empty text part carries it.
+                    content = [["type": "text", "text": "", WireCacheControl.key: cacheControl.json]]
                 } else {
                     let reason = carries ? "the tool message has no content part to carry it" : "this Chat upstream takes no cache_control"
                     dropCacheControl(cacheControl, path: path, reason: reason, warnings: &warnings)
@@ -904,8 +912,12 @@ enum ChatEncode {
         if extra[ChatGemini.key] == nil, let textExtraContent { extra[ChatGemini.key] = textExtraContent }
         ChatGemini.appendBag(extra, signature: textSignature, write: textSignature != nil, to: &object, include: include, path: path, warnings: &warnings)
         // Reasoning and refusals are message fields here: no object of their own.
-        for item in reasoning { dropPatch(item.patch, target: .chatCompletions, path: path, warnings: &warnings) }
-        for item in refusals { dropPatch(item.patch, target: .chatCompletions, path: path, warnings: &warnings) }
+        for (item, p) in zip(reasoning, reasoningIndices) {
+            dropPatch(item.patch, target: .chatCompletions, path: WirePath.index(WirePath.key(path, "content"), p), warnings: &warnings)
+        }
+        for (item, p) in zip(refusals, refusalIndices) {
+            dropPatch(item.patch, target: .chatCompletions, path: WirePath.index(WirePath.key(path, "content"), p), warnings: &warnings)
+        }
         applyPatch(message.patch, to: &object, target: .chatCompletions)
         output.append(.object(object))
         return output

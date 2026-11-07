@@ -10,11 +10,17 @@
 ///
 /// **Decoding.** The Anthropic and Chat decoders lift a `cache_control`
 /// value into this field only when writing the field back reproduces it
-/// exactly: `{"type":"ephemeral"}` or `{"type":"ephemeral","ttl":"…"}`, in
-/// that key order, and no unknown key after it in its object (encoders
-/// write the field after the object's bag). Any other spelling stays in the
-/// bag, where it goes back to the same protocol as before and is dropped
-/// elsewhere.
+/// exactly: `{"type":"ephemeral"}` or `{"type":"ephemeral","ttl":"…"}`
+/// (either key order, kept in ``ttlFirst``), and no unknown key after it
+/// in its object (encoders write the field after the object's bag). Any
+/// other spelling stays in the bag, where it goes back to the same protocol
+/// as before and is dropped elsewhere.
+///
+/// **Tool results.** Anthropic marks the `tool_result` block itself. A
+/// breakpoint on a part inside a result (a Chat `tool` message's content
+/// part) is moved onto the result when encoding for Anthropic from another
+/// protocol (``WireToolResult/hoistCacheControl()``); same-protocol
+/// requests keep it where it was.
 ///
 /// **Encoding.** Anthropic writes it on the block or tool; Chat on the
 /// content part (a tool result's on the last part of its `tool` message)
@@ -27,19 +33,21 @@
     /// The cache lifetime (`"5m"`, `"1h"`); `nil` is the provider's
     /// default (five minutes).
     public var ttl: String?
+    /// The source wrote `ttl` before `type`; written back the same way.
+    public var ttlFirst: Bool
 
-    public init(ttl: String? = nil) {
+    public init(ttl: String? = nil, ttlFirst: Bool = false) {
         self.ttl = ttl
+        self.ttlFirst = ttlFirst
     }
 
     /// The JSON key every protocol that has one uses.
     public static let key = "cache_control"
 
-    /// `{"type":"ephemeral"[,"ttl":…]}`.
+    /// `{"type":"ephemeral"[,"ttl":…]}` (`ttl` first when ``ttlFirst``).
     public var json: JSONValue {
-        var object: JSONObject = ["type": "ephemeral"]
-        if let ttl { object["ttl"] = .string(ttl) }
-        return .object(object)
+        guard let ttl else { return ["type": "ephemeral"] }
+        return ttlFirst ? ["ttl": .string(ttl), "type": "ephemeral"] : ["type": "ephemeral", "ttl": .string(ttl)]
     }
 
     /// The breakpoint `value` spells, or `nil` if ``json`` would not
@@ -50,8 +58,10 @@
         case 1:
             self.init()
         case 2:
-            guard object.keys == ["type", "ttl"], case .string(let ttl)? = object["ttl"] else { return nil }
-            self.init(ttl: ttl)
+            guard object.keys == ["type", "ttl"] || object.keys == ["ttl", "type"], case .string(let ttl)? = object["ttl"] else {
+                return nil
+            }
+            self.init(ttl: ttl, ttlFirst: object.keys[0] == "ttl")
         default:
             return nil
         }
@@ -199,5 +209,21 @@ extension WirePart {
             case .reasoning, .refusal, .opaque: break
             }
         }
+    }
+}
+
+extension WireToolResult {
+    /// Moves the content's breakpoints onto the result, where Anthropic
+    /// puts a tool result's: the result keeps its own, else takes the last
+    /// part's. Returns the indices of content parts whose breakpoint went
+    /// into another (several mark one result; only one survives).
+    @discardableResult
+    public mutating func hoistCacheControl() -> [Int] {
+        let marked = content.indices.filter { content[$0].cacheControl != nil }
+        guard let last = marked.last else { return [] }
+        let collapsed = cacheControl == nil ? Array(marked.dropLast()) : marked
+        if cacheControl == nil { cacheControl = content[last].cacheControl }
+        for i in marked { content[i].cacheControl = nil }
+        return collapsed
     }
 }

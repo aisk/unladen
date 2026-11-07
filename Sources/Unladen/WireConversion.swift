@@ -202,6 +202,16 @@ enum WireConversion {
                 warnings.append(CallWarning(.droppedField, "cache breakpoint dropped: \(kind(of: part)) cannot carry one", path: "\(path).cache_control"))
             }
         }
+        if case .toolResult(var result) = wire {
+            // A breakpoint on the output marks the result: Anthropic's place
+            // for it, and Chat writes a result's on its last part anyway.
+            for k in result.hoistCacheControl() {
+                warnings.append(CallWarning(
+                    .droppedField, "cache breakpoint dropped: a tool result carries one breakpoint", path: "\(path).output[\(k)].cache_control",
+                ))
+            }
+            wire = .toolResult(result)
+        }
         if let patch = target?.patch(options.providerOptions) {
             switch wire {
             case .text(var value): value.patch = patch; wire = .text(value)

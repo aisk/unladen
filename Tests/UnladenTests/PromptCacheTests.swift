@@ -59,7 +59,10 @@ import Unladen
         let model = try client(provider).model("anthropic/claude-sonnet-4-5")
         let response = try await model.generate(Self.history, tools: Self.tools)
 
-        #expect(response.warnings.isEmpty, "\(response.warnings)")
+        // Claude reads tools before system: the tools' five minutes become
+        // the system prompt's hour (a 1h breakpoint may not follow a 5m one).
+        #expect(response.warnings.map(\.path) == ["tools[0].cache_control"])
+        #expect(response.warnings.allSatisfy { $0.code == .adjusted && !$0.isEscalatedWhenStrict })
         #expect(response.usage.cachedInputTokens == 3)
         let expected: JSONValue = [
             "model": "claude-sonnet-4-5",
@@ -74,7 +77,7 @@ import Unladen
             "system": [["type": "text", "text": "You are a contract analyst.", "cache_control": ["type": "ephemeral", "ttl": "1h"]]],
             "tools": [[
                 "name": "search", "description": "Search the contract", "input_schema": Self.schema,
-                "cache_control": ["type": "ephemeral"],
+                "cache_control": ["type": "ephemeral", "ttl": "1h"],
             ]],
         ]
         #expect(provider.lastBody == expected)
@@ -192,9 +195,11 @@ import Unladen
         ]
         let response = try await model.generate(history, tools: Self.tools)
 
-        // Five breakpoints for Claude's four: the oldest message one goes.
-        #expect(response.warnings.map(\.path) == ["messages[1].content[0].cache_control"])
-        #expect(response.warnings.allSatisfy { $0.code == .droppedField && $0.isCacheHint })
+        // Five breakpoints for Claude's four: the oldest message one goes;
+        // the tools' TTL rises to the system prompt's hour.
+        #expect(response.warnings.map(\.path) == ["messages[1].content[0].cache_control", "tools[0].cache_control"])
+        #expect(response.warnings.map(\.code) == [.droppedField, .adjusted])
+        #expect(response.warnings.allSatisfy { !$0.isEscalatedWhenStrict })
         #expect(provider.requests.first?.path == "/api/v1/chat/completions")
         let expected: JSONValue = [
             "model": "anthropic/claude-sonnet-4-5",
@@ -220,7 +225,7 @@ import Unladen
             "tools": [[
                 "type": "function",
                 "function": ["name": "search", "description": "Search the contract", "parameters": Self.schema],
-                "cache_control": ["type": "ephemeral"],
+                "cache_control": ["type": "ephemeral", "ttl": "1h"],
             ]],
         ]
         #expect(provider.lastBody == expected)
@@ -355,6 +360,80 @@ import Unladen
         #expect(part.options.providerOptions["anthropic"] == ["a": 1, "b": 2])
         #expect(Message.user([part]).text == "x")
         #expect(ContentPart.text("x").with(PartOptions()) == .text("x"))
+    }
+
+    // MARK: Review regressions
+
+    /// A breakpoint on a tool result's output marks the `tool_result`
+    /// block; several on one result become one.
+    @Test func toolResultOutputBreakpointMarksTheResult() async throws {
+        let provider = FakeProvider(.json(Self.anthropicReply))
+        let model = try client(provider, policy: .lenient).model("anthropic/claude-sonnet-4-5")
+        let call = ToolCall(id: "toolu_1", name: "search", arguments: "{}")
+        let history: [Message] = [
+            .user("Find it."), .assistant([.toolCall(call)]),
+            .tool(ToolResult(call: call, output: [.text("x").cached(ttl: .oneHour), .text("y").cached()])),
+        ]
+        let response = try await model.generate(history, tools: [Tool(name: "search", inputSchema: Self.schema)])
+        #expect(provider.lastBody.at("messages[2].content[0]") == [
+            "type": "tool_result", "tool_use_id": "toolu_1",
+            "content": [["type": "text", "text": "x"], ["type": "text", "text": "y"]],
+            "cache_control": ["type": "ephemeral"],
+        ])
+        #expect(response.warnings.map(\.path) == ["messages[2].content[0].output[0].cache_control"])
+        #expect(response.warnings.allSatisfy { $0.isCacheHint })
+    }
+
+    /// An empty tool result keeps its breakpoint on Chat.
+    @Test func emptyToolResultBreakpointOnChat() async throws {
+        let provider = FakeProvider(.json(Self.chatReply))
+        let call = ToolCall(id: "call_1", name: "search", arguments: "{}")
+        let history: [Message] = [
+            .user("Find it."), .assistant([.toolCall(call)]),
+            Message.tool(ToolResult(call: call, output: [])).cached(),
+        ]
+        let response = try await Self.openRouterChat(provider).generate(history, tools: [Tool(name: "search", inputSchema: Self.schema)])
+        #expect(response.warnings.isEmpty, "\(response.warnings)")
+        #expect(provider.lastBody.at("messages[2].content") == [["type": "text", "text": "", "cache_control": ["type": "ephemeral"]]])
+    }
+
+    /// Claude rejects a 1h breakpoint after a 5m one: the earlier one is
+    /// raised (reported, never an error).
+    @Test func earlierBreakpointTTLsRiseToALaterHour() async throws {
+        let provider = FakeProvider(.json(Self.anthropicReply))
+        let model = try client(provider).model("anthropic/claude-sonnet-4-5")
+        let history: [Message] = [Message.system("Sys.").cached(), Message.user("Hi.").cached(ttl: .oneHour)]
+        let response = try await model.generate(history)
+        #expect(response.warnings.map(\.code) == [.adjusted])
+        #expect(response.warnings.first?.path == "messages[0].content[0].cache_control")
+        #expect(provider.lastBody.at("system[0].cache_control") == ["type": "ephemeral", "ttl": "1h"])
+    }
+
+    /// Options compare and hash the same however they were stacked.
+    @Test func annotatedPartsCompareByBaseAndOptions() {
+        let built = ContentPart.text("x").cached().withProviderOptions(["anthropic": ["b": 1]])
+        let nested = ContentPart.annotated(
+            .annotated(.text("x"), PartOptions(cache: CacheBreakpoint())),
+            PartOptions(providerOptions: ["anthropic": ["b": 1]]),
+        )
+        #expect(built == nested)
+        #expect(Set([built, nested]).count == 1)
+        #expect(ContentPart.annotated(.text("x"), PartOptions()) == .text("x"))
+        #expect(Set([ContentPart.annotated(.text("x"), PartOptions()), .text("x")]).count == 1)
+        #expect(built != .text("x") && nested.cached(ttl: .oneHour) != built)
+        #expect(ContentPart.text("x") != .reasoning("x"))
+    }
+
+    /// Options on reasoning, a Chat message field, are reported at the part.
+    @Test func chatReasoningOptionsDropAtThePart() async throws {
+        let provider = FakeProvider(.json(Self.chatReply))
+        let history: [Message] = [
+            .user("Hi"),
+            .assistant([.reasoning("hm").withProviderOptions(["chat": ["x": 1]]), .text("ok")]),
+            .user("Again"),
+        ]
+        let response = try await Self.openRouterChat(provider, policy: .lenient).generate(history)
+        #expect(response.warnings.contains { $0.code == .droppedField && $0.path == "messages[1].content[0]" }, "\(response.warnings)")
     }
 
     /// A breakpoint on a part that cannot carry one is a cache hint.

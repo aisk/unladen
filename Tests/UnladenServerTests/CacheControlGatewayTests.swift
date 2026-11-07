@@ -8,7 +8,7 @@ import Testing
 /// byte, translated where the upstream honours them.
 @Suite struct CacheControlGatewayTests {
     static let anthropicRequest = #"""
-    {"model":"MODEL","messages":[{"role":"user","content":[{"type":"text","text":"doc","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"Summarise.","cache_control":{"ttl":"5m","type":"ephemeral"}}]}],"max_tokens":256,"system":[{"type":"text","text":"sys","cache_control":{"type":"ephemeral"}}],"tools":[{"name":"f","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral"}}]}
+    {"model":"MODEL","messages":[{"role":"user","content":[{"type":"text","text":"doc","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"Summarise.","cache_control":{"ttl":"5m","type":"ephemeral"}}]}],"max_tokens":256,"system":[{"type":"text","text":"sys","cache_control":{"type":"ephemeral","ttl":"1h"}}],"tools":[{"name":"f","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}]}
     """#
 
     static func request(_ model: String) -> String {
@@ -43,13 +43,14 @@ import Testing
         let hit = try #require(upstream.requests.first)
         #expect(hit.path == "/api/v1/chat/completions")
         let body = hit.json
-        #expect(body["messages"]?[0] == ["role": "system", "content": [["type": "text", "text": "sys", "cache_control": ["type": "ephemeral"]]]])
-        // The typed breakpoint crosses over; the unusual spelling (`ttl`
-        // first) is the Anthropic client's bag and stays behind.
+        #expect(body["messages"]?[0] == [
+            "role": "system", "content": [["type": "text", "text": "sys", "cache_control": ["type": "ephemeral", "ttl": "1h"]]],
+        ])
+        // Every breakpoint crosses over, `ttl`-first spelling included.
         #expect(body["messages"]?[1]?["content"] == [
             ["type": "text", "text": "doc", "cache_control": ["type": "ephemeral", "ttl": "1h"]],
-            ["type": "text", "text": "Summarise."],
+            ["type": "text", "text": "Summarise.", "cache_control": ["ttl": "5m", "type": "ephemeral"]],
         ])
-        #expect(body["tools"]?[0]?["cache_control"] == ["type": "ephemeral"])
+        #expect(body["tools"]?[0]?["cache_control"] == ["type": "ephemeral", "ttl": "1h"])
     }
 }

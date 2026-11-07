@@ -32,11 +32,13 @@ public struct Message: Hashable, Sendable, Codable {
     /// last part that can carry one in the target protocol (a part's own
     /// breakpoint wins). See ``CacheBreakpoint``.
     public var cache: CacheBreakpoint?
-    /// Raw JSON merged into each object the target protocol writes for the
-    /// message (see ``ProviderOptions``): the Chat message (each `tool`
-    /// message of a tool turn), the Anthropic or Gemini turn (Gemini's
-    /// `systemInstruction` for a leading system message), each Responses
-    /// input item. A leading system message sent as Anthropic's `system`
+    /// Raw JSON merged into every object the target protocol writes for
+    /// the message (see ``ProviderOptions``): each Chat message it becomes
+    /// (each `tool` message of a tool turn), each Anthropic or Gemini turn
+    /// it goes into (Gemini's `systemInstruction` for a leading system
+    /// message; a turn that joins several messages takes all their options,
+    /// later over earlier), each Responses input item it splits into. A
+    /// leading system message sent as Anthropic's `system`
     /// has no object of its own: set options on its parts instead; the
     /// options are dropped with a ``CallWarning/Code/droppedField`` warning.
     public var providerOptions: ProviderOptions
@@ -94,6 +96,13 @@ public struct Message: Hashable, Sendable, Codable {
 /// signature, encrypted reasoning or item id, needed to send the message
 /// back in a later request. Keep it with the part; it is dropped
 /// automatically when the history goes to a provider that cannot verify it.
+///
+/// **Match on ``base``.** A part sent with options (``cached(ttl:)``,
+/// ``withProviderOptions(_:)``) is ``annotated(_:_:)``, so
+/// `if case .text = part` does not match it; `if case .text = part.base`
+/// matches both. Equality and hashing look through the wrapping: two parts
+/// are equal when their ``base`` and their ``options`` are, however the
+/// options were stacked.
 public enum ContentPart: Hashable, Sendable {
     case text(String, replay: ReplayToken? = nil)
     case image(Media)
@@ -111,6 +120,42 @@ public enum ContentPart: Hashable, Sendable {
     /// ``withProviderOptions(_:)`` and ``with(_:)``; ``base`` and
     /// ``options`` take it apart. Responses never contain it.
     indirect case annotated(ContentPart, PartOptions)
+}
+
+extension ContentPart {
+    public static func == (lhs: ContentPart, rhs: ContentPart) -> Bool {
+        let (left, right) = (lhs.base, rhs.base)
+        guard lhs.options == rhs.options else { return false }
+        switch (left, right) {
+        case (.text(let a, let x), .text(let b, let y)),
+             (.reasoning(let a, let x), .reasoning(let b, let y)),
+             (.refusal(let a, let x), .refusal(let b, let y)):
+            return a == b && x == y
+        case (.image(let a), .image(let b)), (.file(let a), .file(let b)):
+            return a == b
+        case (.toolCall(let a), .toolCall(let b)):
+            return a == b
+        case (.toolResult(let a), .toolResult(let b)):
+            return a == b
+        default:
+            return false
+        }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        switch base {
+        case .text(let text, let token): hasher.combine(0); hasher.combine(text); hasher.combine(token)
+        case .image(let media): hasher.combine(1); hasher.combine(media)
+        case .file(let media): hasher.combine(2); hasher.combine(media)
+        case .reasoning(let text, let token): hasher.combine(3); hasher.combine(text); hasher.combine(token)
+        case .refusal(let text, let token): hasher.combine(4); hasher.combine(text); hasher.combine(token)
+        case .toolCall(let call): hasher.combine(5); hasher.combine(call)
+        case .toolResult(let result): hasher.combine(6); hasher.combine(result)
+        case .annotated: break // `base` never is
+        }
+        let options = options
+        if !options.isEmpty { hasher.combine(options) }
+    }
 }
 
 /// An image or file: a URL, inline data, or a provider-side file id.

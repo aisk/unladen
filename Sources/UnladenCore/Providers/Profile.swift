@@ -62,6 +62,10 @@ public struct Profile: Hashable, Sendable {
     /// The excess is left out with a cache-hint warning, keeping the
     /// breakpoints on tools, instructions and leading system messages and
     /// then the newest ones (see `WireTransforms.limitCacheBreakpoints`).
+    /// Set, it also marks a model that reads breakpoints in prompt order
+    /// (tools, system, messages) and rejects a longer TTL after a shorter
+    /// one: earlier TTLs are raised to match
+    /// (`WireTransforms.raiseEarlierCacheTTLs`).
     public var maxCacheBreakpoints: Int?
     /// The model is always called through this protocol, whatever the
     /// caller prefers (e.g. Claude on OpenRouter through Messages, for cache

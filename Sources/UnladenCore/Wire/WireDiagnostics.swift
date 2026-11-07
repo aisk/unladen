@@ -61,9 +61,11 @@ extension WireWarning {
     /// `cache_control`…): dropping one only costs money, never correctness.
     public static let cacheHintFields: Set<String> = ["prompt_cache_key", "prompt_cache_retention", "cache_control", "cachedContent"]
 
-    /// `true` for a dropped prompt-cache hint.
+    /// `true` for a prompt-cache hint dropped, or sent although the target
+    /// may refuse it (``Code/unsupportedValue``: more breakpoints than the
+    /// model takes, as the client spelled them).
     public var isCacheHint: Bool {
-        guard code == .droppedField || code == .droppedContent else { return false }
+        guard code == .droppedField || code == .droppedContent || code == .unsupportedValue else { return false }
         let last = path.split(separator: ".").last.map(String.init) ?? path
         return Self.cacheHintFields.contains(last)
     }

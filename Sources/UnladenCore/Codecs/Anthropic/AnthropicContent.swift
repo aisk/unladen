@@ -429,10 +429,20 @@ enum AnthropicEncode {
             applyPatch(call.patch, to: &object, target: .anthropicMessages)
             return AnthropicBlock(json: .object(object))
 
-        case .toolResult(let result):
+        case .toolResult(var result):
             object["type"] = "tool_result"
             object["tool_use_id"] = .string(AnthropicToolID.outbound(result.callID))
             let contentPath = WirePath.key(path, "content")
+            if !include {
+                // Another protocol's breakpoint inside the result marks the
+                // result (Anthropic's place for it).
+                for i in result.hoistCacheControl() {
+                    dropCacheControl(
+                        WireCacheControl(), path: WirePath.index(contentPath, i),
+                        reason: "a tool result carries one breakpoint", warnings: &warnings,
+                    )
+                }
+            }
             let inner = blocks(result.content, context: context, path: contentPath, warnings: &warnings).filter { block in
                 let type = block.json["type"]?.stringValue ?? ""
                 if ["text", "image", "document", "search_result"].contains(type) { return true }
