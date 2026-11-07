@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_google/test_google_streaming_tool_call_thought_signature.yaml",
     "interaction": 1
   },

@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_openai/test_multiple_agent_tool_calls.yaml",
     "interaction": 2
   },

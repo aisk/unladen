@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_openai_responses/test_openai_responses_always_reasoning_model_resolves_to_accepted_effort[gpt-5-thinking-false].yaml",
     "interaction": 0
   },

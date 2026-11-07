@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_google/test_google_model_armor_prompt_template_text_gets_blocked.yaml",
     "interaction": 0
   },

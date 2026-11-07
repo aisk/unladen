@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/cassettes/test_model_name_suggestions/test_model_name_suggestion[anthropic].yaml",
     "interaction": 0
   },

@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_openai/test_openai_o1_mini_system_role[developer].yaml",
     "interaction": 0
   },

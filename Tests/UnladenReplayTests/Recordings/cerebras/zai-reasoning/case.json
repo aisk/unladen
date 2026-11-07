@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_cerebras/test_cerebras_zai_reasoning_replayed_as_think_tags.yaml",
     "interaction": 0
   },

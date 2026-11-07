@@ -3,7 +3,7 @@
   "source": {
     "repo": "github.com/pydantic/pydantic-ai",
     "licence": "MIT",
-    "commit": "c833840",
+    "commit": "7e72d57",
     "path": "tests/models/cassettes/test_mistral/test_mistral_foreign_tool_call_ids_are_rewritten.yaml",
     "interaction": 0
   },
