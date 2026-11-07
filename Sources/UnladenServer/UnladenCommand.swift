@@ -63,7 +63,7 @@ struct UnladenCommand: AsyncParsableCommand {
     @Option(name: .customLong("api-key"), help: "Key clients must present (Bearer, x-api-key, x-goog-api-key, or ?key= on Gemini routes). Also UNLADEN_API_KEY.")
     var apiKey: String?
 
-    @Flag(help: "Skip upstreams a request cannot be translated to exactly (lossy warnings), and reject the request when none is left, instead of forwarding it with warnings.")
+    @Flag(help: "Skip upstreams a request would lose something on (content or fields the target cannot carry, lossy conversions), and reject the request when none is left. Parameters a model's profile declares it does not take (temperature on reasoning models, seed on Claude...) are left out and only reported.")
     var strict = false
 
     @Option(name: .customLong("connect-timeout"), help: "Upstream connect timeout, in seconds.")

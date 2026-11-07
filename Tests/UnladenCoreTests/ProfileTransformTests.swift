@@ -88,7 +88,8 @@ private func isSynthetic(_ part: WirePart) -> Bool {
 
 @Suite struct ParameterTransformTests {
     @Test func dropsParamsOpenAIReasoningModelsReject() throws {
-        let target = try ProviderRegistry.builtIn.resolve("openai/o3")
+        // Chat: the endpoint declares no seed gap, only the model rule counts.
+        let target = try ProviderRegistry.builtIn.resolve("openai/o3", preferring: .chatCompletions)
         var request = WireRequest(model: "o3", messages: [user("hi")])
         request.temperature = 0.7
         request.topP = 0.9

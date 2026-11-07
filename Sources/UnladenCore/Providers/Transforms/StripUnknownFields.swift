@@ -9,7 +9,7 @@ extension WireTransforms {
             let keys = bag.keys.enumerated().filter { !bag.values[$0.offset].isNull }.map(\.element)
             if !keys.isEmpty {
                 let list = keys.map { "`\($0)`" }.joined(separator: ", ")
-                warnings.append(WireWarning(.droppedField, "upstream rejects unknown fields; dropped \(list)", path: path))
+                warnings.append(WireWarning(.unsupportedByModel, "upstream rejects unknown fields; dropped \(list)", path: path))
             }
             bag = [:]
         }
@@ -65,7 +65,7 @@ extension WireTransforms {
         func drop<Value>(_ field: inout Value?, _ name: String) {
             guard field != nil else { return }
             field = nil
-            warnings.append(WireWarning(.droppedField, "upstream rejects unknown fields; dropped `\(name)`", path: name))
+            warnings.append(WireWarning(.unsupportedByModel, "upstream rejects unknown fields; dropped `\(name)`", path: name))
         }
         drop(&request.store, "store")
         drop(&request.serviceTier, "service_tier")

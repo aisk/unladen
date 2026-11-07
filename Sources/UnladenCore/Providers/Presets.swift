@@ -13,6 +13,40 @@ public enum Presets {
     /// Every upstream gets its tool exchanges mended.
     static let base: [ProfileTransform] = [.pairToolCalls, .customToolsToFunctions, .mapReasoningEffort, .dropUnsupportedParams]
 
+    // Parameters each protocol has no field for, declared on every preset
+    // endpoint of that protocol: left out with an `unsupported_by_model`
+    // warning (reported, not an error under a strict policy) instead of
+    // being dropped by the encoder as a loss.
+
+    /// Chat Completions: no `top_k`.
+    static let chatGaps: Set<SamplingParameter> = [.topK]
+    /// Responses: no seed, stop, top_k, penalties or `n`.
+    static let responsesGaps: Set<SamplingParameter> = [.seed, .stop, .topK, .frequencyPenalty, .presencePenalty, .candidateCount]
+    /// Anthropic Messages: no seed, penalties, `n` or `response_format`.
+    static let anthropicGaps: Set<SamplingParameter> = [.seed, .frequencyPenalty, .presencePenalty, .candidateCount, .responseFormat]
+    /// Gemini: no `user`, no way to forbid parallel calls.
+    static let geminiGaps: Set<SamplingParameter> = [.user, .parallelToolCalls]
+
+    /// The gaps of `apiProtocol`.
+    static func gaps(of apiProtocol: APIProtocol) -> Set<SamplingParameter> {
+        switch apiProtocol {
+        case .chatCompletions: chatGaps
+        case .responses: responsesGaps
+        case .anthropicMessages: anthropicGaps
+        case .gemini: geminiGaps
+        }
+    }
+
+    /// `provider` with each endpoint's defaults declaring its protocol's gaps.
+    static func declaringProtocolGaps(_ provider: Provider) -> Provider {
+        var provider = provider
+        for i in provider.endpoints.indices {
+            let gaps = Profile(unsupportedParameters: gaps(of: provider.endpoints[i].apiProtocol))
+            provider.endpoints[i].defaults = provider.endpoints[i].defaults.merged(over: gaps)
+        }
+        return provider
+    }
+
     /// Claude models before 4.6: budget thinking.
     static let claudeDefaults = Profile(
         defaultMaxOutputTokens: 16000,
@@ -78,7 +112,7 @@ public enum Presets {
 
     // MARK: - Providers
 
-    public static let openAI = Provider(
+    public static let openAI = declaringProtocolGaps(Provider(
         id: "openai",
         apiKeyEnvironmentVariables: ["OPENAI_API_KEY"],
         endpoints: [
@@ -89,9 +123,9 @@ public enum Presets {
                      defaults: Profile(maxTokensField: .maxCompletionTokens, transforms: base)),
         ],
         models: openAIRules(prefix: ""),
-    )
+    ))
 
-    public static let anthropic = Provider(
+    public static let anthropic = declaringProtocolGaps(Provider(
         id: "anthropic",
         apiKeyEnvironmentVariables: ["ANTHROPIC_API_KEY"],
         endpoints: [
@@ -100,9 +134,9 @@ public enum Presets {
                      defaults: Profile(transforms: base).merged(over: claudeDefaults)),
         ],
         models: claudeRules(prefix: ""),
-    )
+    ))
 
-    public static let gemini = Provider(
+    public static let gemini = declaringProtocolGaps(Provider(
         id: "gemini",
         apiKeyEnvironmentVariables: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         endpoints: [
@@ -125,9 +159,9 @@ public enum Presets {
                 geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator,
             )),
         ],
-    )
+    ))
 
-    public static let deepSeek = Provider(
+    public static let deepSeek = declaringProtocolGaps(Provider(
         id: "deepseek",
         apiKeyEnvironmentVariables: ["DEEPSEEK_API_KEY"],
         endpoints: [
@@ -145,9 +179,9 @@ public enum Presets {
                         acceptsUnsignedThinking: true, transforms: base + [.ensureThinkingOnToolTurns],
                      )),
         ],
-    )
+    ))
 
-    public static let moonshot = Provider(
+    public static let moonshot = declaringProtocolGaps(Provider(
         id: "moonshot",
         apiKeyEnvironmentVariables: ["MOONSHOT_API_KEY"],
         endpoints: [
@@ -160,9 +194,9 @@ public enum Presets {
         models: [
             ModelRule(.prefix("kimi-k2"), Profile(supportsReasoning: true, supportsTools: true, reasoningControl: .uncontrolled)),
         ],
-    )
+    ))
 
-    public static let openRouter = Provider(
+    public static let openRouter = declaringProtocolGaps(Provider(
         id: "openrouter",
         apiKeyEnvironmentVariables: ["OPENROUTER_API_KEY"],
         endpoints: [
@@ -174,18 +208,18 @@ public enum Presets {
         ],
         // Claude goes through Messages, which keeps cache breakpoints.
         models: claudeRules(prefix: "anthropic/", forcing: .anthropicMessages) + openAIRules(prefix: "openai/"),
-    )
+    ))
 
-    public static let groq = Provider(
+    public static let groq = declaringProtocolGaps(Provider(
         id: "groq",
         apiKeyEnvironmentVariables: ["GROQ_API_KEY"],
         endpoints: [
             Endpoint(system: "groq", apiProtocol: .chatCompletions, baseURL: "https://api.groq.com/openai/v1",
                      defaults: Profile(transforms: base + [.flattenTextParts])),
         ],
-    )
+    ))
 
-    public static let mistral = Provider(
+    public static let mistral = declaringProtocolGaps(Provider(
         id: "mistral",
         apiKeyEnvironmentVariables: ["MISTRAL_API_KEY"],
         endpoints: [
@@ -193,9 +227,9 @@ public enum Presets {
             Endpoint(system: "mistral", apiProtocol: .chatCompletions, baseURL: "https://api.mistral.ai/v1",
                      defaults: Profile(maxTokensField: .maxTokens, strictUnknownFields: true, transforms: base + [.mistralToolIDs])),
         ],
-    )
+    ))
 
-    public static let xAI = Provider(
+    public static let xAI = declaringProtocolGaps(Provider(
         id: "xai",
         apiKeyEnvironmentVariables: ["XAI_API_KEY"],
         endpoints: [
@@ -210,18 +244,18 @@ public enum Presets {
                 reasoningControl: .uncontrolled,
             )),
         ],
-    )
+    ))
 
-    public static let together = Provider(
+    public static let together = declaringProtocolGaps(Provider(
         id: "together",
         apiKeyEnvironmentVariables: ["TOGETHER_API_KEY"],
         endpoints: [
             Endpoint(system: "together", apiProtocol: .chatCompletions, baseURL: "https://api.together.xyz/v1",
                      defaults: Profile(transforms: base)),
         ],
-    )
+    ))
 
-    public static let ollama = Provider(
+    public static let ollama = declaringProtocolGaps(Provider(
         id: "ollama",
         endpoints: [
             Endpoint(system: "ollama", apiProtocol: .chatCompletions, baseURL: "http://localhost:11434/v1",
@@ -229,5 +263,5 @@ public enum Presets {
             Endpoint(system: "ollama", apiProtocol: .anthropicMessages, baseURL: "http://localhost:11434",
                      auth: .none, defaults: Profile(acceptsUnsignedThinking: true, transforms: base)),
         ],
-    )
+    ))
 }

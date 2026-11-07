@@ -141,6 +141,10 @@ public struct CallWarning: Hashable, Sendable, CustomStringConvertible {
         /// Replay data from another system was left out of the history
         /// (see ``ReplayToken``). Never an error.
         public static let replayDataDropped: Code = "replay_data_dropped"
+        /// A parameter or setting the model's Profile declares it does not
+        /// take was left out (`temperature` on a reasoning model, `seed` on
+        /// Claude, reasoning on a model without it). Never an error.
+        public static let unsupportedByModel: Code = "unsupported_by_model"
     }
 
     public var code: Code
@@ -163,9 +167,10 @@ public struct CallWarning: Hashable, Sendable, CustomStringConvertible {
 
     /// Whether ``WarningPolicy/strict`` turns this request-side warning into
     /// an error: everything except cache hints, ``Code/adjusted``,
-    /// ``Code/replayDataDropped`` and the lossless ``Code/unknownField`` and
-    /// ``Code/opaqueContent`` notes (the classification the gateway's
-    /// `--strict` uses too).
+    /// ``Code/unsupportedByModel``, ``Code/replayDataDropped`` and the
+    /// lossless ``Code/unknownField`` and ``Code/opaqueContent`` notes (the
+    /// classification the gateway's `--strict` uses too; see
+    /// ``WarningPolicy``).
     public var isEscalatedWhenStrict: Bool {
         code != .replayDataDropped && WireWarning(WireWarning.Code(rawValue: code.rawValue), message, path: path).isEscalatedWhenStrict
     }
@@ -176,12 +181,31 @@ public struct CallWarning: Hashable, Sendable, CustomStringConvertible {
 }
 
 /// What happens when a request cannot be sent exactly as asked.
+///
+/// Under ``strict``, a request-side warning is either *escalated* (thrown
+/// as ``UnladenError/unsupported(_:)`` before anything is sent) or
+/// *reported* (on ``ModelResponse/warnings``, or ``StreamPart/warnings(_:)``
+/// at the start of a stream):
+///
+/// - Reported: a parameter or setting the model's Profile declares it does
+///   not take, left out (``CallWarning/Code/unsupportedByModel``:
+///   `temperature`/`top_p` on reasoning models, `seed`, penalties and
+///   `response_format` on Claude, `user` on Gemini, reasoning settings on
+///   models that take none); a meaning-preserving rewrite
+///   (``CallWarning/Code/adjusted``: an effort sent as a budget, a token
+///   limit lowered to the model's cap); replay data another vendor cannot
+///   verify, left out (``CallWarning/Code/replayDataDropped``); a dropped
+///   cache hint.
+/// - Escalated: any other loss, found while encoding for the endpoint and
+///   declared by no Profile: content the protocol or model cannot take
+///   (an image to a text-only model, a file type, a part of a role that
+///   cannot hold it), a field the protocol cannot carry, a lossy
+///   conversion, a reasoning setting the protocol can only partly express
+///   (an explicit budget to a Chat model whose Profile names no reasoning
+///   control).
 public enum WarningPolicy: Hashable, Sendable {
-    /// The default: a request-side warning that changes what the model
-    /// sees (a dropped parameter or part, a lossy conversion) throws
-    /// ``UnladenError/unsupported(_:)`` before anything is sent. Cache hints,
-    /// ``CallWarning/Code/adjusted`` and ``CallWarning/Code/replayDataDropped``
-    /// are only reported.
+    /// The default: losses are thrown, declared drops and rewrites are
+    /// reported (see the type's documentation).
     case strict
     /// Send anyway; every warning is reported on ``ModelResponse/warnings``
     /// (and as ``StreamPart/warnings(_:)`` at the start of a stream).

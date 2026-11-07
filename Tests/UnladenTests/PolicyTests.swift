@@ -15,13 +15,16 @@ import Unladen
     @Test func strictPolicyRejectsBeforeSending() async throws {
         let provider = FakeProvider(.json(Self.anthropicOK))
         let model = try client(provider).model("anthropic/claude-sonnet-4-5")
-        let settings = GenerationSettings(frequencyPenalty: 0.5) // Anthropic has none
+        // Anthropic thinking has no summary setting: a loss no Profile
+        // declares. (A parameter the Profile declares unsupported, such as
+        // `frequency_penalty`, is only reported: `ProfileDropPolicyTests`.)
+        let settings = GenerationSettings(reasoning: ReasoningSettings(budgetTokens: 2048, visibility: .summary()))
 
         await #expect {
             _ = try await model.generate("Hi", settings: settings)
         } throws: { error in
             guard case UnladenError.unsupported(let warnings) = error else { return false }
-            return warnings.map(\.code) == [.droppedField] && warnings[0].path == "frequency_penalty"
+            return !warnings.isEmpty && warnings.allSatisfy { $0.code == .droppedField && $0.isEscalatedWhenStrict }
         }
         // The stream reports the same, from its first `next()`.
         await #expect(throws: UnladenError.self) {
@@ -41,7 +44,7 @@ import Unladen
 
         let response = try await model.generate("Hi", settings: settings)
         #expect(response.text == "ok")
-        #expect(response.warnings.contains { $0.code == .droppedField && $0.path == "frequency_penalty" })
+        #expect(response.warnings.contains { $0.code == .unsupportedByModel && $0.path == "frequency_penalty" })
         #expect(provider.lastBody["frequency_penalty"] == nil)
 
         let all = try await parts(model.stream("Hi", settings: settings))

@@ -29,6 +29,12 @@
         /// A Profile transform changed the request to fit the upstream
         /// (synthesized a tool result, converted an effort, clamped a limit).
         public static let adjusted: Code = "adjusted"
+        /// A Profile transform left out a parameter or setting the model's
+        /// Profile declares it does not take (`temperature` on a reasoning
+        /// model, `seed` on Claude, reasoning on a model without it). The
+        /// request is valid for the model as configured; under a strict
+        /// policy this is reported, not an error.
+        public static let unsupportedByModel: Code = "unsupported_by_model"
     }
 
     public var code: Code
@@ -63,12 +69,16 @@ extension WireWarning {
     }
 
     /// Whether a strict policy turns this request-side warning into an
-    /// error: everything that loses or changes what the model sees.
-    /// Lossless notes are not: an unknown field or opaque content kept
-    /// (``Code/unknownField``, ``Code/opaqueContent``), a meaning-preserving
-    /// ``Code/adjusted`` rewrite, and dropped cache hints.
+    /// error: every loss a codec or encoder discovers (a field or content
+    /// the target cannot carry, foreign replay data, a lossy conversion).
+    ///
+    /// Reported only: lossless notes (an unknown field or opaque content
+    /// kept: ``Code/unknownField``, ``Code/opaqueContent``), a
+    /// meaning-preserving ``Code/adjusted`` rewrite, a parameter the
+    /// model's Profile declares it does not take
+    /// (``Code/unsupportedByModel``), and dropped cache hints.
     public var isEscalatedWhenStrict: Bool {
-        !(code == .unknownField || code == .opaqueContent || code == .adjusted || isCacheHint)
+        !(code == .unknownField || code == .opaqueContent || code == .adjusted || code == .unsupportedByModel || isCacheHint)
     }
 
     /// `decoded` (a client request's or upstream reply's decoding notes)

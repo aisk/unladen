@@ -20,8 +20,13 @@ public struct Profile: Hashable, Sendable {
     /// `false` is the same as listing `.temperature` in
     /// ``unsupportedParameters``.
     public var supportsTemperature: Bool?
-    /// Sampling parameters the model rejects (OpenAI reasoning models:
-    /// temperature, top_p…). Removed by ``ProfileTransform/dropUnsupportedParams``.
+    /// Request parameters the model rejects (OpenAI reasoning models:
+    /// temperature, top_p…), or that its endpoint's protocol has no field
+    /// for (Anthropic: seed, penalties, response_format). Removed by
+    /// ``ProfileTransform/dropUnsupportedParams`` with a
+    /// ``WireWarning/Code/unsupportedByModel`` warning, which a strict
+    /// policy reports but does not escalate. Accumulates across merges
+    /// (see ``merged(over:)``).
     public var unsupportedParameters: Set<SamplingParameter>?
     /// Parameters the model rejects while thinking is on (Anthropic:
     /// temperature, top_k). "On" means `enabled: true` or a positive budget;
@@ -109,7 +114,10 @@ public struct Profile: Hashable, Sendable {
     }
 
     /// `self` over `base`: each non-nil field of `self` replaces `base`'s.
-    /// Collections are replaced whole, not unioned (one level, simple).
+    /// Collections are replaced whole, not unioned (one level, simple),
+    /// except ``unsupportedParameters``, which is the union of both: an
+    /// endpoint declares its protocol's gaps and a model rule adds the
+    /// model's own.
     public func merged(over base: Profile) -> Profile {
         Profile(
             defaultMaxOutputTokens: defaultMaxOutputTokens ?? base.defaultMaxOutputTokens,
@@ -118,7 +126,7 @@ public struct Profile: Hashable, Sendable {
             supportsTools: supportsTools ?? base.supportsTools,
             supportsImages: supportsImages ?? base.supportsImages,
             supportsTemperature: supportsTemperature ?? base.supportsTemperature,
-            unsupportedParameters: unsupportedParameters ?? base.unsupportedParameters,
+            unsupportedParameters: base.unsupportedParameters.map { $0.union(unsupportedParameters ?? []) } ?? unsupportedParameters,
             unsupportedParametersWhileReasoning: unsupportedParametersWhileReasoning ?? base.unsupportedParametersWhileReasoning,
             reasoningControl: reasoningControl ?? base.reasoningControl,
             effortLevels: effortLevels ?? base.effortLevels,
@@ -154,6 +162,13 @@ public enum SamplingParameter: String, Hashable, Sendable, CaseIterable {
     case stop
     /// Chat `n`, Gemini `candidateCount`.
     case candidateCount = "n"
+    /// Structured output (`response_format`, Gemini `responseMimeType`…).
+    case responseFormat = "response_format"
+    /// The end-user id (OpenAI `user`).
+    case user
+    /// `parallel_tool_calls`. Only `false` is reported when dropped:
+    /// parallel calls are what a model does without the setting.
+    case parallelToolCalls = "parallel_tool_calls"
 }
 
 /// How a model's reasoning depth is controlled.

@@ -356,7 +356,7 @@
         case nil:
             clamp()
         case .uncontrolled?:
-            warnings.append(WireWarning(.droppedField, "this model takes no reasoning settings", path: path))
+            warnings.append(WireWarning(.unsupportedByModel, "this model takes no reasoning settings", path: path))
             request.reasoning = nil
             return
         case .effort?, .thinkingLevel?:
@@ -499,21 +499,26 @@
             case .seed: present = request.seed != nil; request.seed = nil
             case .stop: present = request.stop != nil; request.stop = nil
             case .candidateCount: present = request.candidateCount != nil; request.candidateCount = nil
+            case .responseFormat: present = request.responseFormat != nil; request.responseFormat = nil
+            case .user: present = request.user != nil; request.user = nil
+            case .parallelToolCalls: present = request.parallelToolCalls == false; request.parallelToolCalls = nil
             }
             if present {
-                warnings.append(WireWarning(.droppedField, "this model does not accept `\(parameter.rawValue)`", path: parameter.rawValue))
+                warnings.append(WireWarning(.unsupportedByModel, "this model does not accept `\(parameter.rawValue)`", path: parameter.rawValue))
             }
         }
         if profile.supportsReasoning == false, request.reasoning != nil {
             request.reasoning = nil
-            warnings.append(WireWarning(.droppedField, "this model does not reason", path: "reasoning"))
+            warnings.append(WireWarning(.unsupportedByModel, "this model does not reason", path: "reasoning"))
         }
         if profile.supportsTools == false, request.tools != nil || request.toolChoice != nil || request.parallelToolCalls != nil {
             request.tools = nil
             request.toolChoice = nil
             request.parallelToolCalls = nil
-            warnings.append(WireWarning(.droppedField, "this model does not take tools", path: "tools"))
+            warnings.append(WireWarning(.unsupportedByModel, "this model does not take tools", path: "tools"))
         }
+        // Images are content, not a parameter: dropping one stays a lossy
+        // `dropped_content`, escalated by a strict policy.
         if profile.supportsImages == false {
             func strip(_ parts: [WirePart], path: String) -> [WirePart] {
                 parts.compactMap { part in

@@ -94,7 +94,7 @@ import UnladenTestSupport
         let (_, body, warnings) = try prepare(request, for: reference, preferring: .chatCompletions)
         #expect(body["temperature"] == nil && body["top_p"] == nil)
         #expect(body["max_completion_tokens"] == 300 && body["max_tokens"] == nil)
-        #expect(warnings.contains { $0.code == .droppedField && $0.path == "temperature" })
+        #expect(warnings.contains { $0.code == .unsupportedByModel && $0.path == "temperature" })
     }
 
     // MARK: Anthropic

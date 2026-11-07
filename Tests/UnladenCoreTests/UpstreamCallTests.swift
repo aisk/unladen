@@ -291,7 +291,7 @@ private func streamedText(_ events: [WireEvent]) -> String {
         #expect(body["safe_prompt"] == nil)
         #expect(body["messages"]?[0]?["name"] == nil)
         #expect(body["max_tokens"] == 9_999_999)
-        #expect(prepared.warnings.filter { $0.code == .droppedField }.count == 2)
+        #expect(prepared.warnings.filter { $0.code == .unsupportedByModel }.count == 2)
 
         // Without the flag the same protocol writes bags back.
         let lenient = try UpstreamCall(

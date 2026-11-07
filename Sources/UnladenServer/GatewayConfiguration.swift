@@ -17,9 +17,11 @@ struct GatewayConfiguration: Sendable {
     /// `x-api-key`, `x-goog-api-key`, or `?key=` on Gemini routes).
     var apiKey: String?
     /// Skip candidates the request cannot be carried to exactly (lossy
-    /// warnings; kept unknown fields, `adjusted` rewrites and cache hints
-    /// do not count), and answer 400 when no candidate is left, instead of
-    /// forwarding with an `x-unladen-warnings` header.
+    /// warnings; kept unknown fields, `adjusted` rewrites, parameters the
+    /// model's Profile declares unsupported and cache hints do not count:
+    /// ``WireWarning/isEscalatedWhenStrict``), and answer 400 when no
+    /// candidate is left, instead of forwarding with an
+    /// `x-unladen-warnings` header.
     var strict = false
     /// How long a streaming client may go without an event before it is
     /// sent a keepalive.
