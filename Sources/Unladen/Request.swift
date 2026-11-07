@@ -1,3 +1,5 @@
+@_spi(Wire) import UnladenCore
+
 /// Everything one model call sends: the conversation, the tools on offer,
 /// and generation settings.
 public struct ModelRequest: Hashable, Sendable {
@@ -35,12 +37,27 @@ public struct Tool: Hashable, Sendable {
     public var inputSchema: JSONValue
     /// Ask for strict schema adherence (OpenAI `strict`), where supported.
     public var strict: Bool?
+    /// A prompt-cache breakpoint after this tool's definition (see
+    /// ``CacheBreakpoint``): mark the last tool to cache them all.
+    public var cache: CacheBreakpoint?
+    /// Raw JSON merged into the tool's object in the request (Chat: the
+    /// `{"type": "function", …}` envelope); see ``ProviderOptions``.
+    public var providerOptions: ProviderOptions
 
-    public init(name: String, description: String? = nil, inputSchema: JSONValue = ["type": "object"], strict: Bool? = nil) {
+    public init(
+        name: String,
+        description: String? = nil,
+        inputSchema: JSONValue = ["type": "object"],
+        strict: Bool? = nil,
+        cache: CacheBreakpoint? = nil,
+        providerOptions: ProviderOptions = [:],
+    ) {
         self.name = name
         self.description = description
         self.inputSchema = inputSchema
         self.strict = strict
+        self.cache = cache
+        self.providerOptions = providerOptions
     }
 }
 
@@ -182,8 +199,9 @@ public enum ResponseFormat: Hashable, Sendable {
     case jsonSchema(JSONValue, name: String? = nil, description: String? = nil, strict: Bool? = nil)
 }
 
-/// Raw JSON for one provider or protocol, merged into the request body:
-/// the escape hatch for parameters Unladen does not model.
+/// Raw JSON for one provider or protocol, merged into the request body,
+/// or into one message, part or tool of it: the escape hatch for
+/// parameters Unladen does not model.
 ///
 /// Keys are an endpoint system id (``Endpoint/system``: `"openai"`,
 /// `"anthropic"`, `"gemini"`, `"deepseek"`, `"openrouter"`…) or a protocol
@@ -204,6 +222,20 @@ public enum ResponseFormat: Hashable, Sendable {
 ///     "anthropic": ["metadata": ["user_id": "u-42"]],
 /// ]
 /// ```
+///
+/// **Messages, parts and tools.** ``Message/providerOptions``,
+/// ``ContentPart/withProviderOptions(_:)`` and ``Tool/providerOptions``
+/// take the same keys and precedence, and are merged the same way into the
+/// object the target protocol writes for the message, part or tool, last
+/// (after any ``CacheBreakpoint``). Where the target writes no object for it
+/// (Chat reasoning and refusals are message fields; Anthropic's `system`
+/// has no message), the options are dropped with a
+/// ``CallWarning/Code/droppedField`` warning.
+///
+/// ```swift
+/// let doc = ContentPart.file(.url("https://example.com/a.pdf", mediaType: "application/pdf"))
+///     .withProviderOptions(["anthropic": ["citations": ["enabled": true]]])
+/// ```
 public struct ProviderOptions: Hashable, Sendable, ExpressibleByDictionaryLiteral {
     public var entries: [String: JSONObject]
 
@@ -221,4 +253,39 @@ public struct ProviderOptions: Hashable, Sendable, ExpressibleByDictionaryLitera
     }
 
     public var isEmpty: Bool { entries.isEmpty }
+
+    /// The options for `protocol` with those for `system` merged over them,
+    /// or `nil` if there are none.
+    func resolved(protocol apiProtocol: APIProtocol, system: String) -> JSONObject? {
+        var result: JSONObject?
+        var keys = [apiProtocol.rawValue]
+        if system != apiProtocol.rawValue { keys.append(system) }
+        for key in keys {
+            guard let entry = entries[key] else { continue }
+            result = WirePatch.overlay(entry, on: result ?? [:])
+        }
+        return result
+    }
+}
+
+/// Stored as one compact JSON text per key, so any `Encoder` keeps every
+/// value (`null` included) and number literal exactly.
+extension ProviderOptions: Codable {
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let texts = try container.decode([String: String].self)
+        var entries: [String: JSONObject] = [:]
+        for (key, text) in texts {
+            guard let object = (try? JSONValue(parsing: Array(text.utf8)))?.objectValue else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "provider options for `\(key)` are not a JSON object")
+            }
+            entries[key] = object
+        }
+        self.init(entries)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(entries.mapValues { String(decoding: JSONValue.object($0).encoded(), as: UTF8.self) })
+    }
 }

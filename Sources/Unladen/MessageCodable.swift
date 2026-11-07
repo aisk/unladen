@@ -1,18 +1,47 @@
 // `Codable` for conversation history, so it can be saved and loaded.
 //
-// Message, Role, ToolCall and ToolResult use the synthesized form. Content
-// parts are tagged objects (`{"type": "text", "text": …}`); media name its
-// source by key (`url`, `base64` or `fileID`); a replay token is one opaque
-// string (see `ReplayToken`'s conformance). Foundation is not needed: any
-// encoder (`JSONEncoder`, a property list…) works.
+// Role, ToolCall and ToolResult use the synthesized form; Message too, plus
+// `cache` and `providerOptions` when set. Content parts are tagged objects
+// (`{"type": "text", "text": …}`); a part with options adds `cache` and
+// `providerOptions` keys to its own object. Media name its source by key
+// (`url`, `base64` or `fileID`); a replay token is one opaque string (see
+// `ReplayToken`'s conformance). The added keys are optional, so histories
+// saved before them still load. Foundation is not needed: any encoder
+// (`JSONEncoder`, a property list…) works.
 
 @_spi(Wire) import UnladenCore
+
+// MARK: - Message
+
+extension Message {
+    private enum CodingKeys: String, CodingKey {
+        case role, content, cache, providerOptions
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            role: try container.decode(Role.self, forKey: .role),
+            content: try container.decode([ContentPart].self, forKey: .content),
+            cache: try container.decodeIfPresent(CacheBreakpoint.self, forKey: .cache),
+            providerOptions: try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions) ?? [:],
+        )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        try container.encodeIfPresent(cache, forKey: .cache)
+        if !providerOptions.isEmpty { try container.encode(providerOptions, forKey: .providerOptions) }
+    }
+}
 
 // MARK: - ContentPart
 
 extension ContentPart: Codable {
     private enum CodingKeys: String, CodingKey {
-        case type, text, replay, media, toolCall, toolResult
+        case type, text, replay, media, toolCall, toolResult, cache, providerOptions
     }
 
     private enum Kind: String, Codable {
@@ -21,27 +50,39 @@ extension ContentPart: Codable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let base = try Self.base(from: container)
+        let options = PartOptions(
+            cache: try container.decodeIfPresent(CacheBreakpoint.self, forKey: .cache),
+            providerOptions: try container.decodeIfPresent(ProviderOptions.self, forKey: .providerOptions) ?? [:],
+        )
+        self = base.with(options)
+    }
+
+    private static func base(from container: KeyedDecodingContainer<CodingKeys>) throws -> ContentPart {
         switch try container.decode(Kind.self, forKey: .type) {
         case .text:
-            self = .text(try container.decode(String.self, forKey: .text), replay: try container.decodeIfPresent(ReplayToken.self, forKey: .replay))
+            return .text(try container.decode(String.self, forKey: .text), replay: try container.decodeIfPresent(ReplayToken.self, forKey: .replay))
         case .reasoning:
-            self = .reasoning(try container.decode(String.self, forKey: .text), replay: try container.decodeIfPresent(ReplayToken.self, forKey: .replay))
+            return .reasoning(try container.decode(String.self, forKey: .text), replay: try container.decodeIfPresent(ReplayToken.self, forKey: .replay))
         case .refusal:
-            self = .refusal(try container.decode(String.self, forKey: .text), replay: try container.decodeIfPresent(ReplayToken.self, forKey: .replay))
+            return .refusal(try container.decode(String.self, forKey: .text), replay: try container.decodeIfPresent(ReplayToken.self, forKey: .replay))
         case .image:
-            self = .image(try container.decode(Media.self, forKey: .media))
+            return .image(try container.decode(Media.self, forKey: .media))
         case .file:
-            self = .file(try container.decode(Media.self, forKey: .media))
+            return .file(try container.decode(Media.self, forKey: .media))
         case .toolCall:
-            self = .toolCall(try container.decode(ToolCall.self, forKey: .toolCall))
+            return .toolCall(try container.decode(ToolCall.self, forKey: .toolCall))
         case .toolResult:
-            self = .toolResult(try container.decode(ToolResult.self, forKey: .toolResult))
+            return .toolResult(try container.decode(ToolResult.self, forKey: .toolResult))
         }
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        switch self {
+        let options = options
+        switch base {
+        case .annotated:
+            preconditionFailure("`base` is never annotated")
         case .text(let text, let replay):
             try container.encode(Kind.text, forKey: .type)
             try container.encode(text, forKey: .text)
@@ -67,6 +108,8 @@ extension ContentPart: Codable {
             try container.encode(Kind.toolResult, forKey: .type)
             try container.encode(result, forKey: .toolResult)
         }
+        try container.encodeIfPresent(options.cache, forKey: .cache)
+        if !options.providerOptions.isEmpty { try container.encode(options.providerOptions, forKey: .providerOptions) }
     }
 }
 

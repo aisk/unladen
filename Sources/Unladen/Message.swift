@@ -28,10 +28,24 @@ public struct Message: Hashable, Sendable, Codable {
     /// In order. Which kinds of part a role may hold is listed on ``Role``;
     /// anything else is rejected with ``UnladenError/invalidRequest(_:)``.
     public var content: [ContentPart]
+    /// A prompt-cache breakpoint at the end of the message: it goes on the
+    /// last part that can carry one in the target protocol (a part's own
+    /// breakpoint wins). See ``CacheBreakpoint``.
+    public var cache: CacheBreakpoint?
+    /// Raw JSON merged into each object the target protocol writes for the
+    /// message (see ``ProviderOptions``): the Chat message (each `tool`
+    /// message of a tool turn), the Anthropic or Gemini turn (Gemini's
+    /// `systemInstruction` for a leading system message), each Responses
+    /// input item. A leading system message sent as Anthropic's `system`
+    /// has no object of its own: set options on its parts instead; the
+    /// options are dropped with a ``CallWarning/Code/droppedField`` warning.
+    public var providerOptions: ProviderOptions
 
-    public init(role: Role, content: [ContentPart]) {
+    public init(role: Role, content: [ContentPart], cache: CacheBreakpoint? = nil, providerOptions: ProviderOptions = [:]) {
         self.role = role
         self.content = content
+        self.cache = cache
+        self.providerOptions = providerOptions
     }
 
     public static func system(_ text: String) -> Message {
@@ -65,12 +79,12 @@ public struct Message: Hashable, Sendable, Codable {
 
     /// The text parts, joined.
     public var text: String {
-        content.compactMap { if case .text(let text, _) = $0 { text } else { nil } }.joined()
+        content.compactMap { if case .text(let text, _) = $0.base { text } else { nil } }.joined()
     }
 
     /// The tool calls, in order.
     public var toolCalls: [ToolCall] {
-        content.compactMap { if case .toolCall(let call) = $0 { call } else { nil } }
+        content.compactMap { if case .toolCall(let call) = $0.base { call } else { nil } }
     }
 }
 
@@ -92,6 +106,11 @@ public enum ContentPart: Hashable, Sendable {
     case refusal(String, replay: ReplayToken? = nil)
     case toolCall(ToolCall)
     case toolResult(ToolResult)
+    /// A part sent with per-part settings: a cache breakpoint or raw
+    /// provider options. Built by ``cached(ttl:)``,
+    /// ``withProviderOptions(_:)`` and ``with(_:)``; ``base`` and
+    /// ``options`` take it apart. Responses never contain it.
+    indirect case annotated(ContentPart, PartOptions)
 }
 
 /// An image or file: a URL, inline data, or a provider-side file id.

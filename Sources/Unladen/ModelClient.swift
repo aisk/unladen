@@ -228,9 +228,12 @@ public struct LanguageModel: Sendable {
     func prepare(_ request: ModelRequest, stream: Bool) throws(UnladenError) -> PreparedCall {
         let endpoint = target.endpoint
         var semantic = request
-        let (messages, notices) = WireConversion.forTarget(request.messages, trusted: endpoint.trustedOrigins)
+        var (messages, notices) = WireConversion.forTarget(request.messages, trusted: endpoint.trustedOrigins)
         semantic.messages = messages
-        let wire = try WireConversion.request(semantic, model: target.model, chatDialect: endpoint.apiProtocol.wire == .chatCompletions)
+        let wire = try WireConversion.request(
+            semantic, model: target.model, target: WireConversion.Target(apiProtocol: endpoint.apiProtocol, system: endpoint.system),
+            chatDialect: endpoint.apiProtocol.wire == .chatCompletions, warnings: &notices,
+        )
 
         let upstream = UpstreamCall(target: target, apiKey: apiKey, transport: transport)
         var prepared: UpstreamRequest

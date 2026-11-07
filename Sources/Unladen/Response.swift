@@ -32,7 +32,7 @@ public struct ModelResponse: Hashable, Sendable {
 
     /// The reasoning text, joined; `nil` if there was none.
     public var reasoningText: String? {
-        let parts = message.content.compactMap { if case .reasoning(let text, _) = $0 { text } else { nil } }
+        let parts = message.content.compactMap { if case .reasoning(let text, _) = $0.base { text } else { nil } }
         return parts.isEmpty ? nil : parts.joined()
     }
 
