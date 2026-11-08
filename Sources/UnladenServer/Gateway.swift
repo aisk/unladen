@@ -3,6 +3,7 @@
 
 import HTTPTypes
 import Hummingbird
+import NIOConcurrencyHelpers
 import NIOCore
 @_spi(Wire) import UnladenCore
 
@@ -19,6 +20,7 @@ struct Gateway: Sendable {
     var transport: any HTTPTransport
     var strategy: any RoutingStrategy = KeyPoolOrdering()
     var health = HealthStore()
+    var heldStreams = HeldStreams()
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
         self.store = ConfigurationStore(configuration)
@@ -108,30 +110,46 @@ struct Gateway: Sendable {
             )
         }
 
-        let outcome: AttemptOutcome
-        do {
-            outcome = try await monitor.run {
-                try await self.attempt(
-                    request, decodeWarnings: decoded.warnings, candidates: ordered, stream: stream, clientHeaders: headers,
-                    strict: configuration.strict, headTimeout: configuration.headTimeout, log: log,
-                )
+        let settled = Settled<AttemptOutcome>()
+        let work = Task {
+            do {
+                let outcome = try await monitor.run {
+                    try await self.attempt(
+                        request, decodeWarnings: decoded.warnings, candidates: ordered, stream: stream, clientHeaders: headers,
+                        strict: configuration.strict, headTimeout: configuration.headTimeout, log: log,
+                    )
+                }
+                settled.set(.success(outcome))
+            } catch {
+                settled.set(.failure(error))
             }
-        } catch {
-            return fail(499, "client disconnected", warnings: decoded.warnings)
+        }
+        let result: Result<AttemptOutcome, any Error>
+        if stream, clientProtocol.toleratesComments, let hold = heldStreams.headersAfter {
+            // A stream still without content after `hold` gets its 200 and
+            // SSE comments while the attempts go on (magpie's keepHeldAfter):
+            // a comment is no event, so whichever candidate answers goes on
+            // in the same response.
+            guard let done = await settled.wait(upTo: hold) else {
+                return heldStream(settled, work, clientProtocol: clientProtocol, request: request, decodeWarnings: decoded.warnings,
+                                  configuration: configuration, monitor: monitor, line: line, log: log)
+            }
+            result = done
+        } else {
+            result = await settled.wait()
+        }
+        let outcome: AttemptOutcome
+        switch result {
+        case .success(let value): outcome = value
+        case .failure: return fail(499, "client disconnected", warnings: decoded.warnings)
         }
 
         switch outcome {
         case .failure(let failure):
-            line.candidate = failure.candidate?.reference
             let response = failureResponse(failure, clientProtocol: clientProtocol, warnings: decoded.warnings)
             monitor.uninstall()
             line.status = response.status.code
-            line.warnings = decoded.warnings.count
-            if case .upstream(_, let error) = failure {
-                line.note = "upstream \(error.status.code): \(Self.redactingSecrets(ErrorShape.upstreamMessage(error.body)))"
-            }
-            if case .gateway(_, let message, _) = failure { line.note = message }
-            if case .strict(let warnings) = failure { line.warnings += warnings.count }
+            Self.note(failure, decodeWarnings: decoded.warnings, on: &line)
             log.emit(line.text)
             return response
 
@@ -159,52 +177,204 @@ struct Gateway: Sendable {
                 return Response(status: .ok, headers: fields, body: ResponseBody(byteBuffer: ByteBuffer(bytes: encoded.body)))
 
             case .events(let events):
-                for warning in warnings { log.emit("warning: \(warning)") }
                 fields[.contentType] = "text/event-stream"
                 fields[.cacheControl] = "no-cache"
-                let header = WarningHeader.value(request: served.requestWarnings, response: served.responseWarnings)
-                if !warnings.isEmpty { fields[WarningHeader.name] = header }
-                let leading: [SSEElement] = !warnings.isEmpty && clientProtocol.toleratesComments
-                    ? [.comment("unladen-warnings: \(header)")]
-                    : []
-                let encoder = ClientStreamEncoder(
-                    for: clientProtocol, defaults: defaults, includeUsage: request.streamOptions?.includeUsage ?? false,
-                )
-                let interval = configuration.keepaliveInterval
-                let idle = configuration.idleTimeout
+                if !warnings.isEmpty {
+                    fields[WarningHeader.name] = WarningHeader.value(request: served.requestWarnings, response: served.responseWarnings)
+                }
                 let finalLine = line
-                let requestWarnings = warnings.count
                 return Response(status: .ok, headers: fields, body: ResponseBody { writer in
                     defer { monitor.uninstall() }
-                    var line = finalLine
-                    line.status = 200
-                    var summary = StreamSummary()
-                    var encoder = encoder
-                    do {
-                        summary = try await Self.pump(
-                            events, encoder: &encoder, leading: leading, keepalive: interval, idleTimeout: idle,
-                            monitor: monitor, writer: &writer,
-                        )
-                    } catch {
-                        summary.disconnected = true
-                    }
-                    // An upstream that breaks off mid-stream cools down; a
-                    // client that leaves says nothing about it.
-                    if summary.failure != nil, !summary.disconnected {
-                        self.health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
-                    }
-                    for warning in summary.warnings { log.emit("warning: \(warning)") }
-                    line.warnings = requestWarnings + summary.warnings.count
-                    if summary.disconnected {
-                        line.note = "client disconnected mid-stream"
-                    } else if let failure = summary.failure {
-                        line.note = "upstream stream failed: \(failure)"
-                    }
-                    log.emit(line.text)
-                    if !summary.disconnected { try await writer.finish(nil) }
+                    try await self.forward(
+                        served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
+                        monitor: monitor, writer: &writer, line: finalLine, log: log,
+                    )
                 })
             }
         }
+    }
+
+    /// When a held stream gets its headers, and how often it then hears a
+    /// comment; `nil` turns holding with comments off.
+    struct HeldStreams: Sendable {
+        var headersAfter: Duration? = .seconds(3)
+        var commentEvery: Duration = .seconds(5)
+    }
+
+    /// The response of a stream whose attempts outlast
+    /// ``HeldStreams/headersAfter``: a 200 now, SSE comments every
+    /// ``HeldStreams/commentEvery`` until a candidate answers, then its
+    /// reply; or, when none does, the failure as the stream's error event,
+    /// since a status can no longer be said. `x-unladen-model` is not
+    /// known when the headers go; the log line has it.
+    func heldStream(
+        _ settled: Settled<AttemptOutcome>,
+        _ work: Task<Void, Never>,
+        clientProtocol: WireProtocol,
+        request: WireRequest,
+        decodeWarnings: [WireWarning],
+        configuration: GatewayConfiguration,
+        monitor: DisconnectMonitor,
+        line: LogLine,
+        log: RequestLog,
+    ) -> Response {
+        let fields: HTTPFields = [.contentType: "text/event-stream", .cacheControl: "no-cache"]
+        let every = heldStreams.commentEvery
+        return Response(status: .ok, headers: fields, body: ResponseBody { writer in
+            defer { monitor.uninstall() }
+            var line = line
+            line.note = "headers sent before the first content"
+            var result: Result<AttemptOutcome, any Error>?
+            do {
+                while result == nil {
+                    try await writer.write(Self.frames([.comment("keepalive")]))
+                    result = await settled.wait(upTo: every)
+                }
+            } catch {
+                // The client left while it was kept waiting.
+                work.cancel()
+                line.status = 499
+                line.note = "client disconnected while held"
+                log.emit(line.text)
+                return
+            }
+            switch result! {
+            case .failure:
+                line.status = 499
+                line.note = "client disconnected while held"
+                log.emit(line.text)
+            case .success(.failure(let failure)):
+                var encoder = ClientStreamEncoder(
+                    for: clientProtocol, defaults: ReplyDefaults(clientProtocol: clientProtocol, model: request.model, candidate: nil),
+                    includeUsage: false,
+                )
+                let (status, error) = Self.streamError(failure)
+                line.status = status
+                Self.note(failure, decodeWarnings: decodeWarnings, on: &line)
+                line.note = "(in the stream) " + (line.note ?? "")
+                log.emit(line.text)
+                try await writer.write(Self.frames(encoder.encode(.error(error)) + encoder.finish()))
+                try await writer.finish(nil)
+            case .success(.reply(let served)):
+                line.candidate = served.candidate.reference
+                guard case .events(let events) = served.body else {
+                    // A stream request is always answered with events.
+                    try await writer.finish(nil)
+                    return
+                }
+                try await self.forward(
+                    served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
+                    monitor: monitor, writer: &writer, line: line, log: log,
+                )
+            }
+        })
+    }
+
+    /// Streams a primed reply to `writer`, whose headers are sent: the
+    /// warnings first as a comment where the protocol takes one, then the
+    /// events. Logs the request and cools an upstream that broke off.
+    @concurrent func forward(
+        _ served: Served,
+        _ events: PrimedEvents,
+        clientProtocol: WireProtocol,
+        request: WireRequest,
+        configuration: GatewayConfiguration,
+        monitor: DisconnectMonitor,
+        writer: inout any ResponseBodyWriter,
+        line: LogLine,
+        log: RequestLog,
+    ) async throws {
+        let candidate = served.candidate
+        var line = line
+        line.candidate = candidate.reference
+        line.status = 200
+        let warnings = served.requestWarnings + served.responseWarnings
+        for warning in warnings { log.emit("warning: \(warning)") }
+        let header = WarningHeader.value(request: served.requestWarnings, response: served.responseWarnings)
+        let leading: [SSEElement] = !warnings.isEmpty && clientProtocol.toleratesComments
+            ? [.comment("unladen-warnings: \(header)")]
+            : []
+        var encoder = ClientStreamEncoder(
+            for: clientProtocol,
+            defaults: ReplyDefaults(clientProtocol: clientProtocol, model: request.model, candidate: candidate),
+            includeUsage: request.streamOptions?.includeUsage ?? false,
+        )
+        var summary = StreamSummary()
+        do {
+            summary = try await Self.pump(
+                events, encoder: &encoder, leading: leading, keepalive: configuration.keepaliveInterval,
+                idleTimeout: configuration.idleTimeout, monitor: monitor, writer: &writer,
+            )
+        } catch {
+            summary.disconnected = true
+        }
+        // An upstream that breaks off mid-stream cools down; a client that
+        // leaves says nothing about it.
+        if summary.failure != nil, !summary.disconnected {
+            health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
+        }
+        for warning in summary.warnings { log.emit("warning: \(warning)") }
+        line.warnings = warnings.count + summary.warnings.count
+        if summary.disconnected {
+            line.note = "client disconnected mid-stream"
+        } else if let failure = summary.failure {
+            line.note = "upstream stream failed: \(failure)"
+        }
+        log.emit(line.text)
+        if !summary.disconnected { try await writer.finish(nil) }
+    }
+
+    /// What the log line says of a failed request.
+    static func note(_ failure: AttemptFailure, decodeWarnings: [WireWarning], on line: inout LogLine) {
+        line.candidate = failure.candidate?.reference
+        line.warnings = decodeWarnings.count
+        switch failure {
+        case .upstream(_, let error):
+            line.note = "upstream \(error.status.code): \(redactingSecrets(ErrorShape.upstreamMessage(error.body)))"
+        case .gateway(_, let message, _):
+            line.note = message
+        case .strict(let warnings):
+            line.warnings += warnings.count
+        }
+    }
+
+    /// A failure told as a stream's error event, once its headers are out:
+    /// the status it stands for, and a type and code clients act on
+    /// (Codex compacts on `context_length_exceeded` and waits on
+    /// `server_is_overloaded`; a plain server error it retries at once).
+    static func streamError(_ failure: AttemptFailure) -> (status: Int, error: WireStreamError) {
+        let status: Int
+        let message: String
+        switch failure {
+        case .upstream(let candidate, let error) where credentialStatuses.contains(error.status.code):
+            status = 502
+            message = "upstream rejected the gateway's credentials for \(candidate.reference)"
+        case .upstream(_, let error):
+            status = error.status.code
+            message = ErrorShape.upstreamMessage(error.body)
+        case .gateway(let code, let text, _):
+            status = code
+            message = text
+        case .strict(let lossy):
+            status = 400
+            message = "strict mode: the request cannot be carried exactly: \(WarningHeader.summary(lossy))"
+        }
+        let lower = message.lowercased()
+        let (type, code): (String, String)
+        if ["context_length_exceeded", "context length", "prompt is too long", "too many tokens", "maximum context"]
+            .contains(where: lower.contains)
+        {
+            (type, code) = ("invalid_request_error", "context_length_exceeded")
+        } else if status == 429 {
+            (type, code) = ("rate_limit_error", "rate_limit_exceeded")
+        } else if status == 529 || status == 503 || lower.contains("overloaded") {
+            (type, code) = ("overloaded_error", "server_is_overloaded")
+        } else if (400..<500).contains(status) {
+            (type, code) = ("invalid_request_error", "invalid_request_error")
+        } else {
+            (type, code) = ("api_error", "server_error")
+        }
+        return (status, WireStreamError(message: message, type: type, code: code))
     }
 
     // MARK: Fallback loop
@@ -738,6 +908,60 @@ extension WireEvent {
             true
         case .responseMetadata, .ping, .error:
             false
+        }
+    }
+}
+
+/// A result that comes later, waited for with or without a limit: unlike
+/// a task's `value`, a wait that runs out returns at once.
+final class Settled<T: Sendable>: Sendable {
+    private struct State {
+        var result: Result<T, any Error>?
+        var next = 0
+        var waiters: [Int: CheckedContinuation<Result<T, any Error>?, Never>] = [:]
+    }
+
+    private let state = NIOLockedValueBox(State())
+
+    init() {}
+
+    /// Sets the result once and wakes every waiter.
+    func set(_ result: Result<T, any Error>) {
+        let waiters = state.withLockedValue { state -> [CheckedContinuation<Result<T, any Error>?, Never>] in
+            guard state.result == nil else { return [] }
+            state.result = result
+            defer { state.waiters = [:] }
+            return Array(state.waiters.values)
+        }
+        for waiter in waiters { waiter.resume(returning: result) }
+    }
+
+    /// The result.
+    func wait() async -> Result<T, any Error> {
+        // Without a limit the wait only ends with the result.
+        await wait(upTo: nil)!
+    }
+
+    /// The result, or `nil` when it has not come within `limit`.
+    func wait(upTo limit: Duration?) async -> Result<T, any Error>? {
+        await withCheckedContinuation { continuation in
+            let (ready, id) = state.withLockedValue { state -> (Result<T, any Error>?, Int) in
+                if let result = state.result { return (result, -1) }
+                let id = state.next
+                state.next += 1
+                state.waiters[id] = continuation
+                return (nil, id)
+            }
+            if let ready {
+                continuation.resume(returning: ready)
+                return
+            }
+            guard let limit else { return }
+            Task {
+                try? await Task.sleep(for: limit)
+                let expired = self.state.withLockedValue { $0.waiters.removeValue(forKey: id) }
+                expired?.resume(returning: nil)
+            }
         }
     }
 }
