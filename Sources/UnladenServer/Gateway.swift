@@ -17,7 +17,7 @@ struct RequestLog: Sendable {
 struct Gateway: Sendable {
     var configuration: GatewayConfiguration
     var transport: any HTTPTransport
-    var strategy: any RoutingStrategy = OrderedKeyRotation()
+    var strategy: any RoutingStrategy = KeyPoolOrdering()
     var health = HealthStore()
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
@@ -39,16 +39,17 @@ struct Gateway: Sendable {
         body: [UInt8],
         geminiPath: (model: String, stream: Bool)? = nil,
         headers: HTTPFields,
+        access: ClientAccess = .open,
         monitor: DisconnectMonitor,
         log: RequestLog,
     ) async -> Response {
         let start = ContinuousClock.now
         var line = LogLine(clientProtocol: clientProtocol, start: start)
-        func fail(_ status: Int, _ message: String, warnings: [WireWarning] = []) -> Response {
+        func fail(_ status: Int, _ message: String, detail: String? = nil, warnings: [WireWarning] = []) -> Response {
             monitor.uninstall()
             line.status = status
             line.warnings = warnings.count
-            line.note = message
+            line.note = detail ?? message
             log.emit(line.text)
             return Self.errorResponse(clientProtocol, status: status, message: message, warnings: warnings)
         }
@@ -66,9 +67,9 @@ struct Gateway: Sendable {
 
         let candidates: [Candidate]
         do {
-            candidates = try planner.candidates(for: request.model, clientProtocol: clientProtocol)
+            candidates = try planner.candidates(for: request.model, clientProtocol: clientProtocol, access: access)
         } catch {
-            return fail(error.status, error.message, warnings: decoded.warnings)
+            return fail(error.status, error.message, detail: error.detail, warnings: decoded.warnings)
         }
         let ordered = strategy.order(
             candidates, context: RoutingContext(clientProtocol: clientProtocol, stream: stream), health: health.snapshot(),

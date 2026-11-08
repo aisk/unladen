@@ -26,6 +26,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.105.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.28.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
+        .package(url: "https://github.com/jpsim/Yams.git", from: "6.2.0"),
     ],
     targets: [
         // Shared foundation: JSON, SSE, wire model, protocol codecs, profiles, transport.
@@ -71,6 +72,7 @@ let package = Package(
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+                .product(name: "Yams", package: "Yams"),
             ],
             swiftSettings: swiftSettings,
         ),

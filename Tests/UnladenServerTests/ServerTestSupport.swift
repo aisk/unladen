@@ -126,26 +126,33 @@ func json(_ buffer: ByteBuffer) -> JSONValue {
 /// only, so every non-Chat client is translated.
 let chatOnlyModel = "together/llama-3.3-70b"
 
-/// A gateway over `upstream` with a key for every provider.
+/// A gateway over `upstream` with a key for every provider; `model`
+/// serves every name no route matches (the `*` route).
 func makeGateway(
     _ upstream: MockUpstream,
     model: String? = chatOnlyModel,
-    fallbacks: [String] = [],
+    routes: [Route] = [],
     keys: [String: [String]]? = nil,
+    strategy: KeyPool.Strategy = .order,
     apiKey: String? = nil,
+    clientKeys: [ClientKey] = [],
     strict: Bool = false,
     keepalive: Duration = .seconds(15),
 ) -> Gateway {
     var configuration = GatewayConfiguration()
-    configuration.defaultModel = model
-    configuration.fallbacks = fallbacks
-    configuration.apiKey = apiKey
+    configuration.routes = RouteTable(routes + (model.map { [Route(name: "*", targets: [RouteTarget(model: $0)])] } ?? []))
+    configuration.clientKeys = clientKeys + (apiKey.map { [ClientKey(name: "test", secret: $0, routes: nil, passthrough: ["*"])] } ?? [])
     configuration.strict = strict
     configuration.keepaliveInterval = keepalive
-    configuration.upstreamKeys = keys ?? Dictionary(
+    configuration.keyPools = upstreamKeyPools(keys ?? Dictionary(
         uniqueKeysWithValues: configuration.registry.providers.keys.map { ($0, ["key-\($0)"]) },
-    )
+    ), strategy: strategy)
     return Gateway(configuration: configuration, transport: upstream.transport)
+}
+
+/// Pools of unnamed keys (named by fingerprint).
+func upstreamKeyPools(_ keys: [String: [String]], strategy: KeyPool.Strategy = .order) -> [String: KeyPool] {
+    keys.mapValues { KeyPool(keys: $0.map { UpstreamKey(secret: $0) }, strategy: strategy) }
 }
 
 func makeApp(_ gateway: Gateway) -> some ApplicationProtocol {

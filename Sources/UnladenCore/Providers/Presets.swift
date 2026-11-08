@@ -37,6 +37,18 @@ public enum Presets {
         }
     }
 
+    /// An endpoint for a provider the user describes (a relay, a local
+    /// server): the transforms every preset endpoint gets and its
+    /// protocol's gaps, nothing vendor-specific.
+    @_spi(Wire) public static func customEndpoint(
+        system: String, apiProtocol: APIProtocol, baseURL: String, auth: EndpointAuth, headers: [String: String] = [:],
+    ) -> Endpoint {
+        Endpoint(
+            system: system, apiProtocol: apiProtocol, baseURL: baseURL, auth: auth, headers: headers,
+            defaults: Profile(unsupportedParameters: gaps(of: apiProtocol), transforms: base),
+        )
+    }
+
     /// `provider` with each endpoint's defaults declaring its protocol's gaps.
     static func declaringProtocolGaps(_ provider: Provider) -> Provider {
         var provider = provider

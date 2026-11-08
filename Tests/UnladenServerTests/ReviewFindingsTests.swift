@@ -80,11 +80,10 @@ private func message(_ response: TestResponse) -> String {
         #expect(upstream.requests.first?.json["vendor_flag"] == ["a": 1])
     }
 
-    /// A candidate that would lose something is skipped; the next one that
-    /// carries the request exactly serves it.
-    @Test func lossyCandidateFallsThroughToAnExactOne() async throws {
+    /// A route whose model carries the request exactly serves it.
+    @Test func exactCandidatePassesStrict() async throws {
         let upstream = MockUpstream { _ in reply(Self.chatReply) }
-        let gateway = makeGateway(upstream, model: "anthropic/claude-sonnet-4-5", fallbacks: ["openai/gpt-4o"], strict: true)
+        let gateway = makeGateway(upstream, model: "openai/gpt-4o", strict: true)
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", WarningTests.lossy)
             #expect(response.status == .ok, "\(String(buffer: response.body))")
@@ -95,7 +94,7 @@ private func message(_ response: TestResponse) -> String {
 
     @Test func everyCandidateRejectedIsA400ListingTheWarnings() async throws {
         let upstream = MockUpstream { _ in reply(Self.chatReply) }
-        let gateway = makeGateway(upstream, model: "anthropic/claude-sonnet-4-5", fallbacks: ["gemini/gemini-2.5-flash"], strict: true)
+        let gateway = makeGateway(upstream, model: "anthropic/claude-sonnet-4-5", keys: ["anthropic": ["k1", "k2"]], strict: true)
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", WarningTests.lossy)
             #expect(response.status == .badRequest)
@@ -196,6 +195,6 @@ private func message(_ response: TestResponse) -> String {
     }
 
     @Test func helpExplainsHalfCloseIsADisconnect() {
-        #expect(UnladenCommand.configuration.discussion.contains("half-close"))
+        #expect(Serve.configuration.discussion.contains("half-close"))
     }
 }

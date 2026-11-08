@@ -1,10 +1,10 @@
-// Candidates, routing strategy and health (design decision 5).
+// Candidates, routing strategy and health.
 //
 // A request is routed to an ordered candidate list (model × key); the
 // fallback loop only tries candidates in that order. A `RoutingStrategy`
-// orders them from the request context and each candidate's health. v1 has
-// one strategy: configuration order with round-robin key rotation, cooling
-// candidates last.
+// orders them from the request context and each candidate's health. The
+// first version routes each name to one model; its provider's key pool
+// supplies the candidates (docs/server-config-design.md).
 
 import NIOConcurrencyHelpers
 @_spi(Wire) import UnladenCore
@@ -16,17 +16,19 @@ struct Candidate: Sendable, Hashable {
     var target: ResolvedModel
     /// `nil` for endpoints without authentication.
     var apiKey: String?
-    /// Position of ``apiKey`` in its provider's key list.
-    var keyIndex: Int
+    /// The key's stable name (``UpstreamKey/name``); `""` without a key.
+    var keyName: String
+    /// How the provider's keys take turns.
+    var poolStrategy: KeyPool.Strategy = .order
 
-    var healthKey: HealthKey { HealthKey(reference: reference, keyIndex: keyIndex) }
+    var healthKey: HealthKey { HealthKey(reference: reference, keyName: keyName) }
     var upstreamProtocol: WireProtocol { target.endpoint.apiProtocol.wire }
 }
 
 /// What a candidate's health is recorded under.
 struct HealthKey: Hashable, Sendable {
     var reference: String
-    var keyIndex: Int
+    var keyName: String
 }
 
 /// What a strategy may look at besides the candidates.
@@ -36,23 +38,24 @@ struct RoutingContext: Sendable {
 }
 
 /// Orders a request's candidates. Implementations may keep state (the
-/// rotation counter); new policies (weights, quotas, latency) are new
+/// rotation counter); new policies (weights, affinity) are new
 /// conformances, the fallback loop does not change.
 protocol RoutingStrategy: Sendable {
-    /// - Parameter candidates: in configuration order, keys in key-list order.
+    /// - Parameter candidates: in route order, keys in key-pool order.
     func order(_ candidates: [Candidate], context: RoutingContext, health: HealthSnapshot) -> [Candidate]
 }
 
-/// Configuration order; within a model, keys start at a round-robin offset
-/// per provider; candidates cooling down go last (still tried, in the same
-/// order, when nothing else is left).
-final class OrderedKeyRotation: RoutingStrategy {
+/// Route order; within a model, keys in pool order, or from a
+/// round-robin offset per provider for `rotate` pools; candidates cooling
+/// down go last (still tried, in the same order, when nothing else is
+/// left).
+final class KeyPoolOrdering: RoutingStrategy {
     private let counters = NIOLockedValueBox<[String: Int]>([:])
 
     init() {}
 
     func order(_ candidates: [Candidate], context: RoutingContext, health: HealthSnapshot) -> [Candidate] {
-        // Group consecutive candidates of one model; rotate each group.
+        // Group consecutive candidates of one model; rotate rotating pools.
         var groups: [[Candidate]] = []
         for candidate in candidates {
             if let last = groups.last?.last, last.reference == candidate.reference {
@@ -61,8 +64,12 @@ final class OrderedKeyRotation: RoutingStrategy {
                 groups.append([candidate])
             }
         }
-        var rotated: [Candidate] = []
+        var ordered: [Candidate] = []
         for group in groups where !group.isEmpty {
+            guard group[0].poolStrategy == .rotate, group.count > 1 else {
+                ordered += group
+                continue
+            }
             let provider = group[0].target.provider
             let offset = counters.withLockedValue { counters -> Int in
                 let value = counters[provider, default: 0]
@@ -70,10 +77,10 @@ final class OrderedKeyRotation: RoutingStrategy {
                 return value
             }
             let start = offset % group.count
-            rotated += group[start...] + group[..<start]
+            ordered += group[start...] + group[..<start]
         }
-        let ready = rotated.filter { !health.isCooling($0.healthKey) }
-        let cooling = rotated.filter { health.isCooling($0.healthKey) }
+        let ready = ordered.filter { !health.isCooling($0.healthKey) }
+        let cooling = ordered.filter { health.isCooling($0.healthKey) }
         return ready + cooling
     }
 }
@@ -135,75 +142,83 @@ final class HealthStore: Sendable {
 /// Why a request has no candidate.
 struct PlanningError: Error, Sendable {
     var status: Int
+    /// What the client is told.
     var message: String
+    /// What the log is told, when it may say more than the client.
+    var detail: String?
 }
 
-/// Builds a request's candidate list in configuration order.
+/// Builds a request's candidate list in route order.
 ///
-/// Model resolution: the client's model string is tried as a
-/// `provider/model` reference against the registry; if it is not one
-/// (`claude-sonnet-4-5`, `gpt-4o`), the configured default model is used.
-/// The configured fallbacks follow, without repeats. Each model is
-/// resolved preferring the client's protocol, so a provider that speaks it
-/// is called without translation.
+/// Name resolution (docs/server-config-design.md): the client's model
+/// name (without Gemini's `models/`) is looked up as a route name, exact
+/// then patterns; else, as a `provider/model` reference of a known
+/// provider, it is passed through; else the `*` route serves it. Each
+/// model is resolved preferring the client's protocol, so a provider that
+/// speaks it is called without translation.
 struct CandidatePlanner: Sendable {
     var configuration: GatewayConfiguration
 
     /// The model references to try for `clientModel`, in order.
-    ///
-    /// - Throws: a 400 when `clientModel` names a known provider but a
-    ///   model id that fails validation (``ModelID``): it is turned away,
-    ///   not served by the default model.
-    func references(for clientModel: String) throws(PlanningError) -> [String] {
-        var references: [String] = []
-        do {
-            _ = try configuration.registry.resolve(clientModel)
-            references.append(clientModel)
-        } catch {
-            if case .invalidModelID(_, let reason) = error { throw Self.invalidModel(clientModel, reason) }
-            if let model = configuration.defaultModel { references.append(model) }
+    func references(for clientModel: String, access: ClientAccess = .open) throws(PlanningError) -> [String] {
+        let name = clientModel.hasPrefix("models/") ? String(clientModel.dropFirst(7)) : clientModel
+        let routes = configuration.routes
+        if let route = routes.named(name) {
+            guard access.mayUse(route) else { throw Self.notAllowed(clientModel) }
+            return route.targets.map { $0.reference(for: name) }
         }
-        for fallback in configuration.fallbacks where !references.contains(fallback) {
-            references.append(fallback)
+        if let (provider, _) = try? ProviderRegistry.parse(name), configuration.registry[provider] != nil {
+            guard access.mayPassThrough(name) else { throw Self.notAllowed(clientModel) }
+            do {
+                _ = try configuration.registry.resolve(name)
+            } catch {
+                if case .invalidModelID(_, let reason) = error { throw Self.invalidModel(name, reason) }
+            }
+            return [name]
         }
-        return references
+        if let route = routes.catchAll {
+            guard access.mayUse(route) else { throw Self.notAllowed(clientModel) }
+            return route.targets.map { $0.reference(for: name) }
+        }
+        throw PlanningError(status: 404, message: "model `\(clientModel)` is not served by this gateway")
     }
 
-    func candidates(for clientModel: String, clientProtocol: WireProtocol) throws(PlanningError) -> [Candidate] {
-        let references = try references(for: clientModel)
-        guard !references.isEmpty else {
-            throw PlanningError(
-                status: 404,
-                message: "model `\(clientModel)` is not a provider/model reference and the gateway has no default model (--model)",
-            )
-        }
+    func candidates(for clientModel: String, clientProtocol: WireProtocol, access: ClientAccess = .open) throws(PlanningError) -> [Candidate] {
+        let references = try references(for: clientModel, access: access)
         var candidates: [Candidate] = []
         var missingKeys: [String] = []
+        var unresolved: [String] = []
         for reference in references {
             let target: ResolvedModel
             do {
                 target = try configuration.registry.resolve(reference, preferring: APIProtocol(clientProtocol))
             } catch {
                 if case .invalidModelID(_, let reason) = error { throw Self.invalidModel(reference, reason) }
+                unresolved.append("\(reference): \(error)")
                 continue
             }
             if target.endpoint.auth == .none {
-                candidates.append(Candidate(reference: reference, target: target, apiKey: nil, keyIndex: 0))
+                candidates.append(Candidate(reference: reference, target: target, apiKey: nil, keyName: ""))
                 continue
             }
-            let keys = configuration.upstreamKeys[target.provider] ?? []
+            let pool = configuration.keyPools[target.provider]
+            let keys = pool?.keys ?? []
             if keys.isEmpty { missingKeys.append(target.provider) }
-            for (index, key) in keys.enumerated() {
-                candidates.append(Candidate(reference: reference, target: target, apiKey: key, keyIndex: index))
+            for key in keys {
+                candidates.append(Candidate(
+                    reference: reference, target: target, apiKey: key.secret, keyName: key.name,
+                    poolStrategy: pool?.strategy ?? .order,
+                ))
             }
         }
         guard !candidates.isEmpty else {
             let variables = missingKeys.map { UpstreamKeys.variables(for: $0, in: configuration.registry).joined(separator: " or ") }
             throw PlanningError(
                 status: 503,
-                message: variables.isEmpty
-                    ? "no upstream can serve model `\(clientModel)`"
-                    : "no API key configured for the upstream (set \(variables.joined(separator: "; ")))",
+                message: "no upstream is available for model `\(clientModel)`",
+                detail: !variables.isEmpty
+                    ? "no API key configured for \(missingKeys.joined(separator: ", ")) (configure keys, or set \(variables.joined(separator: "; ")))"
+                    : "cannot resolve \(unresolved.joined(separator: "; "))",
             )
         }
         return candidates
@@ -211,5 +226,9 @@ struct CandidatePlanner: Sendable {
 
     static func invalidModel(_ reference: String, _ reason: String) -> PlanningError {
         PlanningError(status: 400, message: "invalid model `\(reference)`: \(reason)")
+    }
+
+    static func notAllowed(_ model: String) -> PlanningError {
+        PlanningError(status: 403, message: "model `\(model)` is not available with this key")
     }
 }

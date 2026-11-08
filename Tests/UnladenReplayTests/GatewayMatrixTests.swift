@@ -68,13 +68,16 @@ func registry(_ target: String, speaking wire: WireProtocol) -> ProviderRegistry
 }
 
 /// A gateway serving `defaultModel` (then `fallbacks`) over `transport`,
-/// with a key for every provider.
+/// with a key for every provider. Fallbacks are targets of the `*` route
+/// after the first: the configuration file does not offer them yet, the
+/// planner already walks them.
 func replayGateway(defaultModel: String, fallbacks: [String] = [], registry: ProviderRegistry, transport: ReplayTransport) -> Gateway {
     var configuration = GatewayConfiguration()
-    configuration.defaultModel = defaultModel
-    configuration.fallbacks = fallbacks
+    configuration.routes = RouteTable([Route(name: "*", targets: ([defaultModel] + fallbacks).map { RouteTarget(model: $0) })])
     configuration.registry = registry
-    configuration.upstreamKeys = Dictionary(uniqueKeysWithValues: registry.providers.keys.map { ($0, ["key-\($0)"]) })
+    configuration.keyPools = Dictionary(uniqueKeysWithValues: registry.providers.keys.map {
+        ($0, KeyPool(keys: [UpstreamKey(secret: "key-\($0)")]))
+    })
     return Gateway(configuration: configuration, transport: transport.transport)
 }
 

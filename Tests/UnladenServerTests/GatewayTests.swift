@@ -292,8 +292,10 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         try await makeApp(makeGateway(upstream, keys: [:])).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "gpt-4o"))
             #expect(response.status == .serviceUnavailable)
+            // The client is not told which variables the gateway reads; the log is.
             let message = json(response.body)["error"]?["message"]?.stringValue ?? ""
-            #expect(message.contains("UNLADEN_TOGETHER_API_KEY"))
+            #expect(message.contains("gpt-4o"))
+            #expect(!message.contains("API_KEY"))
         }
     }
 
@@ -308,34 +310,43 @@ private func canonical(_ value: JSONValue) -> JSONValue {
 }
 
 @Suite struct FallbackTests {
-    @Test func rateLimitedCandidateFallsBackToTheNext() async throws {
+    static func keyName(_ secret: String) -> String { UpstreamKey(secret: secret).name }
+
+    @Test func rateLimitedKeyFallsBackToTheNextKey() async throws {
         let upstream = MockUpstream([
             { _ in reply(status: .tooManyRequests, headers: [.retryAfter: "60"], #"{"error":{"message":"busy"}}"#) },
-            { _ in reply(fixture("Anthropic/streams/text.sse")) },
+            { _ in reply(fixture("Chat/responses/text.json")) },
         ])
-        let gateway = makeGateway(upstream, fallbacks: ["anthropic/claude-sonnet-4-5"])
+        let gateway = makeGateway(upstream, keys: ["together": ["k1", "k2"]])
         try await makeApp(gateway).test(.router) { client in
-            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "gpt-4o", stream: true))
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "gpt-4o"))
             #expect(response.status == .ok)
-            #expect(response.headers[modelHeader] == "anthropic/claude-sonnet-4-5")
-            #expect(decodeStream(response.body, as: .chatCompletions).text == "Hello world")
+            #expect(response.headers[modelHeader] == chatOnlyModel)
         }
-        #expect(upstream.requests.map(\.path) == ["/v1/chat/completions", "/v1/messages"])
-        // Each candidate got its own copy, encoded for its protocol.
-        #expect(upstream.requests[0].json["model"] == "llama-3.3-70b")
-        #expect(upstream.requests[1].json["model"] == "claude-sonnet-4-5")
-        #expect(upstream.requests[1].json["max_tokens"] != nil)
-        // The rate-limited candidate cools down: the next request starts elsewhere.
-        #expect(gateway.health.snapshot().isCooling(HealthKey(reference: chatOnlyModel, keyIndex: 0)))
+        #expect(upstream.requests.map { $0.header("authorization") } == ["Bearer k1", "Bearer k2"])
+        // The rate-limited key cools down: the next request starts elsewhere.
+        #expect(gateway.health.snapshot().isCooling(HealthKey(reference: chatOnlyModel, keyName: Self.keyName("k1"))))
     }
 
-    @Test func keyRotationAndFallbackToTheNextKey() async throws {
+    @Test func keyFailoverStaysOnTheRoutesModel() async throws {
+        // Every key fails: the client gets the error, no other provider is tried.
+        let upstream = MockUpstream { _ in reply(status: .serviceUnavailable, #"{"error":{"message":"down"}}"#) }
+        let gateway = makeGateway(upstream, keys: ["together": ["k1", "k2"], "anthropic": ["a"], "openai": ["o"]])
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+            #expect(response.status == .serviceUnavailable)
+        }
+        #expect(upstream.requests.map(\.path) == ["/v1/chat/completions", "/v1/chat/completions"])
+        #expect(upstream.requests.map { $0.header("authorization") } == ["Bearer k1", "Bearer k2"])
+    }
+
+    @Test func orderedPoolStaysOnTheFirstHealthyKey() async throws {
         let upstream = MockUpstream { hit in
             hit.header("authorization") == "Bearer k1"
                 ? reply(status: .tooManyRequests, #"{"error":{"message":"busy"}}"#)
                 : reply(fixture("Chat/responses/text.json"))
         }
-        let gateway = makeGateway(upstream, keys: ["together": ["k1", "k2"]])
+        let gateway = makeGateway(upstream, keys: ["together": ["k1", "k2", "k3"]])
         try await makeApp(gateway).test(.router) { client in
             for _ in 0..<3 {
                 let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
@@ -346,19 +357,24 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         #expect(upstream.requests.map { $0.header("authorization") } == ["Bearer k1", "Bearer k2", "Bearer k2", "Bearer k2"])
     }
 
-    @Test func roundRobinKeys() {
-        let strategy = OrderedKeyRotation()
+    @Test func rotatingPoolTakesTurns() {
+        let strategy = KeyPoolOrdering()
         let target = try! ProviderRegistry.builtIn.resolve("deepseek/deepseek-chat")
-        let candidates = (0..<3).map { Candidate(reference: "deepseek/deepseek-chat", target: target, apiKey: "k\($0)", keyIndex: $0) }
+        let candidates = (0..<3).map {
+            Candidate(reference: "deepseek/deepseek-chat", target: target, apiKey: "k\($0)", keyName: "k\($0)", poolStrategy: .rotate)
+        }
         let health = HealthSnapshot(now: .now, cooldowns: [:])
         let context = RoutingContext(clientProtocol: .chatCompletions, stream: false)
         let firsts = (0..<4).map { _ in strategy.order(candidates, context: context, health: health).first!.apiKey }
         #expect(firsts == ["k0", "k1", "k2", "k0"])
+        let ordered = candidates.map { var c = $0; c.poolStrategy = .order; return c }
+        let orderFirsts = (0..<3).map { _ in strategy.order(ordered, context: context, health: health).first!.apiKey }
+        #expect(orderFirsts == ["k0", "k0", "k0"])
     }
 
     @Test func clientErrorsDoNotFallBack() async throws {
         let upstream = MockUpstream { _ in reply(status: .badRequest, #"{"error":{"message":"bad"}}"#) }
-        try await makeApp(makeGateway(upstream, fallbacks: ["anthropic/claude-sonnet-4-5"])).test(.router) { client in
+        try await makeApp(makeGateway(upstream, keys: ["together": ["k1", "k2"]])).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
             #expect(response.status == .badRequest)
         }
@@ -380,7 +396,7 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         }
         let healthy: MockUpstream.Handler = { _ in reply(fixture("Anthropic/streams/text.sse")) }
         let upstream = MockUpstream([dropping, healthy])
-        try await makeApp(makeGateway(upstream, fallbacks: ["anthropic/claude-sonnet-4-5"])).test(.router) { client in
+        try await makeApp(makeGateway(upstream, keys: ["together": ["k1", "k2"]])).test(.router) { client in
             let response = try await client.post("/v1/messages", ClientRequest.anthropic(model: "x", stream: true))
             #expect(response.status == .ok)
             let stream = decodeStream(response.body, as: .anthropicMessages)
@@ -431,11 +447,16 @@ private func canonical(_ value: JSONValue) -> JSONValue {
 
     @Test func modelList() async throws {
         let upstream = MockUpstream { _ in reply("{}") }
-        try await makeApp(makeGateway(upstream, fallbacks: ["anthropic/claude-sonnet-4-5"])).test(.router) { client in
+        let routes = [
+            Route(name: "sonnet", targets: [RouteTarget(model: "anthropic/claude-sonnet-4-5")]),
+            Route(name: "claude-*", targets: [RouteTarget(model: "anthropic/$model")]),
+        ]
+        try await makeApp(makeGateway(upstream, routes: routes)).test(.router) { client in
             let response = try await client.executeRequest(uri: "/v1/models", method: .get, headers: [:], body: nil)
             #expect(response.status == .ok)
             let ids = json(response.body)["data"]?.arrayValue?.compactMap { $0["id"]?.stringValue }
-            #expect(ids == [chatOnlyModel, "anthropic/claude-sonnet-4-5"])
+            // Exact routes, then the `*` route's model; patterns cannot be listed.
+            #expect(ids == ["sonnet", chatOnlyModel])
         }
     }
 }

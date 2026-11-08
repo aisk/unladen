@@ -34,8 +34,10 @@ func buildRouter(gateway: Gateway) -> Router<GatewayRequestContext> {
     }
 
     router.get("/v1/models") { request, _ in
-        if let denied = authenticate(request, gateway: gateway, as: .chatCompletions) { return denied }
-        return modelList(gateway.configuration)
+        switch authenticate(request, gateway: gateway, as: .chatCompletions) {
+        case .denied(let response): response
+        case .allowed(let access): modelList(gateway.configuration, access: access)
+        }
     }
 
     router.post("/v1/chat/completions") { request, context in
@@ -48,7 +50,7 @@ func buildRouter(gateway: Gateway) -> Router<GatewayRequestContext> {
         try await serve(.anthropicMessages, request: request, context: context, gateway: gateway)
     }
     router.post("/v1/messages/count_tokens") { request, _ in
-        if let denied = authenticate(request, gateway: gateway, as: .anthropicMessages) { return denied }
+        if case .denied(let response) = authenticate(request, gateway: gateway, as: .anthropicMessages) { return response }
         return Gateway.errorResponse(.anthropicMessages, status: 501, message: "count_tokens is not supported by this gateway")
     }
     for prefix in ["/v1beta/models/**", "/v1/models/**"] {
@@ -71,7 +73,11 @@ private func serve(
     gateway: Gateway,
     geminiPath: (model: String, stream: Bool)? = nil,
 ) async throws -> Response {
-    if let denied = authenticate(request, gateway: gateway, as: clientProtocol) { return denied }
+    let access: ClientAccess
+    switch authenticate(request, gateway: gateway, as: clientProtocol) {
+    case .denied(let response): return response
+    case .allowed(let allowed): access = allowed
+    }
     var request = request
     let body: [UInt8]
     do {
@@ -87,18 +93,32 @@ private func serve(
         body: body,
         geminiPath: geminiPath,
         headers: request.headers,
+        access: access,
         monitor: monitor,
         log: RequestLog { logger.info("\($0)") },
     )
 }
 
-/// `nil` if the request may use the gateway; else a 401 in the client's
-/// error shape.
-private func authenticate(_ request: Request, gateway: Gateway, as clientProtocol: WireProtocol) -> Response? {
-    guard let expected = gateway.configuration.apiKey else { return nil }
-    let keys = presentedKeys(request, acceptingQueryKey: clientProtocol == .gemini)
-    if keys.contains(where: { constantTimeEqual($0, expected) }) { return nil }
-    return Gateway.errorResponse(clientProtocol, status: 401, message: "invalid or missing gateway API key")
+enum Authentication {
+    case allowed(ClientAccess)
+    /// A 401 in the client's error shape.
+    case denied(Response)
+}
+
+/// Who the request comes from: any client when no client keys are
+/// configured, else the key it presents.
+private func authenticate(_ request: Request, gateway: Gateway, as clientProtocol: WireProtocol) -> Authentication {
+    let configured = gateway.configuration.clientKeys
+    guard !configured.isEmpty else { return .allowed(.open) }
+    let presented = presentedKeys(request, acceptingQueryKey: clientProtocol == .gemini)
+    // Every configured key is compared, so the time taken does not tell
+    // which one matched.
+    var match: ClientKey?
+    for key in configured where presented.contains(where: { constantTimeEqual($0, key.secret) }) {
+        match = match ?? key
+    }
+    if let match { return .allowed(.key(match)) }
+    return .denied(Gateway.errorResponse(clientProtocol, status: 401, message: "invalid or missing gateway API key"))
 }
 
 /// Keys a client may present: `Authorization: Bearer`, `x-api-key`,
@@ -127,16 +147,23 @@ func constantTimeEqual(_ a: String, _ b: String) -> Bool {
     return difference == 0
 }
 
-/// The configured models (default first, then fallbacks), readable by
-/// OpenAI clients (`object`, `data[].id`, `owned_by`) and Anthropic clients
-/// (`data[].type`, `display_name`, `has_more`).
-func modelList(_ configuration: GatewayConfiguration) -> Response {
-    var references: [String] = []
-    for reference in [configuration.defaultModel].compactMap({ $0 }) + configuration.fallbacks where !references.contains(reference) {
-        references.append(reference)
+/// The model names a client may ask for: exact route names, then the `*`
+/// route's model when it names one; readable by OpenAI clients (`object`,
+/// `data[].id`, `owned_by`) and Anthropic clients (`data[].type`,
+/// `display_name`, `has_more`).
+func modelList(_ configuration: GatewayConfiguration, access: ClientAccess = .open) -> Response {
+    var names: [String] = []
+    for route in configuration.routes.all where access.mayUse(route) {
+        if route.name == "*" {
+            for target in route.targets where !target.model.contains("$model") { names.append(target.model) }
+        } else if !route.isPattern {
+            names.append(route.name)
+        }
     }
+    var seen: Set<String> = []
+    let references = names.filter { seen.insert($0).inserted }
     let data: [JSONValue] = references.map { reference in
-        let provider = reference.split(separator: "/", maxSplits: 1).first.map(String.init) ?? reference
+        let provider = reference.contains("/") ? reference.split(separator: "/", maxSplits: 1).first.map(String.init) ?? reference : "unladen"
         return [
             "id": .string(reference),
             "object": "model",

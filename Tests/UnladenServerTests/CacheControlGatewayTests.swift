@@ -34,7 +34,7 @@ import Testing
             Endpoint(system: "relay", apiProtocol: .chatCompletions, baseURL: "https://relay.example/api/v1",
                      defaults: Profile(chatCacheControl: true, maxCacheBreakpoints: 4)),
         ]))
-        configuration.upstreamKeys = ["relay": ["key-relay"]]
+        configuration.keyPools = upstreamKeyPools(["relay": ["key-relay"]])
         let gateway = Gateway(configuration: configuration, transport: upstream.transport)
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post("/v1/messages", Self.request("relay/claude-sonnet-4-5"))
