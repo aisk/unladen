@@ -173,7 +173,7 @@ private func string(_ encoded: WireEncoded) -> String {
         #expect(prepared.warnings.filter(\.isCacheHint).count == 3)
     }
 
-    // MARK: Review regressions
+    // MARK: Tool results, limits and TTLs
 
     /// A Chat tool message's part breakpoint marks the Anthropic
     /// `tool_result` block, not the text inside it; same protocol keeps it

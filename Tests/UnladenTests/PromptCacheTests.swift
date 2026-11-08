@@ -362,7 +362,7 @@ import Unladen
         #expect(ContentPart.text("x").with(PartOptions()) == .text("x"))
     }
 
-    // MARK: Review regressions
+    // MARK: Tool results, TTLs and part options
 
     /// A breakpoint on a tool result's output marks the `tool_result`
     /// block; several on one result become one.

@@ -5,7 +5,7 @@
 /// Decides whether a reasoning part's fidelity data (`encrypted_content`,
 /// item ids) may be written raw for a Responses peer.
 ///
-/// This is the single swap point for the phase-4 endpoint trust sets:
+/// This is the one place an endpoint's trust set is applied:
 /// everything Responses-bound asks ``accepts(_:sameProtocol:trusted:)``.
 enum ResponsesReplay {
     /// The system id Responses decoders stamp on fidelity data by default,

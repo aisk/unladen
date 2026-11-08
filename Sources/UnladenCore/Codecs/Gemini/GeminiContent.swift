@@ -7,7 +7,7 @@
 /// Decides whether a `thoughtSignature` (on a thought, text or function-call
 /// part) may be written for a Gemini peer.
 ///
-/// This is the single swap point for the phase-4 endpoint trust sets:
+/// This is the one place an endpoint's trust set is applied:
 /// everything Gemini-bound asks ``accepts(origin:sameProtocol:trusted:)``.
 enum GeminiReplay {
     /// The system id Gemini decoders stamp on signatures by default.

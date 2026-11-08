@@ -2,7 +2,8 @@ import Testing
 @_spi(Wire) import UnladenCore
 import UnladenTestSupport
 
-// Regression tests for the phase-2 acceptance review. Each names its finding.
+// Chat Completions edge cases: spellings from other protocols, refusal
+// placement, tool call ids, wire-model encoding and streams.
 
 private func parse(_ text: String) throws -> WireDecoded<WireRequest> {
     try ChatCompletionsCodec.parseRequest(Array(text.utf8))
@@ -22,7 +23,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
 }
 
 @Suite struct ChatSpellingTests {
-    // #1: another protocol's spelling must not leak into Chat output.
+    // Another protocol's spelling must not leak into Chat output.
     @Test func foreignSpellingsAreIgnored() {
         var request = WireRequest(model: "m", messages: [
             WireMessage(role: .assistant, parts: [
@@ -54,7 +55,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
         #expect(ChatCompletionsCodec.buildRequest(request).json == (try JSONValue(parsing: text)))
     }
 
-    // #15: OpenRouter `exclude` maps to `visible`, which Chat's
+    // OpenRouter `exclude` maps to `visible`, which Chat's
     // `reasoning_effort` cannot carry.
     @Test func visibleNeedsTheReasoningObject() {
         var request = WireRequest(model: "m", messages: [])
@@ -66,7 +67,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
 }
 
 @Suite struct ChatRefusalPlacementTests {
-    // #7: a top-level refusal beside a content array stays top-level.
+    // A top-level refusal beside a content array stays top-level.
     @Test func fieldRefusalBesideContentArrayRoundTrips() throws {
         let text = #"{"model":"m","messages":[{"role":"assistant","content":[{"type":"text","text":"a"}],"refusal":"no"},{"role":"assistant","content":[{"type":"refusal","refusal":"part"}]}]}"#
         let request = try parse(text).value
@@ -77,7 +78,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
 }
 
 @Suite struct ChatToolIDTests {
-    // #3: ids are never invented by encoders; Chat decoders synthesize
+    // Ids are never invented by encoders; Chat decoders synthesize
     // position-based ids for non-conforming input and mark them.
     @Test func requestCallWithoutIDGetsSynthesizedID() throws {
         let decoded = try parse(#"{"model":"m","messages":[{"role":"user","content":"x"},{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"f","arguments":"{}"}}]}]}"#)
@@ -107,7 +108,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
 }
 
 @Suite struct ChatWireModelEncodingTests {
-    // #5: instructions form and bag.
+    // Instructions form and bag.
     @Test func instructionsUseTheirFormAndDropForeignBags() {
         var request = WireRequest(model: "m", messages: [], source: .gemini)
         request.instructions = [.text(WireText("Be brief."))]
@@ -118,7 +119,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
         #expect(built.warnings.map(\.path) == ["instructions.role"])
     }
 
-    // #6: role-less items keep only what Chat can say.
+    // Role-less items keep only what Chat can say.
     @Test func roleLessItems() {
         let request = WireRequest(model: "m", messages: [
             WireMessage(role: .item, parts: [.opaque(WireOpaque(protocol: .responses, value: ["type": "item_reference", "id": "x"]))]),
@@ -131,7 +132,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
         #expect(built.warnings.map(\.code) == [.droppedContent, .lossyConversion])
     }
 
-    // #11: a reply without a finish reason says "stop", as streams do; the
+    // A reply without a finish reason says "stop", as streams do; the
     // same protocol's `null` comes back as `null`.
     @Test func missingFinishReason() throws {
         let foreign = WireResponse(message: WireMessage(role: .assistant, parts: [.text(WireText("a"))]), source: .gemini)
@@ -144,7 +145,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
         #expect(encoded.warnings.isEmpty)
     }
 
-    // #12: `cache_write_tokens` is not an OpenAI field.
+    // `cache_write_tokens` is not an OpenAI field.
     @Test func cacheWriteTokensOnlyForChatSources() {
         let usage = WireUsage(inputTokens: 10, outputTokens: 1, cacheWriteTokens: 4)
         func details(_ source: WireProtocol) -> JSONValue? {
@@ -157,7 +158,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
 }
 
 @Suite struct ChatStreamRegressionTests {
-    // #10: a Chat opaque tool call is re-encoded as a tool_calls fragment.
+    // A Chat opaque tool call is re-encoded as a tool_calls fragment.
     @Test func opaqueToolCallIsStreamed() throws {
         let custom: JSONValue = ["id": "ct", "type": "custom", "custom": ["name": "sh", "input": "ls"]]
         let events: [WireEvent] = [
@@ -281,7 +282,7 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
         #expect(warnings.map(\.code) == [.droppedContent])
     }
 
-    // #9: the async adapter stops after a decode error.
+    // The async adapter stops after a decode error.
     @Test func wireEventSequenceEndsAfterAThrow() async throws {
         let stream = AsyncStream<SSEElement> { continuation in
             continuation.yield(.event(SSEEvent(data: "{bad")))

@@ -157,7 +157,7 @@ private func message(_ response: TestResponse) -> String {
     }
 }
 
-@Suite struct GatewayMinorTests {
+@Suite struct GatewayEdgeCaseTests {
     @Test func queryKeyIsOnlyAcceptedOnGeminiRoutes() async throws {
         let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
         try await makeApp(makeGateway(upstream, apiKey: "secret")).test(.router) { client in

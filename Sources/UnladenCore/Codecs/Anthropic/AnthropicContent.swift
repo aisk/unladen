@@ -6,7 +6,7 @@
 /// Decides whether a reasoning part's fidelity data (thinking `signature`,
 /// `redacted_thinking.data`) may be written for an Anthropic peer.
 ///
-/// This is the single swap point for the phase-4 endpoint trust sets:
+/// This is the one place an endpoint's trust set is applied:
 /// everything Anthropic-bound asks ``accepts(_:sameProtocol:trusted:)``.
 enum AnthropicReplay {
     /// The system id Anthropic decoders stamp on fidelity data by default.

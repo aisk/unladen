@@ -2,8 +2,9 @@ import Testing
 @_spi(Wire) import UnladenCore
 import UnladenTestSupport
 
-// Regression tests for the phase-3 acceptance review (gateway probes).
-// Each test names its finding.
+// Values without an exact counterpart in another protocol: empty content,
+// truncated streams, gateway-minted ids, empty signatures, whitespace-only
+// text and reasoning effort.
 
 private func anthropicRequest(_ text: String) throws -> WireRequest {
     try AnthropicMessagesCodec.parseRequest(Array(text.utf8)).value
@@ -21,7 +22,7 @@ private func errors(_ events: [WireEvent]) -> [WireStreamError] {
     events.compactMap { if case .error(let error) = $0 { error } else { nil } }
 }
 
-// MARK: - #1 empty content arrays to a Chat upstream
+// MARK: - Empty content arrays to a Chat upstream
 
 @Suite struct EmptyFormAcrossProtocolsTests {
     @Test func toolOnlyAssistantTurnHasNullContentForChat() throws {
@@ -67,7 +68,7 @@ private func errors(_ events: [WireEvent]) -> [WireStreamError] {
     }
 }
 
-// MARK: - #2 truncated upstream streams
+// MARK: - Truncated upstream streams
 
 /// What each client encoder makes of a decoded event stream.
 private func clientRenderings(_ events: [WireEvent]) -> (chat: [SSEElement], anthropic: [SSEElement], responses: [SSEElement], gemini: [SSEElement]) {
@@ -165,7 +166,7 @@ private func expectFailed(_ events: [WireEvent], sourceLocation: SourceLocation 
     }
 }
 
-// MARK: - #3 gateway-minted Responses item ids
+// MARK: - Gateway-minted Responses item ids
 
 @Suite struct MintedResponsesItemIDTests {
     @Test func mintedIDsAreClearedFromClientHistory() throws {
@@ -197,7 +198,7 @@ private func expectFailed(_ events: [WireEvent], sourceLocation: SourceLocation 
     }
 }
 
-// MARK: - #4 empty Anthropic signatures
+// MARK: - Empty Anthropic signatures
 
 @Suite struct EmptySignatureTests {
     @Test func placeholderThinkingIsDroppedQuietlyForAnthropic() throws {
@@ -235,7 +236,7 @@ private func expectFailed(_ events: [WireEvent], sourceLocation: SourceLocation 
     }
 }
 
-// MARK: - #5 whitespace-only text
+// MARK: - Whitespace-only text
 
 @Suite struct WhitespaceTextTests {
     private func chatRequest() throws -> WireRequest {
@@ -263,7 +264,7 @@ private func expectFailed(_ events: [WireEvent], sourceLocation: SourceLocation 
     }
 }
 
-// MARK: - #6 reasoning effort to Anthropic
+// MARK: - Reasoning effort to Anthropic
 
 @Suite struct AnthropicEffortTests {
     private func built(_ effort: String, source: WireProtocol = .responses) -> WireEncoded {
@@ -297,10 +298,9 @@ private func expectFailed(_ events: [WireEvent], sourceLocation: SourceLocation 
     }
 }
 
-// MARK: - #7 minor
+// MARK: - Tool results, reply ids and tool blocks
 
-@Suite struct MinorFindingTests {
-    // 7a
+@Suite struct ToolResultAndReplyIDTests {
     @Test func textOnlyBlockToolResultIsAStringForResponses() throws {
         let request = try anthropicRequest("""
         {"model":"m","max_tokens":10,"messages":[
@@ -330,7 +330,6 @@ private func expectFailed(_ events: [WireEvent], sourceLocation: SourceLocation 
         #expect(output["output"]?.arrayValue?.count == 2)
     }
 
-    // 7b
     @Test func replyIDsWithoutResponseIDDifferAcrossResponses() throws {
         func ids(_ body: String) throws -> [String] {
             let response = try GeminiCodec.parseResponse(Array(body.utf8)).value
@@ -353,7 +352,6 @@ private func expectFailed(_ events: [WireEvent], sourceLocation: SourceLocation 
         #expect(streamed == a)
     }
 
-    // 7c
     @Test func chatToolBlocksCloseWhenTextFollows() throws {
         let decoded = try decodeChatStream([
             sse(nil, #"{"id":"c","model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"a","type":"function","function":{"name":"f","arguments":"{}"}}]}}]}"#),
