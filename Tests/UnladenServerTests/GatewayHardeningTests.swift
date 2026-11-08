@@ -185,12 +185,12 @@ private func message(_ response: TestResponse) -> String {
     }
 
     @Test func exposedWithoutAKeyWarns() {
-        #expect(UnladenCommand.exposureWarning(host: "0.0.0.0", apiKey: nil) != nil)
-        #expect(UnladenCommand.exposureWarning(host: "192.168.1.5", apiKey: nil) != nil)
-        #expect(UnladenCommand.exposureWarning(host: "::", apiKey: nil) != nil)
-        #expect(UnladenCommand.exposureWarning(host: "0.0.0.0", apiKey: "k") == nil)
+        #expect(UnladenCommand.exposureWarning(host: "0.0.0.0", open: true) != nil)
+        #expect(UnladenCommand.exposureWarning(host: "192.168.1.5", open: true) != nil)
+        #expect(UnladenCommand.exposureWarning(host: "::", open: true) != nil)
+        #expect(UnladenCommand.exposureWarning(host: "0.0.0.0", open: false) == nil)
         for host in ["127.0.0.1", "127.0.0.2", "localhost", "::1", "[::1]"] {
-            #expect(UnladenCommand.exposureWarning(host: host, apiKey: nil) == nil, "\(host)")
+            #expect(UnladenCommand.exposureWarning(host: host, open: true) == nil, "\(host)")
         }
     }
 

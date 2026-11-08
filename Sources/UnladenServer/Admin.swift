@@ -68,9 +68,16 @@ final class ConfigManager: Sendable {
         if loaded.server != server {
             logger.warning("listen and advanced.connect_timeout take effect after a restart")
         }
-        for warning in loaded.warnings { logger.warning("\(warning)") }
+        for warning in loaded.warnings + exposure(loaded.gateway) { logger.warning("\(warning)") }
         for line in Summary.lines(loaded.gateway) { logger.info("\(line)") }
         return true
+    }
+
+    /// A configuration without clients, on an address others can reach;
+    /// checked again on each reload, since the file can drop its clients.
+    private func exposure(_ configuration: GatewayConfiguration) -> [String] {
+        guard configuration.isOpen, !UnladenCommand.isLoopback(server.host) else { return [] }
+        return ["clients: none is configured and the gateway listens on \(server.host): anyone who reaches it can use its accounts"]
     }
 
     /// The file as the panel edits it.
@@ -103,7 +110,7 @@ final class ConfigManager: Sendable {
                 try Self.write(text, to: path)
                 logger.info("configuration saved from the control panel")
                 _ = reloadLocked()
-                return .saved(hash: ConfigDocument.hash(text), warnings: loaded.warnings)
+                return .saved(hash: ConfigDocument.hash(text), warnings: loaded.warnings + exposure(loaded.gateway))
             } catch {
                 return .invalid(error)
             }
@@ -198,7 +205,7 @@ enum AdminStatus {
         }
         let clients: [JSONValue] = configuration.clientKeys.map { key in
             ["name": .string(key.name), "models": key.models.map { .array($0.map(JSONValue.string)) } ?? .null]
-        }
+        } + configuration.disabledClients.map { name in ["name": .string(name), "disabled": true] }
         return [
             "config_path": path.map(JSONValue.string) ?? .null,
             "accounts": .array(accounts),

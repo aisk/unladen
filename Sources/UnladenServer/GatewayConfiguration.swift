@@ -52,8 +52,14 @@ struct GatewayConfiguration: Sendable {
     /// Upstream keys by provider id.
     var keyPools: [String: KeyPool] = [:]
     var routes = RouteTable()
-    /// Keys clients must present; none: clients are not authenticated.
+    /// Keys clients must present.
     var clientKeys: [ClientKey] = []
+    /// Clients the file lists with `enabled: false`. With them, an empty
+    /// `clientKeys` lets nobody in instead of everybody.
+    var disabledClients: [String] = []
+    /// No client is configured, enabled or not: requests are not
+    /// authenticated.
+    var isOpen: Bool { clientKeys.isEmpty && disabledClients.isEmpty }
     /// Opens the control panel and its API (`panel.token`); without
     /// it they answer 404.
     var adminToken: String?

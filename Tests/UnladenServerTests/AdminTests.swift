@@ -132,6 +132,17 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         #expect(permissions == 0o640)
     }
 
+    @Test func droppingEveryClientOnAPublicAddressIsWarnedAbout() throws {
+        let (manager, _) = try makeManager(sample.replacingOccurrences(of: "127.0.0.1:4141", with: "0.0.0.0:4141"))
+        let snapshot = try manager.document()
+        var document = try #require(snapshot.document.objectValue)
+        document["clients"] = nil
+        let outcome = manager.save(.object(document), baseHash: snapshot.hash)
+        guard case .saved(_, let warnings) = outcome else { Issue.record("not saved: \(outcome)"); return }
+        #expect(warnings.contains { $0.contains("anyone who reaches it") })
+        #expect(manager.gateway.configuration.isOpen)
+    }
+
     @Test func aStaleHashIsAConflict() throws {
         let (manager, path) = try makeManager()
         let snapshot = try manager.document()

@@ -106,6 +106,7 @@ enum ConfigFile {
         var pools: [String: KeyPool.Strategy] = [:]
         var menu: [Parser.MenuEntry] = []
         var clientKeys: [ClientKey]?
+        var disabledClients: [String] = []
 
         if !root.isNull {
             var fields: [String: Field] = [:]
@@ -116,7 +117,7 @@ enum ConfigFile {
             if let field = fields["accounts"] { fileKeys = try parser.accounts(field, into: &loaded.gateway.registry) }
             if let field = fields["advanced"] { pools = try parser.advanced(field, into: &loaded) }
             if let field = fields["models"] { menu = try parser.menu(field) }
-            if let field = fields["clients"] { clientKeys = try parser.clients(field) }
+            if let field = fields["clients"] { (clientKeys, disabledClients) = try parser.clients(field) }
         }
 
         // Key pools: the file's accounts, else the environment's keys.
@@ -140,6 +141,7 @@ enum ConfigFile {
             clientKeys = [ClientKey(name: "UNLADEN_API_KEY", secret: apiKey, models: ["*"])]
         }
         loaded.gateway.clientKeys = clientKeys ?? []
+        loaded.gateway.disabledClients = disabledClients
 
         // The menu, checked against the final registry.
         var routes = try parser.routes(menu, registry: registry)
@@ -684,8 +686,10 @@ extension ConfigFile {
 
         // MARK: Clients
 
-        mutating func clients(_ field: Field) throws(ConfigError) -> [ClientKey] {
+        /// The enabled clients' keys, and the names of the disabled ones.
+        mutating func clients(_ field: Field) throws(ConfigError) -> ([ClientKey], [String]) {
             var keys: [ClientKey] = []
+            var disabled: [String] = []
             var owners: [String: String] = [:]
             for (name, item) in try field.mapping() {
                 guard !name.isEmpty else { throw item.error("a client name cannot be empty") }
@@ -704,9 +708,9 @@ extension ConfigFile {
                 if let owner = owners.updateValue(name, forKey: secretValue) {
                     throw item.error("client `\(name)` has the key of `\(owner)`")
                 }
-                if enabled { keys.append(ClientKey(name: name, secret: secretValue, models: models)) }
+                if enabled { keys.append(ClientKey(name: name, secret: secretValue, models: models)) } else { disabled.append(name) }
             }
-            return keys
+            return (keys, disabled)
         }
     }
 }

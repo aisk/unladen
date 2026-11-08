@@ -31,14 +31,10 @@ struct UnladenCommand: AsyncParsableCommand {
         defaultSubcommand: Serve.self,
     )
 
-    /// The warning for listening on `host` without a client key, or `nil`
-    /// when `host` is a loopback address or a key is set.
-    static func exposureWarning(host: String, apiKey: String?) -> String? {
-        exposureWarning(host: host, hasClientKeys: apiKey != nil)
-    }
-
-    static func exposureWarning(host: String, hasClientKeys: Bool) -> String? {
-        guard !hasClientKeys, !isLoopback(host) else { return nil }
+    /// The warning for listening on `host` with no client configured, or
+    /// `nil` when `host` is a loopback address or a client is.
+    static func exposureWarning(host: String, open: Bool) -> String? {
+        guard open, !isLoopback(host) else { return nil }
         return """
 
         ************************************************************************
@@ -177,7 +173,7 @@ struct Serve: AsyncParsableCommand {
             configuration: .init(address: .hostname(server.host, port: server.port), serverName: "unladen"),
             logger: logger,
         )
-        if let warning = UnladenCommand.exposureWarning(host: server.host, hasClientKeys: !loaded.gateway.clientKeys.isEmpty) {
+        if let warning = UnladenCommand.exposureWarning(host: server.host, open: loaded.gateway.isOpen) {
             UnladenCommand.printToStandardError(warning)
         }
         app.logger.info("configuration: \(loaded.path ?? "none (flags and environment only)")")
@@ -232,7 +228,8 @@ enum Summary {
         lines.append("models: " + (routes.isEmpty ? "none" : routes.map { route in
             "\(route.name) → \(route.targets.map(\.model).joined(separator: ", "))"
         }.joined(separator: "; ")))
-        lines.append("clients: " + (configuration.clientKeys.isEmpty ? "none" : configuration.clientKeys.map(\.name).joined(separator: ", ")))
+        let clients = configuration.clientKeys.map(\.name) + configuration.disabledClients.map { "\($0) (disabled)" }
+        lines.append("clients: " + (clients.isEmpty ? "none" : clients.joined(separator: ", ")))
         lines.append("control panel: " + (configuration.adminToken == nil ? "off (set panel.token)" : "/admin"))
         return lines
     }

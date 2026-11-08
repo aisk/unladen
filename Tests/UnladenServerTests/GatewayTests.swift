@@ -409,6 +409,19 @@ private func canonical(_ value: JSONValue) -> JSONValue {
 }
 
 @Suite struct AuthTests {
+    @Test func clientsThatAreAllDisabledLetNobodyIn() async throws {
+        let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
+        let gateway = makeGateway(upstream)
+        var configuration = gateway.configuration
+        configuration.disabledClients = ["old"]
+        gateway.replace(configuration)
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"), headers: [.authorization: "Bearer anything"])
+            #expect(response.status == .unauthorized)
+        }
+        #expect(upstream.requests.isEmpty)
+    }
+
     @Test func gatewayKeyIsRequired() async throws {
         let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
         try await makeApp(makeGateway(upstream, apiKey: "secret")).test(.router) { client in

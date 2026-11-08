@@ -143,7 +143,7 @@ enum AdminPage {
                   <table class="table card-table">
                     <tbody>
                       <template x-for="c in status?.clients || []" :key="c.name">
-                        <tr><td x-text="c.name"></td><td class="text-secondary" x-text="clientSummary(c.models)"></td></tr>
+                        <tr><td x-text="c.name"></td><td class="text-secondary" x-text="c.disabled ? 'disabled' : clientSummary(c.models)"></td></tr>
                       </template>
                       <tr x-show="!(status?.clients || []).length"><td class="text-warning">None: any client may use the gateway.</td></tr>
                     </tbody>

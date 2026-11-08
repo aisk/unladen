@@ -130,6 +130,14 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         #expect(allowed("laptop", "openai/gpt-4o") && allowed("laptop", "anything"))
     }
 
+    @Test func disabledClientsStillRequireAKey() throws {
+        let loaded = try parse(#"{ "clients": { "old": { "key": "k", "enabled": false } } }"#, environment: ["UNLADEN_API_KEY": "env"])
+        #expect(loaded.gateway.clientKeys.isEmpty)
+        #expect(loaded.gateway.disabledClients == ["old"])
+        #expect(!loaded.gateway.isOpen)
+        #expect(Summary.lines(loaded.gateway).contains("clients: old (disabled)"))
+    }
+
     @Test func emptyFileUsesTheEnvironment() throws {
         let loaded = try parse("", environment: ["DEEPSEEK_API_KEY": "a, b", "UNLADEN_API_KEY": "client"])
         #expect(loaded.server == ServerSettings())

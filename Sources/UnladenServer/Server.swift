@@ -110,11 +110,11 @@ enum Authentication {
     case denied(Response)
 }
 
-/// Who the request comes from: any client when no client keys are
-/// configured, else the key it presents.
+/// Who the request comes from: any client when no client is configured,
+/// else the key it presents. Clients that are all disabled let nobody in.
 private func authenticate(_ request: Request, configuration: GatewayConfiguration, as clientProtocol: WireProtocol) -> Authentication {
     let configured = configuration.clientKeys
-    guard !configured.isEmpty else { return .allowed(.open) }
+    guard !configuration.isOpen else { return .allowed(.open) }
     let presented = presentedKeys(request, acceptingQueryKey: clientProtocol == .gemini)
     // Every configured key is compared, so the time taken does not tell
     // which one matched.
