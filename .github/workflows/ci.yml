@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     container: swift:6.4
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
         with:
           path: .build
           key: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
