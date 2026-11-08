@@ -21,6 +21,8 @@ struct Gateway: Sendable {
     var strategy: any RoutingStrategy = KeyPoolOrdering()
     var health = HealthStore()
     var heldStreams = HeldStreams()
+    /// Requests in flight and ended, sessions and usage.
+    var activity = Activity()
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
         self.store = ConfigurationStore(configuration)
@@ -72,20 +74,29 @@ struct Gateway: Sendable {
         let configuration = snapshot ?? self.configuration
         let start = ContinuousClock.now
         var line = LogLine(clientProtocol: clientProtocol, start: start)
+        let parsed = Result { () throws(WireDecodingError) in
+            try ClientCodec.parseRequest(clientProtocol, body: body, geminiPath: geminiPath)
+        }
+        let tracker = activity.begin(RequestRecord(
+            started: LocalDay.nowMilliseconds(),
+            origin: RequestOrigin(headers: headers, request: try? parsed.get().value, access: access),
+            clientProtocol: clientProtocol.rawValue, model: (try? parsed.get().value.model) ?? geminiPath?.model ?? "?",
+            stream: (try? parsed.get().value.stream) == true || geminiPath?.stream == true,
+        ))
         func fail(_ status: Int, _ message: String, detail: String? = nil, warnings: [WireWarning] = []) -> Response {
             monitor.uninstall()
             line.status = status
             line.warnings = warnings.count
             line.note = detail ?? message
             log.emit(line.text)
+            tracker.finish(status: status, note: detail ?? message)
             return Self.errorResponse(clientProtocol, status: status, message: message, warnings: warnings)
         }
 
         let decoded: WireDecoded<WireRequest>
-        do {
-            decoded = try ClientCodec.parseRequest(clientProtocol, body: body, geminiPath: geminiPath)
-        } catch {
-            return fail(400, "invalid request: \(error)")
+        switch parsed {
+        case .success(let value): decoded = value
+        case .failure(let error): return fail(400, "invalid request: \(error)")
         }
         let request = decoded.value
         let stream = request.stream == true
@@ -116,7 +127,7 @@ struct Gateway: Sendable {
                 let outcome = try await monitor.run {
                     try await self.attempt(
                         request, decodeWarnings: decoded.warnings, candidates: ordered, stream: stream, clientHeaders: headers,
-                        strict: configuration.strict, headTimeout: configuration.headTimeout, log: log,
+                        strict: configuration.strict, headTimeout: configuration.headTimeout, log: log, tracker: tracker,
                     )
                 }
                 settled.set(.success(outcome))
@@ -132,7 +143,7 @@ struct Gateway: Sendable {
             // in the same response.
             guard let done = await settled.wait(upTo: hold) else {
                 return heldStream(settled, work, clientProtocol: clientProtocol, request: request, decodeWarnings: decoded.warnings,
-                                  configuration: configuration, monitor: monitor, line: line, log: log)
+                                  configuration: configuration, monitor: monitor, line: line, log: log, tracker: tracker)
             }
             result = done
         } else {
@@ -151,6 +162,7 @@ struct Gateway: Sendable {
             line.status = response.status.code
             Self.note(failure, decodeWarnings: decoded.warnings, on: &line)
             log.emit(line.text)
+            tracker.finish(status: response.status.code, note: line.note)
             return response
 
         case .reply(let served):
@@ -174,6 +186,8 @@ struct Gateway: Sendable {
                 line.status = 200
                 line.warnings = all.count
                 log.emit(line.text)
+                tracker.serving(candidate, streaming: false)
+                tracker.finish(status: 200, tokens: TokenCounts(response.usage))
                 return Response(status: .ok, headers: fields, body: ResponseBody(byteBuffer: ByteBuffer(bytes: encoded.body)))
 
             case .events(let events):
@@ -183,11 +197,12 @@ struct Gateway: Sendable {
                     fields[WarningHeader.name] = WarningHeader.value(request: served.requestWarnings, response: served.responseWarnings)
                 }
                 let finalLine = line
+                tracker.serving(candidate, streaming: true)
                 return Response(status: .ok, headers: fields, body: ResponseBody { writer in
                     defer { monitor.uninstall() }
                     try await self.forward(
                         served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
-                        monitor: monitor, writer: &writer, line: finalLine, log: log,
+                        monitor: monitor, writer: &writer, line: finalLine, log: log, tracker: tracker,
                     )
                 })
             }
@@ -217,6 +232,7 @@ struct Gateway: Sendable {
         monitor: DisconnectMonitor,
         line: LogLine,
         log: RequestLog,
+        tracker: RequestTracker,
     ) -> Response {
         let fields: HTTPFields = [.contentType: "text/event-stream", .cacheControl: "no-cache"]
         let every = heldStreams.commentEvery
@@ -236,6 +252,7 @@ struct Gateway: Sendable {
                 line.status = 499
                 line.note = "client disconnected while held"
                 log.emit(line.text)
+                tracker.finish(status: 499, note: line.note)
                 return
             }
             switch result! {
@@ -243,6 +260,7 @@ struct Gateway: Sendable {
                 line.status = 499
                 line.note = "client disconnected while held"
                 log.emit(line.text)
+                tracker.finish(status: 499, note: line.note)
             case .success(.failure(let failure)):
                 var encoder = ClientStreamEncoder(
                     for: clientProtocol, defaults: ReplyDefaults(clientProtocol: clientProtocol, model: request.model, candidate: nil),
@@ -253,18 +271,21 @@ struct Gateway: Sendable {
                 Self.note(failure, decodeWarnings: decodeWarnings, on: &line)
                 line.note = "(in the stream) " + (line.note ?? "")
                 log.emit(line.text)
+                tracker.finish(status: status, note: line.note)
                 try await writer.write(Self.frames(encoder.encode(.error(error)) + encoder.finish()))
                 try await writer.finish(nil)
             case .success(.reply(let served)):
                 line.candidate = served.candidate.reference
                 guard case .events(let events) = served.body else {
                     // A stream request is always answered with events.
+                    tracker.finish(status: 200)
                     try await writer.finish(nil)
                     return
                 }
+                tracker.serving(served.candidate, streaming: true)
                 try await self.forward(
                     served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
-                    monitor: monitor, writer: &writer, line: line, log: log,
+                    monitor: monitor, writer: &writer, line: line, log: log, tracker: tracker,
                 )
             }
         })
@@ -283,6 +304,7 @@ struct Gateway: Sendable {
         writer: inout any ResponseBodyWriter,
         line: LogLine,
         log: RequestLog,
+        tracker: RequestTracker? = nil,
     ) async throws {
         let candidate = served.candidate
         var line = line
@@ -321,6 +343,10 @@ struct Gateway: Sendable {
             line.note = "upstream stream failed: \(failure)"
         }
         log.emit(line.text)
+        tracker?.finish(
+            status: summary.disconnected ? 499 : 200, note: line.note, tokens: TokenCounts(summary.usage),
+            failed: summary.failure != nil && !summary.disconnected,
+        )
         if !summary.disconnected { try await writer.finish(nil) }
     }
 
@@ -460,18 +486,27 @@ struct Gateway: Sendable {
         strict: Bool = false,
         headTimeout: Duration? = nil,
         log: RequestLog = .silent,
+        tracker: RequestTracker? = nil,
     ) async throws -> AttemptOutcome {
         var last: AttemptFailure?
         var strictWarnings: [WireWarning]?
         var unreachable: Set<String> = []
+        // Upstream Chat streams report usage only when asked; the client's
+        // own encoder still follows what the client asked for.
+        var request = request
+        if stream { request.streamOptions = WireStreamOptions(includeUsage: true, extra: request.streamOptions?.extra ?? [:]) }
         for candidate in candidates where !unreachable.contains(candidate.endpointID) {
             try Task.checkCancellation()
+            let began = ContinuousClock.now
+            var outcome = "skipped"
+            defer { tracker?.tried(candidate, outcome: outcome, since: began) }
             let call = UpstreamCall(target: candidate.target, apiKey: candidate.apiKey, transport: transport)
             let prepared: UpstreamRequest
             do {
                 prepared = try call.prepare(request, stream: stream, clientHeaders: clientHeaders)
             } catch {
                 last = .gateway(status: 500, message: "cannot call \(candidate.reference): \(error)", candidate: candidate)
+                outcome = "cannot call: \(error)"
                 continue
             }
             let requestWarnings = WireWarning.merged(decoded: decodeWarnings, encoded: prepared.warnings)
@@ -479,6 +514,7 @@ struct Gateway: Sendable {
                 let lossy = requestWarnings.filter(\.isEscalatedWhenStrict)
                 if !lossy.isEmpty {
                     strictWarnings = strictWarnings ?? lossy
+                    outcome = "skipped: would lose part of the request (strict)"
                     continue
                 }
             }
@@ -497,11 +533,13 @@ struct Gateway: Sendable {
                 case (.events, .failed(let message)?):
                     health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
                     last = .gateway(status: 502, message: "\(candidate.reference) failed before any content: \(message)", candidate: candidate)
+                    outcome = "failed before any content: \(message)"
                     continue
                 case (.events, nil):
                     continue // not reached: an event stream is always primed
                 }
                 health.recordSuccess(candidate)
+                outcome = "ok"
                 return .reply(Served(
                     candidate: candidate, body: body, requestWarnings: requestWarnings,
                     responseWarnings: Array(reply.warnings.dropFirst(prepared.warnings.count)),
@@ -510,29 +548,39 @@ struct Gateway: Sendable {
                 // Slow but alive: no cooldown.
                 let limit = headTimeout.map { " within \($0)" } ?? ""
                 last = .gateway(status: 504, message: "\(candidate.reference) sent no content\(limit)", candidate: candidate)
+                outcome = "no content\(limit)"
             } catch let error as UpstreamError {
                 switch error {
                 case .http(let http):
                     let status = http.status.code
+                    outcome = "\(status)"
                     guard Self.isRetryable(status) else { return .failure(.upstream(candidate, http)) }
                     recordFailure(status: status, retryAfter: http.retryAfter, of: candidate, log: log)
                     last = .upstream(candidate, http)
                 case .decoding(let decoding, _):
                     health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
                     last = .gateway(status: 502, message: "\(candidate.reference) sent a reply that cannot be decoded: \(decoding)", candidate: candidate)
+                    outcome = "reply cannot be decoded"
                 case .stream(let streamError):
                     health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
                     last = .gateway(status: 502, message: "\(candidate.reference) failed: \(streamError.message)", candidate: candidate)
+                    outcome = "error: \(streamError.message)"
                 case .invalidBaseURL(let url):
                     last = .gateway(status: 500, message: "invalid base URL \(url)", candidate: candidate)
+                    outcome = "invalid base URL"
                 }
             } catch let error as HTTPResponseBodyTooLargeError {
                 health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
                 last = .gateway(
                     status: 502, message: "\(candidate.reference) sent a reply larger than \(error.maxBytes) bytes", candidate: candidate,
                 )
+                outcome = "reply too large"
             } catch {
-                if Task.isCancelled || error is CancellationError { throw CancellationError() }
+                if Task.isCancelled || error is CancellationError {
+                    outcome = "cancelled"
+                    throw CancellationError()
+                }
+                outcome = "unreachable"
                 health.recordFailure(candidate.endpointScope, base: HealthStore.failureCooldown)
                 unreachable.insert(candidate.endpointID)
                 last = .gateway(status: 502, message: "\(candidate.reference) is unreachable: \(error)", candidate: candidate)
@@ -681,6 +729,8 @@ struct Gateway: Sendable {
         var warnings: [WireWarning] = []
         var failure: String?
         var disconnected = false
+        /// The usage the stream reported last.
+        var usage: WireUsage?
     }
 
     enum PumpSignal: Sendable {
@@ -755,6 +805,11 @@ struct Gateway: Sendable {
             switch signal {
             case .event(let event):
                 lastUpstream = .now
+                switch event {
+                case .finish(let finish) where finish.usage != nil: summary.usage = finish.usage
+                case .responseMetadata(let metadata) where metadata.usage != nil && summary.usage == nil: summary.usage = metadata.usage
+                default: break
+                }
                 out = encoder.encode(event)
             case .end(let warnings):
                 summary.warnings += warnings

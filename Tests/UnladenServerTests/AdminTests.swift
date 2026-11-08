@@ -214,3 +214,42 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         }
     }
 }
+
+@Suite struct AdminActivityRouteTests {
+    @Test func activityAndUsageOverHTTP() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("unladen-\(UUID().uuidString).jsonc").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        try sample.write(toFile: path, atomically: true, encoding: .utf8)
+        let loaded = try ConfigFile.parse(sample, environment: environment)
+        let gateway = Gateway(configuration: loaded.gateway, transport: MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }.transport)
+        let manager = ConfigManager(path: path, overrides: ConfigOverrides(), server: loaded.server, gateway: gateway, logger: Logger(label: "test"), environment: environment)
+        let app = Application(router: buildRouter(gateway: gateway, manager: manager), configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+        let admin: HTTPFields = [.authorization: "Bearer \(adminToken)"]
+        try await app.test(.router) { client in
+            let served = try await client.post(
+                "/v1/chat/completions", ClientRequest.chat(model: "fast"),
+                headers: [.authorization: "Bearer client-secret", HTTPField.Name("session_id")!: "s-7"],
+            )
+            #expect(served.status == .ok)
+
+            let activity = try await client.execute(uri: "/admin/api/activity", method: .get, headers: admin)
+            let json = try JSONValue(parsing: Array(activity.body.readableBytesView))
+            #expect(json["recent"]?[0]?["client_key"] == "me")
+            #expect(json["recent"]?[0]?["attempt_list"]?[0]?["outcome"] == "ok")
+            #expect(json["sessions"]?[0]?["id"] == "s-7")
+
+            let session = try await client.execute(uri: "/admin/api/sessions/s-7", method: .get, headers: admin)
+            let requests = try JSONValue(parsing: Array(session.body.readableBytesView))["requests"]
+            #expect(requests?.arrayValue?.count == 1)
+
+            let usage = try await client.execute(uri: "/admin/api/usage?days=7", method: .get, headers: admin)
+            let summary = try JSONValue(parsing: Array(usage.body.readableBytesView))
+            #expect(summary["total"]?["requests"] == 1)
+            #expect(summary["accounts"]?[0]?["name"] == "deepseek/deepseek")
+            #expect(summary["accounts"]?[0]?["tokens"]?["output"] == 10)
+
+            let denied = try await client.execute(uri: "/admin/api/usage", method: .get)
+            #expect(denied.status == .unauthorized)
+        }
+    }
+}

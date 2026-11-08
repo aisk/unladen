@@ -153,6 +153,142 @@ enum AdminPage {
             </div>
           </div>
 
+          <!-- Activity -->
+          <div x-show="tab === 'activity'">
+            <div class="text-secondary mb-3">Requests as they happen, refreshed every 2 seconds. Sessions of the last 7 days.</div>
+            <div class="card mb-3">
+              <div class="card-header"><h3 class="card-title">In flight</h3></div>
+              <table class="table card-table table-sm">
+                <thead><tr><th>Started</th><th>Client</th><th>Model</th><th>Account</th><th>Phase</th><th class="text-end">Elapsed</th></tr></thead>
+                <tbody>
+                  <template x-for="r in activity?.in_flight || []" :key="r.id">
+                    <tr>
+                      <td x-text="clock(r.t)"></td>
+                      <td><span x-text="r.client"></span> <span class="text-secondary" x-show="r.client_key" x-text="'(' + r.client_key + ')'"></span></td>
+                      <td class="mono" x-text="r.model"></td>
+                      <td class="mono" x-text="accountOf(r)"></td>
+                      <td><span class="badge" :class="r.phase === 'streaming' ? 'bg-green-lt' : 'bg-yellow-lt'" x-text="r.phase"></span></td>
+                      <td class="text-end" x-text="duration(activity.now - r.t)"></td>
+                    </tr>
+                  </template>
+                  <tr x-show="!(activity?.in_flight || []).length"><td colspan="6" class="text-secondary">Nothing in flight.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card mb-3">
+              <div class="card-header"><h3 class="card-title">Sessions</h3></div>
+              <div class="table-responsive">
+              <table class="table card-table table-sm table-hover">
+                <thead><tr><th>Last active</th><th>Client</th><th>Session</th><th>Model</th><th class="text-end">Requests</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache hit</th><th>Accounts</th></tr></thead>
+                <tbody>
+                  <template x-for="s in activity?.sessions || []" :key="s.id">
+                    <tr style="cursor: pointer" @click="openSession(s)" :class="session?.id === s.id && 'table-active'">
+                      <td x-text="ago(s.last)"></td>
+                      <td><span x-text="s.client"></span> <span class="text-secondary" x-show="s.client_key" x-text="'(' + s.client_key + ')'"></span></td>
+                      <td class="mono text-secondary" :title="s.id" x-text="short(s.id)"></td>
+                      <td class="mono" x-text="s.last_model"></td>
+                      <td class="text-end"><span x-text="s.requests"></span><span class="text-danger" x-show="s.failures" x-text="' (' + s.failures + ' failed)'"></span></td>
+                      <td class="text-end" x-text="count(s.tokens.input)"></td>
+                      <td class="text-end" x-text="count(s.tokens.output)"></td>
+                      <td class="text-end" x-text="cacheShare(s.tokens)"></td>
+                      <td class="mono"><span x-text="s.accounts.join(', ')"></span> <span class="badge bg-orange-lt" x-show="s.switches" x-text="s.switches + ' switches'"></span></td>
+                    </tr>
+                  </template>
+                  <tr x-show="!(activity?.sessions || []).length"><td colspan="9" class="text-secondary">No session yet.</td></tr>
+                </tbody>
+              </table>
+              </div>
+            </div>
+            <div class="card mb-3">
+              <div class="card-header">
+                <h3 class="card-title" x-text="session ? 'Requests of session ' + short(session.id) : 'Recent requests'"></h3>
+                <div class="card-actions" x-show="session"><button class="btn btn-sm" @click="session = null; sessionRequests = []">Show all recent</button></div>
+              </div>
+              <div class="table-responsive">
+              <table class="table card-table table-sm">
+                <thead><tr><th>Time</th><th>Client</th><th>Model</th><th>Served by</th><th>Status</th><th class="text-end">First content</th><th class="text-end">Total</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cached</th></tr></thead>
+                <tbody>
+                  <template x-for="r in shownRequests()" :key="r.id">
+                    <tr>
+                      <td>
+                        <a href="#" class="text-reset" @click.prevent="expanded[r.id] = !expanded[r.id]" x-text="clock(r.t)"></a>
+                        <div x-show="expanded[r.id]" class="small text-secondary mt-1">
+                          <div x-show="r.session" class="mono" x-text="'session ' + r.session + (r.subagent ? ', subagent ' + r.subagent : '')"></div>
+                          <div x-text="r.protocol + (r.stream ? ', streamed' : '')"></div>
+                          <template x-for="a in r.attempt_list || []">
+                            <div class="mono" x-text="a.provider + '/' + a.account + ' ' + a.model + ': ' + a.outcome + ' (' + duration(a.ms) + ')'"></div>
+                          </template>
+                          <div x-show="r.note" class="text-danger" x-text="r.note"></div>
+                        </div>
+                      </td>
+                      <td x-text="r.client"></td>
+                      <td class="mono" x-text="r.model"></td>
+                      <td class="mono">
+                        <span x-text="accountOf(r)"></span>
+                        <span class="badge bg-orange-lt" x-show="r.attempts > 1" x-text="r.attempts + ' tries'"></span>
+                      </td>
+                      <td><span class="badge" :class="r.failed || r.status >= 400 ? 'bg-red-lt' : 'bg-green-lt'" x-text="r.phase && r.phase !== 'done' ? r.phase : r.status"></span></td>
+                      <td class="text-end" x-text="r.first_content_ms == null ? '' : duration(r.first_content_ms)"></td>
+                      <td class="text-end" x-text="r.ms == null ? '' : duration(r.ms)"></td>
+                      <td class="text-end" x-text="r.tokens ? count(r.tokens.input) : ''"></td>
+                      <td class="text-end" x-text="r.tokens ? count(r.tokens.output) : ''"></td>
+                      <td class="text-end" x-text="r.tokens ? count(r.tokens.cache_read) : ''"></td>
+                    </tr>
+                  </template>
+                  <tr x-show="!shownRequests().length"><td colspan="10" class="text-secondary">No request recorded since the gateway started.</td></tr>
+                </tbody>
+              </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Usage -->
+          <div x-show="tab === 'usage'">
+            <div class="d-flex mb-3 align-items-center">
+              <div class="text-secondary me-auto">Tokens as the upstreams reported them, by local day.</div>
+              <div class="btn-group">
+                <template x-for="d in [1, 7, 30]">
+                  <button class="btn" :class="usageDays === d && 'active'" @click="usageDays = d; refreshUsage()" x-text="d === 1 ? 'Today' : d + ' days'"></button>
+                </template>
+              </div>
+            </div>
+            <div class="row row-cards mb-3" x-show="usage">
+              <template x-for="tile in usageTiles()">
+                <div class="col-6 col-md-3">
+                  <div class="card card-sm"><div class="card-body">
+                    <div class="subheader" x-text="tile.label"></div>
+                    <div class="h2 mb-0" x-text="tile.value"></div>
+                  </div></div>
+                </div>
+              </template>
+            </div>
+            <template x-for="g in [['accounts', 'By account'], ['clients', 'By client'], ['models', 'By model']]">
+              <div class="card mb-3">
+                <div class="card-header"><h3 class="card-title" x-text="g[1]"></h3></div>
+                <div class="table-responsive">
+                <table class="table card-table table-sm">
+                  <thead><tr><th>Name</th><th class="text-end">Requests</th><th class="text-end">Failed</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache read</th><th class="text-end">Cache write</th><th class="text-end">Cache hit</th></tr></thead>
+                  <tbody>
+                    <template x-for="row in usage?.[g[0]] || []" :key="row.name">
+                      <tr>
+                        <td class="mono" x-text="row.name"></td>
+                        <td class="text-end" x-text="row.requests"></td>
+                        <td class="text-end" :class="row.failures && 'text-danger'" x-text="row.failures"></td>
+                        <td class="text-end" x-text="count(row.tokens.input)"></td>
+                        <td class="text-end" x-text="count(row.tokens.output)"></td>
+                        <td class="text-end" x-text="count(row.tokens.cache_read)"></td>
+                        <td class="text-end" x-text="count(row.tokens.cache_write)"></td>
+                        <td class="text-end" x-text="cacheShare(row.tokens)"></td>
+                      </tr>
+                    </template>
+                    <tr x-show="!(usage?.[g[0]] || []).length"><td colspan="8" class="text-secondary">No request in this period.</td></tr>
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </template>
+          </div>
+
           <!-- Accounts -->
           <div x-show="tab === 'accounts'">
             <div class="d-flex mb-3 align-items-start">
@@ -496,7 +632,9 @@ function panel() {
     signInError: '',
     tab: 'overview',
     tabs: [
-      { id: 'overview', label: 'Overview', icon: 'ti-activity' },
+      { id: 'overview', label: 'Overview', icon: 'ti-dashboard' },
+      { id: 'activity', label: 'Activity', icon: 'ti-activity' },
+      { id: 'usage', label: 'Usage', icon: 'ti-chart-bar' },
       { id: 'accounts', label: 'Accounts', icon: 'ti-wallet' },
       { id: 'models', label: 'Models', icon: 'ti-list-details' },
       { id: 'clients', label: 'Clients', icon: 'ti-key' },
@@ -525,11 +663,88 @@ function panel() {
     draft: null,
     jsonText: '',
     jsonError: '',
+    activity: null,
+    session: null,
+    sessionRequests: [],
+    expanded: {},
+    usage: null,
+    usageDays: 1,
 
     async start() {
       if (this.token) await this.load();
       setInterval(() => { if (this.token && this.tab === 'overview') this.refreshStatus(); }, 5000);
+      setInterval(() => { if (this.token && this.tab === 'activity') this.refreshActivity(); }, 2000);
+      setInterval(() => { if (this.token && this.tab === 'usage') this.refreshUsage(); }, 10000);
+      this.$watch('tab', tab => {
+        if (tab === 'activity') this.refreshActivity();
+        if (tab === 'usage') this.refreshUsage();
+      });
     },
+
+    async refreshActivity() {
+      const result = await this.api('GET', 'activity');
+      if (result.status === 200) this.activity = result.json;
+      if (this.session) {
+        const requests = await this.api('GET', 'sessions/' + encodeURIComponent(this.session.id));
+        if (requests.status === 200) this.sessionRequests = requests.json.requests || [];
+      }
+    },
+
+    async openSession(s) {
+      this.session = s;
+      this.sessionRequests = [];
+      await this.refreshActivity();
+    },
+
+    shownRequests() {
+      if (this.session) return this.sessionRequests;
+      return this.activity?.recent || [];
+    },
+
+    async refreshUsage() {
+      const result = await this.api('GET', 'usage?days=' + this.usageDays);
+      if (result.status === 200) this.usage = result.json;
+    },
+
+    usageTiles() {
+      const t = this.usage?.total;
+      if (!t) return [];
+      return [
+        { label: 'Requests', value: t.requests + (t.failures ? ' (' + t.failures + ' failed)' : '') },
+        { label: 'Input tokens', value: this.count(t.tokens.input) },
+        { label: 'Output tokens', value: this.count(t.tokens.output) },
+        { label: 'Cache hit', value: this.cacheShare(t.tokens) || '–' },
+      ];
+    },
+
+    accountOf(r) { return r.provider ? r.provider + '/' + (r.account || '-') : ''; },
+    count(n) {
+      if (n == null) return '';
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e4) return (n / 1e3).toFixed(1) + 'k';
+      return String(n);
+    },
+    cacheShare(t) { return t && t.input ? Math.round(100 * t.cache_read / t.input) + '%' : ''; },
+    duration(ms) {
+      if (ms == null) return '';
+      if (ms < 1000) return ms + 'ms';
+      if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+      return Math.floor(ms / 60000) + 'm' + Math.round((ms % 60000) / 1000) + 's';
+    },
+    clock(t) {
+      const d = new Date(t), now = new Date();
+      const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return d.toDateString() === now.toDateString() ? time : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
+    },
+    ago(t) {
+      const s = Math.max(0, Math.round(((this.activity?.now || Date.now()) - t) / 1000));
+      if (s < 60) return s + 's ago';
+      if (s < 3600) return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      return Math.floor(s / 86400) + 'd ago';
+    },
+    short(id) { return id && id.length > 14 ? id.slice(0, 12) + '…' : id; },
 
     async api(method, path, body) {
       const response = await fetch('/admin/api/' + path, {

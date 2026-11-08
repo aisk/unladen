@@ -96,7 +96,7 @@ The configuration is JSON with comments and trailing commas, read from `--config
 }
 ```
 
-`unladen check-config` checks a configuration without serving it. The gateway reloads its configuration on `SIGHUP` and when it is saved from the control panel. The design, including what later versions will add, is in [docs/server-config-design.md](docs/server-config-design.md) (Chinese).
+`unladen check-config` checks a configuration without serving it. The gateway reloads its configuration on `SIGHUP` and when it is saved from the control panel. The control panel also shows requests in flight, recent requests and sessions, and token usage by account, client and model; each finished request is appended to `~/.local/state/unladen/usage-YYYY-MM.jsonl` (or under `$XDG_STATE_HOME`). The design, including what later versions will add, is in [docs/server-config-design.md](docs/server-config-design.md) (Chinese).
 
 ## Tests
 

@@ -2,6 +2,11 @@
 // file, flags and environment variables.
 
 import ArgumentParser
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 import AsyncHTTPClient
 import Dispatch
 #if canImport(Glibc)
@@ -155,9 +160,14 @@ struct Serve: AsyncParsableCommand {
         clientConfiguration.timeout = .init(connect: .nanoseconds(Int64(server.connectTimeout / .nanoseconds(1))), read: nil)
         let client = HTTPClient(eventLoopGroup: HTTPClient.defaultEventLoopGroup, configuration: clientConfiguration)
 
-        let gateway = Gateway(configuration: loaded.gateway, transport: AsyncHTTPClientTransport(client: client))
         var logger = Logger(label: "unladen")
         logger.logLevel = .info
+        var gateway = Gateway(configuration: loaded.gateway, transport: AsyncHTTPClientTransport(client: client))
+        // Usage is kept across restarts in the state directory.
+        let usageLog = UsageLog.defaultDirectory { ProcessInfo.processInfo.environment[$0] }.map(UsageLog.init(directory:))
+        let usageLogger = logger
+        gateway.activity = Activity(log: usageLog) { usageLogger.warning("\($0)") }
+        gateway.activity.restore()
         // Reloads (SIGHUP, the control panel) and the panel's saves.
         let manager = ConfigManager(
             path: loaded.path ?? options.config, overrides: options.overrides, server: server, gateway: gateway, logger: logger,
@@ -171,6 +181,7 @@ struct Serve: AsyncParsableCommand {
             UnladenCommand.printToStandardError(warning)
         }
         app.logger.info("configuration: \(loaded.path ?? "none (flags and environment only)")")
+        app.logger.info("usage log: \(usageLog.map { $0.directory } ?? "off (no HOME or XDG_STATE_HOME)")")
         for warning in loaded.warnings { app.logger.warning("\(warning)") }
         for line in Summary.lines(loaded.gateway) { app.logger.info("\(line)") }
 

@@ -211,6 +211,85 @@ enum AdminStatus {
     }
 }
 
+// MARK: - Activity and usage
+
+enum AdminActivity {
+    static func json(_ activity: Activity) -> JSONValue {
+        let snapshot = activity.snapshot()
+        return [
+            "now": .number(JSONNumber(LocalDay.nowMilliseconds())),
+            "in_flight": .array(snapshot.inFlight.map(json)),
+            "recent": .array(snapshot.recent.map(json)),
+            "sessions": .array(snapshot.sessions.map(json)),
+        ]
+    }
+
+    static func json(_ record: RequestRecord) -> JSONValue {
+        var object = record.logged.objectValue ?? JSONObject()
+        object["id"] = .number(JSONNumber(record.id))
+        object["phase"] = .string(record.phase.rawValue)
+        object["attempt_list"] = .array(record.attempts.map { attempt in
+            [
+                "provider": .string(attempt.provider), "account": .string(attempt.account), "model": .string(attempt.model),
+                "outcome": .string(attempt.outcome), "ms": .number(JSONNumber(attempt.milliseconds)),
+            ]
+        })
+        return .object(object)
+    }
+
+    static func json(_ session: SessionSummary) -> JSONValue {
+        [
+            "id": .string(session.id),
+            "client": .string(session.client),
+            "client_key": session.clientKey.map(JSONValue.string) ?? .null,
+            "first": .number(JSONNumber(session.first)),
+            "last": .number(JSONNumber(session.last)),
+            "requests": .number(JSONNumber(session.requests)),
+            "failures": .number(JSONNumber(session.failures)),
+            "tokens": session.tokens.json,
+            "accounts": .array(session.accounts.map(JSONValue.string)),
+            "switches": .number(JSONNumber(session.switches)),
+            "models": .array(session.models.map(JSONValue.string)),
+            "last_model": .string(session.lastModel),
+        ]
+    }
+
+    /// Usage summed by account, client and model, and in all.
+    static func usage(_ buckets: [UsageBucket.Key: UsageBucket], days: Int) -> JSONValue {
+        func group(_ key: (UsageBucket.Key) -> String) -> JSONValue {
+            var sums: [String: UsageBucket] = [:]
+            for (bucketKey, bucket) in buckets {
+                var sum = sums[key(bucketKey)] ?? UsageBucket()
+                sum.requests += bucket.requests
+                sum.failures += bucket.failures
+                sum.tokens += bucket.tokens
+                sums[key(bucketKey)] = sum
+            }
+            let rows = sums.sorted { a, b in
+                let (ta, tb) = (a.value.tokens.input + a.value.tokens.output, b.value.tokens.input + b.value.tokens.output)
+                return ta != tb ? ta > tb : a.key < b.key
+            }
+            return .array(rows.map { name, sum in
+                ["name": .string(name), "requests": .number(JSONNumber(sum.requests)), "failures": .number(JSONNumber(sum.failures)),
+                 "tokens": sum.tokens.json]
+            })
+        }
+        var total = UsageBucket()
+        for bucket in buckets.values {
+            total.requests += bucket.requests
+            total.failures += bucket.failures
+            total.tokens += bucket.tokens
+        }
+        return [
+            "days": .number(JSONNumber(days)),
+            "total": ["requests": .number(JSONNumber(total.requests)), "failures": .number(JSONNumber(total.failures)), "tokens": total.tokens.json],
+            "accounts": group { $0.provider.isEmpty ? "(none)" : $0.provider + "/" + ($0.account.isEmpty ? "-" : $0.account) },
+            "clients": group(\.client),
+            "models": group(\.model),
+        ]
+    }
+}
+
 // MARK: - Routes
 
 /// `/admin` (the panel) and `/admin/api/*`, open only with
@@ -262,6 +341,23 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         case .invalid(let error):
             return adminJSON(422, ["error": .string(error.message), "location": error.location.map(JSONValue.string) ?? .null])
         }
+    }
+
+    router.get("/admin/api/activity") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        return adminJSON(200, AdminActivity.json(gateway.activity))
+    }
+
+    router.get("/admin/api/sessions/:id") { request, context in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        let id = context.parameters.get("id") ?? ""
+        return adminJSON(200, ["requests": .array(gateway.activity.requests(ofSession: id).map(AdminActivity.json))])
+    }
+
+    router.get("/admin/api/usage") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        let days = request.uri.queryParameters.get("days").flatMap { Int($0) }.map { min(max($0, 1), Activity.usageDays) } ?? 1
+        return adminJSON(200, AdminActivity.usage(gateway.activity.usage(days: days), days: days))
     }
 
     router.post("/admin/api/reload") { request, _ in
