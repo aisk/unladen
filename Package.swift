@@ -72,7 +72,19 @@ let package = Package(
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
             ],
+            exclude: ["Panel"],
             swiftSettings: swiftSettings,
+            plugins: ["EmbedPanel"],
+        ),
+        // Turns the control panel's page into Swift source at build time.
+        .executableTarget(
+            name: "EmbedPanelTool",
+            swiftSettings: swiftSettings,
+        ),
+        .plugin(
+            name: "EmbedPanel",
+            capability: .buildTool(),
+            dependencies: ["EmbedPanelTool"],
         ),
         // Checks shared by the test targets (stream well-formedness, JSON
         // canonical form). Not a product.
