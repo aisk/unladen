@@ -164,7 +164,7 @@ enum AdminPage {
                   <template x-for="r in activity?.in_flight || []" :key="r.id">
                     <tr>
                       <td x-text="clock(r.t)"></td>
-                      <td><span x-text="r.client"></span> <span class="text-secondary" x-show="r.client_key" x-text="'(' + r.client_key + ')'"></span></td>
+                      <td><span x-text="r.client || r.program"></span> <span class="text-secondary" x-show="r.client" x-text="'(' + r.program + ')'"></span></td>
                       <td class="mono" x-text="r.model"></td>
                       <td class="mono" x-text="accountOf(r)"></td>
                       <td><span class="badge" :class="r.phase === 'streaming' ? 'bg-green-lt' : 'bg-yellow-lt'" x-text="r.phase"></span></td>
@@ -184,7 +184,7 @@ enum AdminPage {
                   <template x-for="s in activity?.sessions || []" :key="s.id">
                     <tr style="cursor: pointer" @click="openSession(s)" :class="session?.id === s.id && 'table-active'">
                       <td x-text="ago(s.last)"></td>
-                      <td><span x-text="s.client"></span> <span class="text-secondary" x-show="s.client_key" x-text="'(' + s.client_key + ')'"></span></td>
+                      <td><span x-text="s.client || s.program"></span> <span class="text-secondary" x-show="s.client" x-text="'(' + s.program + ')'"></span></td>
                       <td class="mono text-secondary" :title="s.id" x-text="short(s.id)"></td>
                       <td class="mono" x-text="s.last_model"></td>
                       <td class="text-end"><span x-text="s.requests"></span><span class="text-danger" x-show="s.failures" x-text="' (' + s.failures + ' failed)'"></span></td>
@@ -221,7 +221,7 @@ enum AdminPage {
                           <div x-show="r.note" class="text-danger" x-text="r.note"></div>
                         </div>
                       </td>
-                      <td x-text="r.client"></td>
+                      <td><span x-text="r.client || r.program"></span> <span class="text-secondary" x-show="r.client" x-text="'(' + r.program + ')'"></span></td>
                       <td class="mono" x-text="r.model"></td>
                       <td class="mono">
                         <span x-text="accountOf(r)"></span>
@@ -262,7 +262,7 @@ enum AdminPage {
                 </div>
               </template>
             </div>
-            <template x-for="g in [['accounts', 'By account'], ['clients', 'By client'], ['models', 'By model']]">
+            <template x-for="g in [['accounts', 'By account'], ['clients', 'By client'], ['programs', 'By program'], ['models', 'By model']]">
               <div class="card mb-3">
                 <div class="card-header"><h3 class="card-title" x-text="g[1]"></h3></div>
                 <div class="table-responsive">

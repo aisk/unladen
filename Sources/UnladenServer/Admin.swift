@@ -247,8 +247,8 @@ enum AdminActivity {
     static func json(_ session: SessionSummary) -> JSONValue {
         [
             "id": .string(session.id),
-            "client": .string(session.client),
-            "client_key": session.clientKey.map(JSONValue.string) ?? .null,
+            "program": .string(session.program),
+            "client": session.client.map(JSONValue.string) ?? .null,
             "first": .number(JSONNumber(session.first)),
             "last": .number(JSONNumber(session.last)),
             "requests": .number(JSONNumber(session.requests)),
@@ -261,7 +261,7 @@ enum AdminActivity {
         ]
     }
 
-    /// Usage summed by account, client and model, and in all.
+    /// Usage summed by account, client, program and model, and in all.
     static func usage(_ buckets: [UsageBucket.Key: UsageBucket], days: Int) -> JSONValue {
         func group(_ key: (UsageBucket.Key) -> String) -> JSONValue {
             var sums: [String: UsageBucket] = [:]
@@ -291,7 +291,8 @@ enum AdminActivity {
             "days": .number(JSONNumber(days)),
             "total": ["requests": .number(JSONNumber(total.requests)), "failures": .number(JSONNumber(total.failures)), "tokens": total.tokens.json],
             "accounts": group { $0.provider.isEmpty ? "(none)" : $0.provider + "/" + ($0.account.isEmpty ? "-" : $0.account) },
-            "clients": group(\.client),
+            "clients": group { $0.client.isEmpty ? "(no key)" : $0.client },
+            "programs": group(\.program),
             "models": group(\.model),
         ]
     }

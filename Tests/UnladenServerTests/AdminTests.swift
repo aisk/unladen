@@ -245,7 +245,8 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
 
             let activity = try await client.execute(uri: "/admin/api/activity", method: .get, headers: admin)
             let json = try JSONValue(parsing: Array(activity.body.readableBytesView))
-            #expect(json["recent"]?[0]?["client_key"] == "me")
+            #expect(json["recent"]?[0]?["client"] == "me")
+            #expect(json["recent"]?[0]?["program"] == "unknown")
             #expect(json["recent"]?[0]?["attempt_list"]?[0]?["outcome"] == "ok")
             #expect(json["sessions"]?[0]?["id"] == "s-7")
 
@@ -258,6 +259,7 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
             #expect(summary["total"]?["requests"] == 1)
             #expect(summary["accounts"]?[0]?["name"] == "deepseek/deepseek")
             #expect(summary["accounts"]?[0]?["tokens"]?["output"] == 10)
+            #expect(summary["clients"]?[0]?["name"] == "me")
 
             let denied = try await client.execute(uri: "/admin/api/usage", method: .get)
             #expect(denied.status == .unauthorized)

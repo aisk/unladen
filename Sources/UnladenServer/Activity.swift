@@ -1,5 +1,5 @@
 // What the gateway serves: requests in flight, the recent ones with each
-// attempt, sessions, and token usage by account, client and model. Usage is
+// attempt, sessions, and token usage by account, client, program and model. Usage is
 // appended to a log of one JSON object per line and read back at start
 // (UsageLog); the rest lives in memory.
 // See docs/server-config-design.md ("用量与活动").
@@ -68,10 +68,11 @@ struct TokenCounts: Sendable, Hashable {
 
 /// Who sent a request, and the conversation it is part of.
 struct RequestOrigin: Sendable, Hashable {
-    /// The client program, from its User-Agent (`Claude Code`, `Codex`).
-    var client: String
-    /// The name of the client key it presented.
-    var clientKey: String?
+    /// The program, from its User-Agent (`Claude Code`, `Codex`).
+    var program: String
+    /// The client (of `clients`) whose key it presented; `nil` when the
+    /// gateway asks for no key.
+    var client: String?
     /// The conversation: the id the client sends, else a hash of how the
     /// conversation opens, which every later turn repeats.
     var session: String?
@@ -85,21 +86,21 @@ struct RequestOrigin: Sendable, Hashable {
         "x-session-affinity", "x-conversation-id",
     ]
 
-    init(client: String, clientKey: String? = nil, session: String? = nil, subagent: String? = nil) {
+    init(program: String, client: String? = nil, session: String? = nil, subagent: String? = nil) {
+        self.program = program
         self.client = client
-        self.clientKey = clientKey
         self.session = session
         self.subagent = subagent
     }
 
     init(headers: HTTPFields, request: WireRequest?, access: ClientAccess) {
-        client = Self.client(userAgent: headers[.userAgent], originator: headers[HTTPField.Name("originator")!])
-        if case .key(let key) = access { clientKey = key.name }
+        program = Self.program(userAgent: headers[.userAgent], originator: headers[HTTPField.Name("originator")!])
+        if case .key(let key) = access { client = key.name }
         session = Self.session(headers: headers, request: request)
         subagent = headers[HTTPField.Name("x-claude-code-agent-id")!].map { String($0.prefix(128)) }
     }
 
-    static func client(userAgent: String?, originator: String? = nil) -> String {
+    static func program(userAgent: String?, originator: String? = nil) -> String {
         for value in [originator, userAgent].compactMap({ $0?.trimmingBlanks().lowercased() }) where !value.isEmpty {
             if value.hasPrefix("claude-cli") || value.hasPrefix("claude code") { return "Claude Code" }
             if value.hasPrefix("codex") { return "Codex" }
@@ -201,7 +202,7 @@ struct RequestRecord: Sendable {
     var logged: JSONValue {
         var object: JSONObject = [
             "t": .number(JSONNumber(started)),
-            "client": .string(origin.client),
+            "program": .string(origin.program),
             "protocol": .string(clientProtocol),
             "model": .string(model),
             "stream": .bool(stream),
@@ -209,7 +210,7 @@ struct RequestRecord: Sendable {
             "attempts": .number(JSONNumber(attempts.count)),
         ]
         if failed { object["failed"] = true }
-        if let value = origin.clientKey { object["client_key"] = .string(value) }
+        if let value = origin.client { object["client"] = .string(value) }
         if let value = origin.session { object["session"] = .string(value) }
         if let value = origin.subagent { object["subagent"] = .string(value) }
         if let value = provider { object["provider"] = .string(value) }
@@ -232,12 +233,12 @@ struct RequestRecord: Sendable {
 
     /// A line of the usage log; `nil` when it is not one.
     init?(logged value: JSONValue) {
-        guard let started = value["t"]?.numberValue?.int, let client = value["client"]?.stringValue,
+        guard let started = value["t"]?.numberValue?.int, let program = value["program"]?.stringValue,
               let model = value["model"]?.stringValue
         else { return nil }
         self.started = started.int64
         origin = RequestOrigin(
-            client: client, clientKey: value["client_key"]?.stringValue, session: value["session"]?.stringValue,
+            program: program, client: value["client"]?.stringValue, session: value["session"]?.stringValue,
             subagent: value["subagent"]?.stringValue,
         )
         clientProtocol = value["protocol"]?.stringValue ?? ""
@@ -269,8 +270,8 @@ private extension Int {
 /// A conversation, summed over its requests.
 struct SessionSummary: Sendable {
     var id: String
-    var client: String
-    var clientKey: String?
+    var program: String
+    var client: String?
     var first: Int64
     var last: Int64
     var requests = 0
@@ -309,7 +310,9 @@ struct UsageBucket: Sendable {
         var day: Int
         var provider: String
         var account: String
+        /// The client's name; empty when the gateway asks for no key.
         var client: String
+        var program: String
         /// What served it, `provider/model`; the name asked for when
         /// nothing did.
         var model: String
@@ -492,7 +495,7 @@ final class Activity: Sendable {
     private static func count(_ record: RequestRecord, in buckets: inout [UsageBucket.Key: UsageBucket]) {
         let key = UsageBucket.Key(
             day: LocalDay(milliseconds: record.started).key, provider: record.provider ?? "", account: record.account ?? "",
-            client: record.origin.client, model: record.served ?? record.model,
+            client: record.origin.client ?? "", program: record.origin.program, model: record.served ?? record.model,
         )
         var bucket = buckets[key] ?? UsageBucket()
         bucket.requests += 1
@@ -504,7 +507,7 @@ final class Activity: Sendable {
     private static func add(_ record: RequestRecord, to sessions: inout [String: SessionSummary]) {
         guard let id = record.origin.session else { return }
         var session = sessions[id] ?? SessionSummary(
-            id: id, client: record.origin.client, clientKey: record.origin.clientKey, first: record.started, last: record.started,
+            id: id, program: record.origin.program, client: record.origin.client, first: record.started, last: record.started,
             lastModel: record.model,
         )
         session.add(record)

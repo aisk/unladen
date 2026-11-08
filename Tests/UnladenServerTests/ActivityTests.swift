@@ -25,7 +25,7 @@ private func chatStream(_ chunks: [String]) -> HTTPTransportResponse {
         let snapshot = gateway.activity.snapshot()
         #expect(snapshot.inFlight.isEmpty)
         let record = try #require(snapshot.recent.first)
-        #expect(record.origin.client == "Claude Code")
+        #expect(record.origin.program == "Claude Code")
         #expect(record.origin.session == "s-1")
         #expect(record.model == "x")
         #expect(record.provider == "together" && record.account == UpstreamKey(secret: "k1").name)
@@ -118,10 +118,10 @@ private func chatStream(_ chunks: [String]) -> HTTPTransportResponse {
         request.promptCacheKey = "cache-key"
         #expect(RequestOrigin.session(headers: [:], request: request) == "cache-key")
 
-        #expect(RequestOrigin.client(userAgent: "codex_cli_rs/0.162.0 (Mac OS)") == "Codex")
-        #expect(RequestOrigin.client(userAgent: "opencode/1.0") == "OpenCode")
-        #expect(RequestOrigin.client(userAgent: "python-httpx/0.27") == "python-httpx")
-        #expect(RequestOrigin.client(userAgent: nil) == "unknown")
+        #expect(RequestOrigin.program(userAgent: "codex_cli_rs/0.162.0 (Mac OS)") == "Codex")
+        #expect(RequestOrigin.program(userAgent: "opencode/1.0") == "OpenCode")
+        #expect(RequestOrigin.program(userAgent: "python-httpx/0.27") == "python-httpx")
+        #expect(RequestOrigin.program(userAgent: nil) == "unknown")
     }
 
     @Test func usageIsLoggedAndReadBack() throws {
@@ -130,7 +130,7 @@ private func chatStream(_ chunks: [String]) -> HTTPTransportResponse {
         let activity = Activity(log: UsageLog(directory: directory))
         for (account, tokens) in [("work", 10), ("work", 20), ("personal", 5)] {
             var record = RequestRecord(
-                started: LocalDay.nowMilliseconds(), origin: RequestOrigin(client: "Codex", session: "s-\(account)"),
+                started: LocalDay.nowMilliseconds(), origin: RequestOrigin(program: "Codex", session: "s-\(account)"),
                 clientProtocol: "responses", model: "gpt-5", stream: true,
             )
             record.provider = "openai"
