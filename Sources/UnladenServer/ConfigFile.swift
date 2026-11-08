@@ -1,10 +1,14 @@
-// The configuration file: YAML (JSON is a subset), decoded from Yams nodes
-// so that unknown fields are refused and errors carry a line and column.
+// The configuration file: JSON with comments and trailing commas (JSONC),
+// decoded field by field so that unknown fields are refused and errors carry
+// a line and column.
 // See docs/server-config-design.md for the schema.
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 @_spi(Wire) import UnladenCore
-import Yams
 
 /// Settings that only take effect at start (the listener, the HTTP client).
 struct ServerSettings: Sendable, Hashable {
@@ -47,10 +51,10 @@ struct ConfigOverrides: Sendable {
 }
 
 enum ConfigLoader {
-    /// `$XDG_CONFIG_HOME/unladen/config.yaml`, or under `~/.config`.
+    /// `$XDG_CONFIG_HOME/unladen/config.jsonc`, or under `~/.config`.
     static func defaultPath(environment: (String) -> String?) -> String? {
-        if let xdg = environment("XDG_CONFIG_HOME"), !xdg.isEmpty { return xdg + "/unladen/config.yaml" }
-        if let home = environment("HOME"), !home.isEmpty { return home + "/.config/unladen/config.yaml" }
+        if let xdg = environment("XDG_CONFIG_HOME"), !xdg.isEmpty { return xdg + "/unladen/config.jsonc" }
+        if let home = environment("HOME"), !home.isEmpty { return home + "/.config/unladen/config.jsonc" }
         return nil
     }
 
@@ -93,21 +97,16 @@ enum ConfigFile {
         _ text: String, file: String = "config", overrides: ConfigOverrides = ConfigOverrides(),
         environment: @escaping (String) -> String?,
     ) throws(ConfigError) -> LoadedConfiguration {
-        let root: Node?
-        do {
-            root = try Yams.compose(yaml: text)
-        } catch {
-            throw ConfigError(message: "not valid YAML: \(error)", location: file.isEmpty ? nil : file)
-        }
-        var parser = Parser(file: file, environment: environment)
+        let (root, locator) = try parseJSON(text, file: file)
+        var parser = Parser(file: file, environment: environment, locator: locator)
         var loaded = LoadedConfiguration()
         var fileKeys: [String: [UpstreamKey]] = [:]
         var poolStrategies: [String: KeyPool.Strategy] = [:]
         var routes: [Route] = []
         var clientKeys: [ClientKey]?
 
-        if let root, !(root.scalar.map { $0.string.isEmpty || $0.tag == Tag(.null) } ?? false) {
-            let top = Field(node: root, path: "", parser: parser)
+        if !root.isNull {
+            let top = Field(value: root, keys: [], parser: parser)
             for (name, field) in try top.mapping(allowed: ["server", "providers", "routes", "client_keys"]) {
                 switch name {
                 case "server": try parser.server(field, into: &loaded)
@@ -192,32 +191,93 @@ enum ConfigFile {
     }
 }
 
-// MARK: - Node reading
+// MARK: - JSONC
 
-/// One node of the file and its dotted path, for error messages.
-private struct Field {
-    var node: Node
-    var path: String
-    var parser: ConfigFile.Parser
-
-    func error(_ message: String) -> ConfigError {
-        let location = node.mark.map { "\(parser.file):\($0.line):\($0.column)" }
-        return ConfigError(message: path.isEmpty ? message : "\(path): \(message)", location: parser.file.isEmpty ? nil : location)
+extension ConfigFile {
+    /// The file's value (`null` when it holds nothing but whitespace and
+    /// comments) and where its values are.
+    static func parseJSON(_ text: String, file: String) throws(ConfigError) -> (value: JSONValue, locator: Locator) {
+        let bytes = Array(text.utf8)
+        do {
+            let (value, offsets) = try JSONParser.parseWithOffsets(bytes, options: .jsonc)
+            return (value, Locator(bytes: bytes, offsets: offsets))
+        } catch {
+            // Nothing but whitespace and comments: an empty configuration.
+            if error.kind == .unexpectedEndOfInput, (try? JSONParser.parse(bytes + Array("\nnull".utf8), options: .jsonc)) != nil {
+                return (.null, Locator(bytes: bytes, offsets: [:]))
+            }
+            let (line, column) = Locator(bytes: bytes, offsets: [:]).lineAndColumn(of: error.offset)
+            let reason: String = switch error.kind {
+            case .unexpectedEndOfInput: "the file ends too early"
+            case .unexpectedByte(let byte): "unexpected \(Unicode.Scalar(byte).escaped(asASCII: true))"
+            case .duplicateKey(let key): "`\(key)` is defined twice"
+            case .unterminatedComment: "a /* comment is not closed"
+            default: "\(error.kind)"
+            }
+            throw ConfigError(message: "not valid JSON: \(reason)", location: file.isEmpty ? nil : "\(file):\(line):\(column)")
+        }
     }
 
-    func child(_ key: String, _ node: Node) -> Field {
-        Field(node: node, path: path.isEmpty ? key : "\(path).\(key)", parser: parser)
+    /// Turns paths into lines and columns (1-based; columns count bytes).
+    struct Locator: Sendable {
+        var lineStarts: [Int] = [0]
+        var offsets: JSONParser.Offsets
+
+        init(bytes: [UInt8], offsets: JSONParser.Offsets) {
+            for (index, byte) in bytes.enumerated() where byte == 0x0A { lineStarts.append(index + 1) }
+            self.offsets = offsets
+        }
+
+        func lineAndColumn(of offset: Int) -> (Int, Int) {
+            var low = 0, high = lineStarts.count - 1
+            while low < high {
+                let middle = (low + high + 1) / 2
+                if lineStarts[middle] <= offset { low = middle } else { high = middle - 1 }
+            }
+            return (low + 1, offset - lineStarts[low] + 1)
+        }
+
+        func location(of path: [String]) -> (Int, Int)? {
+            offsets[path].map(lineAndColumn(of:))
+        }
+    }
+}
+
+// MARK: - Value reading
+
+/// One value of the file and its path, for error messages.
+private struct Field {
+    var value: JSONValue
+    var keys: [String]
+    var parser: ConfigFile.Parser
+
+    var path: String { keys.joined(separator: ".") }
+
+    /// A string, number or boolean.
+    var isScalar: Bool {
+        switch value {
+        case .string, .number, .bool: true
+        default: false
+        }
+    }
+
+    func error(_ message: String) -> ConfigError {
+        let location = parser.locator.location(of: keys).map { "\(parser.file):\($0.0):\($0.1)" }
+        return ConfigError(message: keys.isEmpty ? message : "\(path): \(message)", location: parser.file.isEmpty ? nil : location)
+    }
+
+    func child(_ key: String, _ value: JSONValue) -> Field {
+        Field(value: value, keys: keys + [key], parser: parser)
     }
 
     /// The entries of a mapping, in file order, refusing keys not in
     /// `allowed` (any key when `nil`) and naming the `reserved` ones as
     /// not supported yet.
     func mapping(allowed: Set<String>? = nil, reserved: Set<String> = []) throws(ConfigError) -> [(String, Field)] {
-        guard let mapping = node.mapping else { throw error("expected a mapping") }
+        guard let object = value.objectValue else { throw error("expected an object") }
         var entries: [(String, Field)] = []
         var seen: Set<String> = []
-        for (keyNode, value) in mapping {
-            guard let key = keyNode.scalar?.string else { throw child("?", keyNode).error("keys must be strings") }
+        for (key, value) in object {
             let field = child(key, value)
             if reserved.contains(key) { throw field.error("not supported yet") }
             if let allowed, !allowed.contains(key) {
@@ -230,14 +290,17 @@ private struct Field {
     }
 
     func sequence() throws(ConfigError) -> [Field] {
-        guard let sequence = node.sequence else { throw error("expected a list") }
-        return sequence.enumerated().map { child("\($0.offset)", $0.element) }
+        guard let items = value.arrayValue else { throw error("expected a list") }
+        return items.enumerated().map { child("\($0.offset)", $0.element) }
     }
 
-    /// A scalar as written, without `${VAR}` expansion.
+    /// A string (or a number, as written), without `${VAR}` expansion.
     func rawString() throws(ConfigError) -> String {
-        guard let scalar = node.scalar else { throw error("expected a string") }
-        return scalar.string
+        switch value {
+        case .string(let text): return text
+        case .number(let number): return number.description
+        default: throw error("expected a string")
+        }
     }
 
     /// A scalar, `${VAR}` expanded from the environment.
@@ -251,12 +314,12 @@ private struct Field {
     }
 
     func bool() throws(ConfigError) -> Bool {
-        guard let value = node.bool else { throw error("expected true or false") }
-        return value
+        guard let flag = value.boolValue else { throw error("expected true or false") }
+        return flag
     }
 
     func stringList() throws(ConfigError) -> [String] {
-        if node.scalar != nil { return [try string()] }
+        if isScalar { return [try string()] }
         var values: [String] = []
         for item in try sequence() { values.append(try item.string()) }
         return values
@@ -269,8 +332,9 @@ private struct Field {
 
     /// A duration; `off` is `nil` when `allowingOff`.
     func duration(allowingOff: Bool) throws(ConfigError) -> Duration? {
+        if allowingOff, value == .bool(false) { return nil }
         let text = try string().trimmingBlanks()
-        if allowingOff, text == "off" || node.scalar?.style == .plain && node.bool == false { return nil }
+        if allowingOff, text == "off" { return nil }
         let units: [(String, Int64)] = [("ms", 1), ("s", 1000), ("m", 60_000), ("h", 3_600_000)]
         if let seconds = Int64(text), seconds > 0 { return .seconds(seconds) }
         for (unit, milliseconds) in units where text.hasSuffix(unit) {
@@ -320,6 +384,7 @@ extension ConfigFile {
     fileprivate struct Parser {
         var file: String
         var environment: (String) -> String?
+        var locator: ConfigFile.Locator
         var literalSecrets = false
 
         /// A secret: expanded, never empty; notes one written in plain text.
@@ -448,7 +513,7 @@ extension ConfigFile {
         mutating func keys(_ field: Field) throws(ConfigError) -> [UpstreamKey] {
             var keys: [UpstreamKey] = []
             for item in try field.sequence() {
-                if item.node.scalar != nil {
+                if item.isScalar {
                     keys.append(UpstreamKey(secret: try secret(item)))
                     continue
                 }
@@ -477,14 +542,14 @@ extension ConfigFile {
 
         func route(name: String, _ field: Field) throws(ConfigError) -> Route {
             guard !name.isEmpty else { throw field.error("a route name cannot be empty") }
-            if field.node.scalar != nil { return Route(name: name, targets: [RouteTarget(model: try field.string())]) }
+            if field.isScalar { return Route(name: name, targets: [RouteTarget(model: try field.string())]) }
             var targets: [RouteTarget] = []
             for (key, value) in try field.mapping(
                 allowed: ["targets"],
                 reserved: ["attempt_budget", "head_timeout", "patience", "strict", "affinity", "when"],
             ) where key == "targets" {
                 for item in try value.sequence() {
-                    if item.node.scalar != nil {
+                    if item.isScalar {
                         targets.append(RouteTarget(model: try item.string()))
                         continue
                     }
@@ -517,8 +582,8 @@ extension ConfigFile {
                     case "enabled": enabled = try value.bool()
                     case "routes": routes = try value.stringList()
                     case "passthrough":
-                        if let raw = value.node.scalar?.string.lowercased(), raw == "true" || raw == "false" {
-                            passthrough = raw == "true" ? ["*"] : []
+                        if let flag = value.value.boolValue {
+                            passthrough = flag ? ["*"] : []
                         } else {
                             passthrough = try value.stringList()
                         }

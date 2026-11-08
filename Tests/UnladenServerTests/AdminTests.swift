@@ -11,24 +11,24 @@ import Testing
 private let adminToken = "admin-token-0123456789"
 
 private let sample = """
-server:
-  listen: 127.0.0.1:4141
-  strict: true
-  head_timeout: off
-  max_request_bytes: 1048576
-  admin:
-    token: \(adminToken)
-providers:
-  deepseek:
-    strategy: rotate
-    keys:
-      - sk-literal-one
-      - { name: env, key: "${DEEPSEEK_KEY}" }
-routes:
-  "*": deepseek/deepseek-chat
-  "gpt-*": deepseek/$model
-client_keys:
-  - { name: me, secret: client-secret, passthrough: true }
+// Hand-written, with comments.
+{
+  "server": {
+    "listen": "127.0.0.1:4141",
+    "strict": true,
+    "head_timeout": "off",
+    "max_request_bytes": 1048576,
+    "admin": { "token": "\(adminToken)" },
+  },
+  "providers": {
+    "deepseek": {
+      "strategy": "rotate",
+      "keys": ["sk-literal-one", { "name": "env", "key": "${DEEPSEEK_KEY}" }],
+    },
+  },
+  "routes": { "*": "deepseek/deepseek-chat", "gpt-*": "deepseek/$model" },
+  "client_keys": [{ "name": "me", "secret": "client-secret", "passthrough": true }],
+}
 """
 
 private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" ? "sk-from-env" : nil }
@@ -52,7 +52,7 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
 
     @Test func writingBackGivesTheSameConfiguration() throws {
         let snapshot = try ConfigDocument.read(sample)
-        let text = try ConfigDocument.yaml(from: snapshot.document, secrets: snapshot.secrets)
+        let text = try ConfigDocument.text(from: snapshot.document, secrets: snapshot.secrets)
         let before = try ConfigFile.parse(sample, environment: environment)
         let after = try ConfigFile.parse(text, environment: environment)
         #expect(after.server == before.server)
@@ -67,20 +67,31 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         #expect(!text.contains("sk-from-env"))
     }
 
-    @Test(arguments: ["*", "off", "true", "no", "123", "1e3", "0x1F", "${X}", "a: b", "- x", "#x", "", " x", "2025-01-01", "null", "~"])
-    func stringsStayStrings(_ text: String) throws {
-        let yaml = try ConfigDocument.yaml(from: ["value": .string(text)], secrets: [:])
-        #expect(try ConfigDocument.read(yaml).document["value"] == .string(text))
-    }
+    @Test func writtenTextIsIndentedJSON() throws {
+        let document: JSONValue = [
+            "server": ["listen": "127.0.0.1:4141", "admin": ["token": "${UNLADEN_ADMIN_TOKEN}"]],
+            "routes": ["*": "deepseek/deepseek-chat"],
+            "client_keys": [],
+            "dropped": nil,
+        ]
+        let text = try ConfigDocument.text(from: document, secrets: [:])
+        #expect(text == """
+        {
+          "server": {
+            "listen": "127.0.0.1:4141",
+            "admin": { "token": "${UNLADEN_ADMIN_TOKEN}" }
+          },
+          "routes": { "*": "deepseek/deepseek-chat" },
+          "client_keys": []
+        }
 
-    @Test func falseTurnsATimeoutOffLikeOff() throws {
-        let loaded = try ConfigFile.parse("server: { head_timeout: false, idle_timeout: off }") { _ in nil }
-        #expect(loaded.gateway.headTimeout == nil && loaded.gateway.idleTimeout == nil)
+        """)
+        #expect(try ConfigDocument.read(text).document["routes"] == document["routes"])
     }
 
     @Test func anUnknownPlaceholderIsRefused() {
         let document: JSONValue = ["providers": ["deepseek": ["keys": [.string(ConfigDocument.placeholder(for: "other"))]]]]
-        #expect(throws: ConfigError.self) { try ConfigDocument.yaml(from: document, secrets: [:]) }
+        #expect(throws: ConfigError.self) { try ConfigDocument.text(from: document, secrets: [:]) }
     }
 }
 
@@ -88,7 +99,7 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
     private func makeManager(_ text: String = sample) throws -> (ConfigManager, String) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("unladen-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let path = directory.appendingPathComponent("config.yaml").path
+        let path = directory.appendingPathComponent("config.jsonc").path
         try text.write(toFile: path, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: path)
         let loaded = try ConfigFile.parse(text, environment: environment)
@@ -121,7 +132,7 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
     @Test func aStaleHashIsAConflict() throws {
         let (manager, path) = try makeManager()
         let snapshot = try manager.document()
-        try (sample + "\n# edited by hand\n").write(toFile: path, atomically: true, encoding: .utf8)
+        try (sample + "\n// edited by hand\n").write(toFile: path, atomically: true, encoding: .utf8)
         #expect(manager.save(snapshot.document, baseHash: snapshot.hash) == .conflict(hash: try manager.document().hash))
     }
 
@@ -152,7 +163,7 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
     }
 
     private func makeManager(_ text: String) throws -> ConfigManager {
-        let path = FileManager.default.temporaryDirectory.appendingPathComponent("unladen-\(UUID().uuidString).yaml").path
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("unladen-\(UUID().uuidString).jsonc").path
         try text.write(toFile: path, atomically: true, encoding: .utf8)
         let loaded = try ConfigFile.parse(text, environment: environment)
         let gateway = Gateway(configuration: loaded.gateway, transport: MockUpstream { _ in reply("{}") }.transport)
@@ -160,7 +171,7 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
     }
 
     @Test func withoutATokenThePanelDoesNotExist() async throws {
-        let manager = try makeManager("routes: { \"*\": deepseek/deepseek-chat }")
+        let manager = try makeManager(#"{ "routes": { "*": "deepseek/deepseek-chat" } }"#)
         try await app(manager).test(.router) { client in
             let page = try await client.execute(uri: "/admin", method: .get)
             let api = try await client.execute(uri: "/admin/api/config", method: .get)

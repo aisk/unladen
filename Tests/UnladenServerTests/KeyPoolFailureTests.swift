@@ -179,9 +179,9 @@ private func keyScope(_ secret: String) -> HealthScope { .key(provider: "togethe
     }
 
     @Test func timeoutsCanBeTurnedOff() throws {
-        let loaded = try ConfigFile.parse("server: { head_timeout: off, idle_timeout: 90s }") { _ in nil }
+        let loaded = try ConfigFile.parse(#"{ "server": { "head_timeout": "off", "idle_timeout": "90s" } }"#) { _ in nil }
         #expect(loaded.gateway.headTimeout == nil)
         #expect(loaded.gateway.idleTimeout == .seconds(90))
-        #expect(throws: ConfigError.self) { try ConfigFile.parse("server: { keepalive: off }") { _ in nil } }
+        #expect(throws: ConfigError.self) { try ConfigFile.parse(#"{ "server": { "keepalive": "off" } }"#) { _ in nil } }
     }
 }

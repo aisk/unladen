@@ -19,6 +19,9 @@ public struct JSONParseError: Error, Hashable, Sendable, CustomStringConvertible
         case duplicateKey(String)
         /// Non-whitespace bytes after the top-level value.
         case trailingData
+        /// A `/*` comment without its `*/` (only with
+        /// ``JSONParser/Options-swift.struct/allowsComments``).
+        case unterminatedComment
     }
 
     public var kind: Kind
@@ -41,6 +44,8 @@ public struct JSONParseError: Error, Hashable, Sendable, CustomStringConvertible
 ///   surrogate (Swift strings cannot hold one).
 /// - Number literals are validated and kept verbatim (see ``JSONNumber``).
 /// - Nesting is limited by ``Options-swift.struct/maxDepth``.
+/// - Options allow comments and trailing commas (JSONC, for files people
+///   write), and record where each value starts.
 public enum JSONParser {
     /// What to do when an object contains the same key twice.
     public enum DuplicateKeyPolicy: Hashable, Sendable {
@@ -58,12 +63,32 @@ public enum JSONParser {
         /// so this also bounds stack use.
         public var maxDepth: Int
         public var duplicateKeys: DuplicateKeyPolicy
+        /// `// line` and `/* block */` comments wherever whitespace may be.
+        public var allowsComments: Bool
+        /// A comma after the last element of an array or object.
+        public var allowsTrailingCommas: Bool
 
-        public init(maxDepth: Int = 256, duplicateKeys: DuplicateKeyPolicy = .lastValueWins) {
+        public init(
+            maxDepth: Int = 256, duplicateKeys: DuplicateKeyPolicy = .lastValueWins,
+            allowsComments: Bool = false, allowsTrailingCommas: Bool = false,
+        ) {
             self.maxDepth = maxDepth
             self.duplicateKeys = duplicateKeys
+            self.allowsComments = allowsComments
+            self.allowsTrailingCommas = allowsTrailingCommas
+        }
+
+        /// JSON with comments and trailing commas, duplicate keys refused:
+        /// for files people edit.
+        public static var jsonc: Options {
+            Options(duplicateKeys: .reject, allowsComments: true, allowsTrailingCommas: true)
         }
     }
+
+    /// Where each value starts in the input: byte offsets by path (object
+    /// keys, and array indices written in decimal); the top-level value's
+    /// path is empty.
+    public typealias Offsets = [[String]: Int]
 
     public static func parse(
         _ bytes: some Collection<UInt8>,
@@ -75,6 +100,25 @@ public enum JSONParser {
         if let result { return try result.get() }
         let array = Array(bytes)
         return try array.withUnsafeBufferPointer { parse(buffer: $0, options: options) }.get()
+    }
+
+    /// Parses `bytes` and notes where each value starts.
+    public static func parseWithOffsets(
+        _ bytes: some Collection<UInt8>,
+        options: Options = Options(),
+    ) throws(JSONParseError) -> (value: JSONValue, offsets: Offsets) {
+        let array = Array(bytes)
+        let result: Result<(value: JSONValue, offsets: Offsets), JSONParseError> = array.withUnsafeBufferPointer { buffer in
+            var parser = Parser(bytes: buffer, options: options)
+            parser.offsets = [:]
+            do throws(JSONParseError) {
+                let value = try parser.parseDocument()
+                return .success((value, parser.offsets ?? [:]))
+            } catch {
+                return .failure(error)
+            }
+        }
+        return try result.get()
     }
 
     private static func parse(
@@ -124,6 +168,9 @@ private struct Parser {
     var depth = 0
     /// Scratch buffer for strings containing escapes.
     var scratch: [UInt8] = []
+    /// Recorded when not `nil`: where each value starts, by ``path``.
+    var offsets: JSONParser.Offsets?
+    var path: [String] = []
 
     init(bytes: UnsafeBufferPointer<UInt8>, options: JSONParser.Options) {
         self.bytes = bytes
@@ -135,17 +182,33 @@ private struct Parser {
     }
 
     mutating func parseDocument() throws(JSONParseError) -> JSONValue {
-        skipWhitespace()
+        try skipWhitespace()
         let value = try parseValue()
-        skipWhitespace()
+        try skipWhitespace()
         guard position == bytes.count else { throw error(.trailingData) }
         return value
     }
 
-    mutating func skipWhitespace() {
+    mutating func skipWhitespace() throws(JSONParseError) {
         while position < bytes.count {
             switch bytes[position] {
             case 0x20, 0x09, 0x0A, 0x0D: position += 1
+            case ASCII.slash where options.allowsComments && position + 1 < bytes.count:
+                let start = position
+                switch bytes[position + 1] {
+                case ASCII.slash:
+                    position += 2
+                    while position < bytes.count, bytes[position] != 0x0A { position += 1 }
+                case UInt8(ascii: "*"):
+                    position += 2
+                    while true {
+                        guard position + 1 < bytes.count else { throw error(.unterminatedComment, at: start) }
+                        if bytes[position] == UInt8(ascii: "*"), bytes[position + 1] == ASCII.slash { break }
+                        position += 1
+                    }
+                    position += 2
+                default: return
+                }
             default: return
             }
         }
@@ -158,6 +221,7 @@ private struct Parser {
 
     mutating func parseValue() throws(JSONParseError) -> JSONValue {
         let byte = try peek()
+        if offsets != nil { offsets![path] = position }
         switch byte {
         case ASCII.openBrace: return .object(try parseObject())
         case ASCII.openBracket: return .array(try parseArray())
@@ -188,19 +252,27 @@ private struct Parser {
         try enterContainer()
         position += 1 // [
         var elements: [JSONValue] = []
-        skipWhitespace()
+        try skipWhitespace()
         if try peek() == ASCII.closeBracket {
             position += 1
             depth -= 1
             return elements
         }
         while true {
-            skipWhitespace()
+            try skipWhitespace()
+            if offsets != nil { path.append(String(elements.count)) }
             elements.append(try parseValue())
-            skipWhitespace()
+            if offsets != nil { path.removeLast() }
+            try skipWhitespace()
             let byte = try peek()
             position += 1
-            if byte == ASCII.comma { continue }
+            if byte == ASCII.comma {
+                if options.allowsTrailingCommas {
+                    try skipWhitespace()
+                    if try peek() == ASCII.closeBracket { position += 1; break }
+                }
+                continue
+            }
             if byte == ASCII.closeBracket { break }
             throw error(.unexpectedByte(byte), at: position - 1)
         }
@@ -212,24 +284,26 @@ private struct Parser {
         try enterContainer()
         position += 1 // {
         var object = JSONObject()
-        skipWhitespace()
+        try skipWhitespace()
         if try peek() == ASCII.closeBrace {
             position += 1
             depth -= 1
             return object
         }
         while true {
-            skipWhitespace()
+            try skipWhitespace()
             let keyOffset = position
             let byte = try peek()
             guard byte == ASCII.quote else { throw error(.unexpectedByte(byte)) }
             let key = try parseString()
-            skipWhitespace()
+            try skipWhitespace()
             let colon = try peek()
             guard colon == ASCII.colon else { throw error(.unexpectedByte(colon)) }
             position += 1
-            skipWhitespace()
+            try skipWhitespace()
+            if offsets != nil { path.append(key) }
             let value = try parseValue()
+            if offsets != nil { path.removeLast() }
             if let existing = object.index(forKey: key) {
                 switch options.duplicateKeys {
                 case .lastValueWins: object.replaceValue(at: existing, with: value)
@@ -238,10 +312,16 @@ private struct Parser {
             } else {
                 object.appendUnique(key, value)
             }
-            skipWhitespace()
+            try skipWhitespace()
             let separator = try peek()
             position += 1
-            if separator == ASCII.comma { continue }
+            if separator == ASCII.comma {
+                if options.allowsTrailingCommas {
+                    try skipWhitespace()
+                    if try peek() == ASCII.closeBrace { position += 1; break }
+                }
+                continue
+            }
             if separator == ASCII.closeBrace { break }
             throw error(.unexpectedByte(separator), at: position - 1)
         }

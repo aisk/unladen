@@ -223,3 +223,33 @@ private func parseError(_ text: String) -> JSONParseError? {
         #expect(try JSONValue(parsing: bytes.reversed().reversed()).description == #"{"a":[1,2]}"#)
     }
 }
+
+@Suite struct JSONCTests {
+    @Test func commentsAndTrailingCommasNeedTheOptions() throws {
+        let text = """
+        // a line comment
+        { "a": [1, 2, /* inside */ 3,], /* before a key */ "b": "// not a comment", }
+        """
+        #expect(throws: JSONParseError.self) { try JSONValue(parsing: text) }
+        let value = try JSONValue(parsing: text, options: .jsonc)
+        #expect(value == ["a": [1, 2, 3], "b": "// not a comment"])
+    }
+
+    @Test func jsoncStillRefusesMalformedInput() {
+        for text in ["{ /* open", "[1,,2]", "[,]", "{ \"a\": 1, \"a\": 2 }", "/ {}"] {
+            #expect(throws: JSONParseError.self, "\(text)") { try JSONValue(parsing: text, options: .jsonc) }
+        }
+        #expect(throws: JSONParseError(.unterminatedComment, offset: 2)) { try JSONValue(parsing: "{ /* open", options: .jsonc) }
+    }
+
+    @Test func offsetsByPath() throws {
+        let text = #"{ "a": [10, { "b": true }], "c": null }"#
+        let (value, offsets) = try JSONParser.parseWithOffsets(Array(text.utf8))
+        #expect(value["c"] == .null)
+        #expect(offsets[[]] == 0)
+        #expect(offsets[["a"]] == 7)
+        #expect(offsets[["a", "0"]] == 8)
+        #expect(offsets[["a", "1", "b"]] == 19)
+        #expect(offsets[["c"]] == 33)
+    }
+}

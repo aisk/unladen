@@ -2,7 +2,11 @@
 // document, reloads (the panel's and SIGHUP's), and the status of key pools.
 // See docs/server-config-design.md ("控制面板").
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import HTTPTypes
 import Hummingbird
 import Logging
@@ -91,7 +95,7 @@ final class ConfigManager: Sendable {
             do throws(ConfigError) {
                 let current = try ConfigDocument.read(try readFile(), file: path)
                 guard current.hash == baseHash else { return .conflict(hash: current.hash) }
-                let text = ConfigDocument.header + (try ConfigDocument.yaml(from: document, secrets: current.secrets))
+                let text = ConfigDocument.header + (try ConfigDocument.text(from: document, secrets: current.secrets))
                 let loaded = try ConfigFile.parse(text, file: path, overrides: overrides, environment: environment)
                 guard loaded.gateway.adminToken != nil else {
                     throw ConfigError(message: "server.admin.token is needed: without it the panel would lock itself out")

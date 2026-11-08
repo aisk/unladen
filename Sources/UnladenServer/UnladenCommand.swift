@@ -70,7 +70,7 @@ struct UnladenCommand: AsyncParsableCommand {
 
 /// Options shared by `serve` and `check-config`.
 struct ConfigOptions: ParsableArguments {
-    @Option(help: "Configuration file (YAML or JSON). Default: $XDG_CONFIG_HOME/unladen/config.yaml when it exists.")
+    @Option(help: "Configuration file (JSON; comments and trailing commas allowed). Default: $XDG_CONFIG_HOME/unladen/config.jsonc when it exists.")
     var config: String?
 
     @Option(help: "Address to listen on (overrides server.listen).")

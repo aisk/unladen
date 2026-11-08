@@ -1,10 +1,9 @@
-// The configuration file as the panel edits it: a JSON document with the
-// file's own values (`${VAR}` kept as written), keys written out in the file
-// replaced by placeholders, and a hash for optimistic concurrency.
+// The configuration file as the panel edits it: the file's own JSON
+// (`${VAR}` kept as written), keys written out in the file replaced by
+// placeholders, and a hash for optimistic concurrency.
 // See docs/server-config-design.md ("面板写回文件的规则").
 
 @_spi(Wire) import UnladenCore
-import Yams
 
 enum ConfigDocument {
     /// The file as the panel sees it.
@@ -17,7 +16,7 @@ enum ConfigDocument {
     }
 
     /// Put at the top of a file the panel writes.
-    static let header = "# Written by the unladen control panel. Comments are not kept when it saves.\n"
+    static let header = "// Written by the unladen control panel. Comments are not kept when it saves.\n"
 
     /// FNV-1a over the bytes, hex. Not a security measure: it only tells
     /// whether the file changed since the panel read it.
@@ -53,108 +52,124 @@ enum ConfigDocument {
     // MARK: Reading
 
     static func read(_ text: String, file: String = "config") throws(ConfigError) -> Snapshot {
-        let root: Node?
-        do {
-            root = try Yams.compose(yaml: text)
-        } catch {
-            throw ConfigError(message: "not valid YAML: \(error)", location: file)
-        }
+        let root = try ConfigFile.parseJSON(text, file: file).value
         var secrets: [String: String] = [:]
-        let document = root.map { json($0, path: [], secrets: &secrets) } ?? .object(JSONObject())
-        return Snapshot(document: document.isNull ? .object(JSONObject()) : document, hash: hash(text), secrets: secrets)
+        let document = root.isNull ? .object(JSONObject()) : mask(root, path: [], secrets: &secrets)
+        return Snapshot(document: document, hash: hash(text), secrets: secrets)
     }
 
-    private static func json(_ node: Node, path: [String], secrets: inout [String: String]) -> JSONValue {
-        switch node {
-        case .mapping(let mapping):
-            var object = JSONObject()
-            for (key, value) in mapping {
-                let name = key.scalar?.string ?? "?"
-                object[name] = json(value, path: path + [name], secrets: &secrets)
-            }
-            return .object(object)
-        case .sequence(let sequence):
-            return .array(sequence.enumerated().map { json($0.element, path: path + ["\($0.offset)"], secrets: &secrets) })
-        case .alias:
-            return .null
-        case .scalar(let scalar):
-            if isSecretPath(path), !scalar.string.contains("${"), !scalar.string.isEmpty {
-                let hidden = placeholder(for: scalar.string)
-                secrets[hidden] = scalar.string
-                return .string(hidden)
-            }
-            // Only plain scalars have a type besides string (`"true"` is a string).
-            guard scalar.style == .plain else { return .string(scalar.string) }
-            if node.null != nil { return .null }
-            // YAML 1.1 also reads yes/no/on/off as booleans; the panel keeps
-            // them as written (`head_timeout: off`).
-            if let flag = node.bool, ["true", "false"].contains(scalar.string.lowercased()) { return .bool(flag) }
-            if node.int != nil || node.float != nil, let number = JSONNumber(literal: scalar.string) { return .number(number) }
-            return .string(scalar.string)
+    private static func mask(_ value: JSONValue, path: [String], secrets: inout [String: String]) -> JSONValue {
+        switch value {
+        case .object(let object):
+            var masked = JSONObject()
+            for (key, item) in object { masked[key] = mask(item, path: path + [key], secrets: &secrets) }
+            return .object(masked)
+        case .array(let items):
+            return .array(items.enumerated().map { mask($0.element, path: path + [String($0.offset)], secrets: &secrets) })
+        case .string(let text) where isSecretPath(path) && !text.contains("${") && !text.isEmpty:
+            let hidden = placeholder(for: text)
+            secrets[hidden] = text
+            return .string(hidden)
+        default:
+            return value
         }
     }
 
     // MARK: Writing
 
-    /// YAML for `document`, placeholders put back from `secrets`. Nulls
-    /// are left out.
-    static func yaml(from document: JSONValue, secrets: [String: String]) throws(ConfigError) -> String {
-        let node = try self.node(document, path: [], secrets: secrets)
-        do {
-            return try Yams.serialize(node: node ?? Node.mapping(Node.Mapping([])))
-        } catch {
-            throw ConfigError(message: "cannot write the configuration: \(error)")
-        }
+    /// The file's text for `document`, placeholders put back from `secrets`.
+    /// Nulls are left out.
+    static func text(from document: JSONValue, secrets: [String: String]) throws(ConfigError) -> String {
+        let value = try unmask(document, path: [], secrets: secrets) ?? .object(JSONObject())
+        var output = ""
+        write(value, indent: "", into: &output)
+        return output + "\n"
     }
 
-    private static func node(_ value: JSONValue, path: [String], secrets: [String: String]) throws(ConfigError) -> Node? {
+    private static func unmask(_ value: JSONValue, path: [String], secrets: [String: String]) throws(ConfigError) -> JSONValue? {
         switch value {
         case .null:
             return nil
-        case .bool(let flag):
-            return Node(flag ? "true" : "false", Tag(.bool))
-        case .number(let number):
-            return Node(number.description, Tag(number.int != nil ? .int : .float))
-        case .string(let text):
-            if isPlaceholder(text) {
-                guard let secret = secrets[text] else {
-                    throw ConfigError(message: "\(path.joined(separator: ".")): \(text) is not a key of the current file; enter the key again")
-                }
-                return scalar(secret)
+        case .string(let text) where isPlaceholder(text):
+            guard let secret = secrets[text] else {
+                throw ConfigError(message: "\(path.joined(separator: ".")): \(text) is not a key of the current file; enter the key again")
             }
-            return scalar(text)
+            return .string(secret)
         case .array(let items):
-            var nodes: [Node] = []
+            var result: [JSONValue] = []
             for (index, item) in items.enumerated() {
-                if let node = try node(item, path: path + ["\(index)"], secrets: secrets) { nodes.append(node) }
+                if let item = try unmask(item, path: path + [String(index)], secrets: secrets) { result.append(item) }
             }
-            return Node.sequence(Node.Sequence(nodes))
+            return .array(result)
         case .object(let object):
-            var pairs: [(Node, Node)] = []
-            for index in 0..<object.count {
-                let (key, item) = object[index]
-                if let node = try node(item, path: path + [key], secrets: secrets) { pairs.append((scalar(key), node)) }
+            var result = JSONObject()
+            for (key, item) in object {
+                if let item = try unmask(item, path: path + [key], secrets: secrets) { result[key] = item }
             }
-            return Node.mapping(Node.Mapping(pairs))
+            return .object(result)
+        default:
+            return value
         }
     }
 
-    /// A string scalar: plain when YAML would read it back as the same
-    /// string, double-quoted otherwise (`*`, `${VAR}`, `off`, `123`…).
-    static func scalar(_ text: String) -> Node {
-        Node(text, Tag(.str), isPlain(text) ? .plain : .doubleQuoted)
+    /// Two-space indentation; an array or object of scalars short enough
+    /// stays on one line.
+    private static func write(_ value: JSONValue, indent: String, into output: inout String) {
+        if let line = inline(value) {
+            output += line
+            return
+        }
+        let inner = indent + "  "
+        switch value {
+        case .array(let items):
+            output += "[\n"
+            for (index, item) in items.enumerated() {
+                output += inner
+                write(item, indent: inner, into: &output)
+                output += index == items.count - 1 ? "\n" : ",\n"
+            }
+            output += indent + "]"
+        case .object(let object):
+            output += "{\n"
+            for (index, (key, item)) in object.enumerated() {
+                output += inner + encoded(.string(key)) + ": "
+                write(item, indent: inner, into: &output)
+                output += index == object.count - 1 ? "\n" : ",\n"
+            }
+            output += indent + "}"
+        default:
+            output += encoded(value)
+        }
     }
 
-    static func isPlain(_ text: String) -> Bool {
-        guard let first = text.first, first.isASCII, first.isLetter || first.isNumber || first == "_" || first == "." || first == "/"
-        else { return false }
-        let allowed = text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "_./:@+-".contains($0)) }
-        guard allowed, !text.hasSuffix(":") else { return false }
-        let reserved: Set<String> = ["true", "false", "yes", "no", "on", "off", "y", "n", "null", "~"]
-        if reserved.contains(text.lowercased()) { return false }
-        if Double(text) != nil || Int(text) != nil { return false }
-        // 0x1F, 1e3, 1_000 and dates resolve to numbers or timestamps.
-        if text.first!.isNumber { return false }
-        return true
+    private static func inline(_ value: JSONValue) -> String? {
+        let parts: [String]
+        let open: String, close: String
+        switch value {
+        case .array(let items):
+            guard !items.contains(where: isContainer) else { return nil }
+            parts = items.map(encoded)
+            (open, close) = ("[", "]")
+        case .object(let object):
+            guard !object.contains(where: { isContainer($0.value) }) else { return nil }
+            parts = object.map { encoded(.string($0.key)) + ": " + encoded($0.value) }
+            (open, close) = ("{ ", " }")
+        default:
+            return encoded(value)
+        }
+        if parts.isEmpty { return open.trimmingBlanks() + close.trimmingBlanks() }
+        let line = open + parts.joined(separator: ", ") + close
+        return line.count <= 72 ? line : nil
+    }
+
+    private static func isContainer(_ value: JSONValue) -> Bool {
+        switch value {
+        case .array, .object: true
+        default: false
+        }
+    }
+
+    private static func encoded(_ value: JSONValue) -> String {
+        String(decoding: value.encoded(), as: UTF8.self)
     }
 }
