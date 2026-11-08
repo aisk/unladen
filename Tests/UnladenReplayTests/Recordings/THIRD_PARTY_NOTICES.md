@@ -7,7 +7,7 @@ Each recording's provenance (source repository, path, commit) is listed in
 
 ## pydantic-ai
 
-Source: https://github.com/pydantic/pydantic-ai (commit c833840)
+Source: https://github.com/pydantic/pydantic-ai (commit 7e72d57)
 
 The MIT License (MIT)
 
