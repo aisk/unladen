@@ -72,24 +72,18 @@ struct Gateway: Sendable {
         log: RequestLog,
     ) async -> Response {
         let configuration = snapshot ?? self.configuration
-        let start = ContinuousClock.now
-        var line = LogLine(clientProtocol: clientProtocol, start: start)
         let parsed = Result { () throws(WireDecodingError) in
             try ClientCodec.parseRequest(clientProtocol, body: body, geminiPath: geminiPath)
         }
         let tracker = activity.begin(RequestRecord(
             started: LocalDay.nowMilliseconds(),
             origin: RequestOrigin(headers: headers, request: try? parsed.get().value, access: access),
-            clientProtocol: clientProtocol.rawValue, model: (try? parsed.get().value.model) ?? geminiPath?.model ?? "?",
+            clientProtocol: clientProtocol.displayName, model: (try? parsed.get().value.model) ?? geminiPath?.model ?? "?",
             stream: (try? parsed.get().value.stream) == true || geminiPath?.stream == true,
-        ))
+        ), log: log)
         func fail(_ status: Int, _ message: String, detail: String? = nil, warnings: [WireWarning] = []) -> Response {
             monitor.uninstall()
-            line.status = status
-            line.warnings = warnings.count
-            line.note = detail ?? message
-            log.emit(line.text)
-            tracker.finish(status: status, note: detail ?? message)
+            tracker.finish(status: status, note: detail ?? message, warnings: warnings.count)
             return Self.errorResponse(clientProtocol, status: status, message: message, warnings: warnings)
         }
 
@@ -100,8 +94,6 @@ struct Gateway: Sendable {
         }
         let request = decoded.value
         let stream = request.stream == true
-        line.clientModel = request.model
-        line.stream = stream
 
         let candidates: [Candidate]
         do {
@@ -143,7 +135,7 @@ struct Gateway: Sendable {
             // in the same response.
             guard let done = await settled.wait(upTo: hold) else {
                 return heldStream(settled, work, clientProtocol: clientProtocol, request: request, decodeWarnings: decoded.warnings,
-                                  configuration: configuration, monitor: monitor, line: line, log: log, tracker: tracker)
+                                  configuration: configuration, monitor: monitor, log: log, tracker: tracker)
             }
             result = done
         } else {
@@ -159,15 +151,12 @@ struct Gateway: Sendable {
         case .failure(let failure):
             let response = failureResponse(failure, clientProtocol: clientProtocol, warnings: decoded.warnings)
             monitor.uninstall()
-            line.status = response.status.code
-            Self.note(failure, decodeWarnings: decoded.warnings, on: &line)
-            log.emit(line.text)
-            tracker.finish(status: response.status.code, note: line.note)
+            let (note, warnings) = Self.note(failure, decodeWarnings: decoded.warnings)
+            tracker.finish(status: response.status.code, note: note, warnings: warnings)
             return response
 
         case .reply(let served):
             let candidate = served.candidate
-            line.candidate = candidate.reference
             let warnings = served.requestWarnings + served.responseWarnings
             let defaults = ReplyDefaults(clientProtocol: clientProtocol, model: request.model, candidate: candidate)
             var fields = HTTPFields()
@@ -183,11 +172,8 @@ struct Gateway: Sendable {
                 if !all.isEmpty {
                     fields[WarningHeader.name] = WarningHeader.value(request: served.requestWarnings, response: responseWarnings)
                 }
-                line.status = 200
-                line.warnings = all.count
-                log.emit(line.text)
                 tracker.serving(candidate, streaming: false)
-                tracker.finish(status: 200, tokens: TokenCounts(response.usage))
+                tracker.finish(status: 200, tokens: TokenCounts(response.usage), warnings: all.count)
                 return Response(status: .ok, headers: fields, body: ResponseBody(byteBuffer: ByteBuffer(bytes: encoded.body)))
 
             case .events(let events):
@@ -196,13 +182,12 @@ struct Gateway: Sendable {
                 if !warnings.isEmpty {
                     fields[WarningHeader.name] = WarningHeader.value(request: served.requestWarnings, response: served.responseWarnings)
                 }
-                let finalLine = line
                 tracker.serving(candidate, streaming: true)
                 return Response(status: .ok, headers: fields, body: ResponseBody { writer in
                     defer { monitor.uninstall() }
                     try await self.forward(
                         served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
-                        monitor: monitor, writer: &writer, line: finalLine, log: log, tracker: tracker,
+                        monitor: monitor, writer: &writer, log: log, tracker: tracker,
                     )
                 })
             }
@@ -230,7 +215,6 @@ struct Gateway: Sendable {
         decodeWarnings: [WireWarning],
         configuration: GatewayConfiguration,
         monitor: DisconnectMonitor,
-        line: LogLine,
         log: RequestLog,
         tracker: RequestTracker,
     ) -> Response {
@@ -238,8 +222,6 @@ struct Gateway: Sendable {
         let every = heldStreams.commentEvery
         return Response(status: .ok, headers: fields, body: ResponseBody { writer in
             defer { monitor.uninstall() }
-            var line = line
-            line.note = "headers sent before the first content"
             var result: Result<AttemptOutcome, any Error>?
             do {
                 while result == nil {
@@ -249,33 +231,23 @@ struct Gateway: Sendable {
             } catch {
                 // The client left while it was kept waiting.
                 work.cancel()
-                line.status = 499
-                line.note = "client disconnected while held"
-                log.emit(line.text)
-                tracker.finish(status: 499, note: line.note)
+                tracker.finish(status: 499, note: "client disconnected while held")
                 return
             }
             switch result! {
             case .failure:
-                line.status = 499
-                line.note = "client disconnected while held"
-                log.emit(line.text)
-                tracker.finish(status: 499, note: line.note)
+                tracker.finish(status: 499, note: "client disconnected while held")
             case .success(.failure(let failure)):
                 var encoder = ClientStreamEncoder(
                     for: clientProtocol, defaults: ReplyDefaults(clientProtocol: clientProtocol, model: request.model, candidate: nil),
                     includeUsage: false,
                 )
                 let (status, error) = Self.streamError(failure)
-                line.status = status
-                Self.note(failure, decodeWarnings: decodeWarnings, on: &line)
-                line.note = "(in the stream) " + (line.note ?? "")
-                log.emit(line.text)
-                tracker.finish(status: status, note: line.note)
+                let (note, warnings) = Self.note(failure, decodeWarnings: decodeWarnings)
+                tracker.finish(status: status, note: "(in the stream) " + (note ?? ""), warnings: warnings)
                 try await writer.write(Self.frames(encoder.encode(.error(error)) + encoder.finish()))
                 try await writer.finish(nil)
             case .success(.reply(let served)):
-                line.candidate = served.candidate.reference
                 guard case .events(let events) = served.body else {
                     // A stream request is always answered with events.
                     tracker.finish(status: 200)
@@ -285,7 +257,8 @@ struct Gateway: Sendable {
                 tracker.serving(served.candidate, streaming: true)
                 try await self.forward(
                     served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
-                    monitor: monitor, writer: &writer, line: line, log: log, tracker: tracker,
+                    monitor: monitor, writer: &writer, log: log, tracker: tracker,
+                    note: "headers sent before the first content",
                 )
             }
         })
@@ -302,14 +275,11 @@ struct Gateway: Sendable {
         configuration: GatewayConfiguration,
         monitor: DisconnectMonitor,
         writer: inout any ResponseBodyWriter,
-        line: LogLine,
         log: RequestLog,
-        tracker: RequestTracker? = nil,
+        tracker: RequestTracker,
+        note: String? = nil,
     ) async throws {
         let candidate = served.candidate
-        var line = line
-        line.candidate = candidate.reference
-        line.status = 200
         let warnings = served.requestWarnings + served.responseWarnings
         for warning in warnings { log.emit("warning: \(warning)") }
         let header = WarningHeader.value(request: served.requestWarnings, response: served.responseWarnings)
@@ -336,31 +306,29 @@ struct Gateway: Sendable {
             health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
         }
         for warning in summary.warnings { log.emit("warning: \(warning)") }
-        line.warnings = warnings.count + summary.warnings.count
+        var note = note
         if summary.disconnected {
-            line.note = "client disconnected mid-stream"
+            note = "client disconnected mid-stream"
         } else if let failure = summary.failure {
-            line.note = "upstream stream failed: \(failure)"
+            note = "upstream stream failed: \(failure)"
         }
-        log.emit(line.text)
-        tracker?.finish(
-            status: summary.disconnected ? 499 : 200, note: line.note, tokens: TokenCounts(summary.usage),
-            failed: summary.failure != nil && !summary.disconnected,
+        tracker.finish(
+            status: summary.disconnected ? 499 : 200, note: note, tokens: TokenCounts(summary.usage),
+            warnings: warnings.count + summary.warnings.count, failed: summary.failure != nil && !summary.disconnected,
         )
         if !summary.disconnected { try await writer.finish(nil) }
     }
 
-    /// What the log line says of a failed request.
-    static func note(_ failure: AttemptFailure, decodeWarnings: [WireWarning], on line: inout LogLine) {
-        line.candidate = failure.candidate?.reference
-        line.warnings = decodeWarnings.count
+    /// What the record says of a failed request: its note and its
+    /// warnings count.
+    static func note(_ failure: AttemptFailure, decodeWarnings: [WireWarning]) -> (String?, Int) {
         switch failure {
         case .upstream(_, let error):
-            line.note = "upstream \(error.status.code): \(redactingSecrets(ErrorShape.upstreamMessage(error.body)))"
+            ("upstream \(error.status.code): \(redactingSecrets(ErrorShape.upstreamMessage(error.body)))", decodeWarnings.count)
         case .gateway(_, let message, _):
-            line.note = message
+            (message, decodeWarnings.count)
         case .strict(let warnings):
-            line.warnings += warnings.count
+            (nil, decodeWarnings.count + warnings.count)
         }
     }
 
@@ -486,7 +454,7 @@ struct Gateway: Sendable {
         strict: Bool = false,
         headTimeout: Duration? = nil,
         log: RequestLog = .silent,
-        tracker: RequestTracker? = nil,
+        tracker: RequestTracker,
     ) async throws -> AttemptOutcome {
         var last: AttemptFailure?
         var strictWarnings: [WireWarning]?
@@ -495,7 +463,7 @@ struct Gateway: Sendable {
             try Task.checkCancellation()
             let began = ContinuousClock.now
             var outcome = "skipped"
-            defer { tracker?.tried(candidate, outcome: outcome, since: began) }
+            defer { tracker.tried(candidate, outcome: outcome, since: began) }
             let call = UpstreamCall(target: candidate.target, apiKey: candidate.apiKey, transport: transport)
             let prepared: UpstreamRequest
             do {
@@ -908,27 +876,6 @@ enum WarningHeader {
         if text.utf8.count > limit {
             text = String(text.prefix(limit - 3)) + "..."
         }
-        return text
-    }
-}
-
-/// The request's log line: client protocol, model → candidate, status,
-/// duration, warnings count. No bodies.
-struct LogLine: Sendable {
-    var clientProtocol: WireProtocol
-    var start: ContinuousClock.Instant
-    var clientModel = "?"
-    var candidate: String?
-    var stream = false
-    var status = 0
-    var warnings = 0
-    var note: String?
-
-    var text: String {
-        let elapsed = ContinuousClock.now - start
-        let ms = elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000
-        var text = "\(clientProtocol.displayName)\(stream ? " stream" : "") \(clientModel) → \(candidate ?? "-") status=\(status) \(ms)ms warnings=\(warnings)"
-        if let note { text += " (\(note.prefix(300)))" }
         return text
     }
 }

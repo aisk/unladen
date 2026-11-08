@@ -4,6 +4,7 @@ import Hummingbird
 import HummingbirdTesting
 import Testing
 @_spi(Wire) import UnladenCore
+import NIOConcurrencyHelpers
 @testable import UnladenServer
 
 private let claudeCode: HTTPFields = [
@@ -157,5 +158,37 @@ private func chatStream(_ chunks: [String]) -> HTTPTransportResponse {
         #expect(Set(restored.snapshot().sessions.map(\.id)) == ["s-work", "s-personal"])
         // In memory only: not read back.
         #expect(restored.snapshot().recent.isEmpty)
+    }
+
+    @Test func theLogLineNamesEachAttemptWhenThereWasMoreThanOne() {
+        var record = RequestRecord(
+            started: 0, origin: RequestOrigin(program: "Codex"), clientProtocol: "chat", model: "fast", stream: true,
+        )
+        record.attempts = [
+            .init(provider: "deepseek", account: "a", model: "deepseek/deepseek-chat", outcome: "429", milliseconds: 5),
+            .init(provider: "deepseek", account: "b", model: "deepseek/deepseek-chat", outcome: "ok", milliseconds: 9),
+        ]
+        record.served = "deepseek/deepseek-chat"
+        record.status = 200
+        record.milliseconds = 14
+        #expect(record.logLine
+            == "chat stream fast → deepseek/deepseek-chat status=200 14ms warnings=0 tried=[deepseek/a 429, deepseek/b ok]")
+
+        record.attempts.removeFirst()
+        #expect(!record.logLine.contains("tried="))
+    }
+
+    @Test func aFinishedRequestIsLoggedOnce() {
+        let lines = NIOLockedValueBox<[String]>([])
+        let tracker = Activity().begin(
+            RequestRecord(started: 0, origin: RequestOrigin(program: "Codex"), clientProtocol: "chat", model: "x", stream: false),
+            log: RequestLog { line in lines.withLockedValue { $0.append(line) } },
+        )
+        tracker.finish(status: 400, note: "bad", warnings: 2)
+        tracker.finish(status: 500)
+        let logged = lines.withLockedValue { $0 }
+        #expect(logged.count == 1)
+        #expect(logged.first?.hasPrefix("chat x → - status=400 ") == true)
+        #expect(logged.first?.hasSuffix("ms warnings=2 (bad)") == true)
     }
 }

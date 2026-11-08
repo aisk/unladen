@@ -195,6 +195,8 @@ struct RequestRecord: Sendable {
     var firstContentMilliseconds: Int?
     var milliseconds: Int?
     var tokens: TokenCounts?
+    /// Warnings about what the request or its reply lost on the way.
+    var warnings = 0
     /// It ended in an error: an error status, or a stream that broke off.
     var failed = false
 
@@ -218,9 +220,23 @@ struct RequestRecord: Sendable {
         if let value = served { object["served"] = .string(value) }
         if let value = firstContentMilliseconds { object["first_content_ms"] = .number(JSONNumber(value)) }
         if let value = milliseconds { object["ms"] = .number(JSONNumber(value)) }
+        if warnings > 0 { object["warnings"] = .number(JSONNumber(warnings)) }
         if let value = note { object["note"] = .string(String(value.prefix(300))) }
         if let tokens { object["tokens"] = tokens.json }
         return .object(object)
+    }
+
+    /// The request's line in the gateway's log: protocol, model → what
+    /// served it, status, time, warnings, the attempts when there was more
+    /// than one or none answered, and the note. No bodies.
+    var logLine: String {
+        var text = "\(clientProtocol)\(stream ? " stream" : "") \(model) → \(served ?? attempts.last?.model ?? "-")"
+        text += " status=\(status ?? 0) \(milliseconds ?? 0)ms warnings=\(warnings)"
+        if attempts.count > 1 || (served == nil && !attempts.isEmpty) {
+            text += " tried=[" + attempts.map { "\($0.provider)/\($0.account) \($0.outcome)" }.joined(separator: ", ") + "]"
+        }
+        if let note { text += " (\(note.prefix(300)))" }
+        return text
     }
 
     init(started: Int64, origin: RequestOrigin, clientProtocol: String, model: String, stream: Bool) {
@@ -253,6 +269,7 @@ struct RequestRecord: Sendable {
         failed = value["failed"]?.boolValue ?? ((status ?? 0) >= 400)
         firstContentMilliseconds = value["first_content_ms"]?.numberValue?.int
         milliseconds = value["ms"]?.numberValue?.int
+        warnings = value["warnings"]?.numberValue?.int ?? 0
         if let tokens = value["tokens"] {
             func count(_ key: String) -> Int { tokens[key]?.numberValue?.int ?? 0 }
             self.tokens = TokenCounts(
@@ -453,8 +470,8 @@ final class Activity: Sendable {
         }
     }
 
-    /// Starts a request's record.
-    func begin(_ record: RequestRecord) -> RequestTracker {
+    /// Starts a request's record; its line goes to `log` when it ends.
+    func begin(_ record: RequestRecord, log: RequestLog = .silent) -> RequestTracker {
         let id = state.withLockedValue { state -> UInt64 in
             state.next += 1
             var record = record
@@ -462,7 +479,7 @@ final class Activity: Sendable {
             state.inFlight[state.next] = record
             return state.next
         }
-        return RequestTracker(activity: self, id: id, start: ContinuousClock.now)
+        return RequestTracker(activity: self, id: id, start: ContinuousClock.now, log: log)
     }
 
     func update(_ id: UInt64, _ change: (inout RequestRecord) -> Void) {
@@ -471,7 +488,8 @@ final class Activity: Sendable {
         }
     }
 
-    fileprivate func end(_ id: UInt64, _ change: (inout RequestRecord) -> Void) {
+    @discardableResult
+    fileprivate func end(_ id: UInt64, _ change: (inout RequestRecord) -> Void) -> RequestRecord? {
         let record = state.withLockedValue { state -> RequestRecord? in
             guard var record = state.inFlight.removeValue(forKey: id) else { return nil }
             change(&record)
@@ -483,13 +501,14 @@ final class Activity: Sendable {
             Self.trimSessions(&state.sessions)
             return record
         }
-        guard let record, let log else { return }
+        guard let record, let log else { return record }
         let error = log.append(record)
         let tell = state.withLockedValue { state -> Bool in
             defer { state.logError = error }
             return error != nil && state.logError == nil
         }
         if tell, let error { report(error) }
+        return record
     }
 
     private static func count(_ record: RequestRecord, in buckets: inout [UsageBucket.Key: UsageBucket]) {
@@ -559,22 +578,25 @@ final class RequestTracker: Sendable {
     let activity: Activity
     let id: UInt64
     let start: ContinuousClock.Instant
+    let log: RequestLog
 
-    fileprivate init(activity: Activity, id: UInt64, start: ContinuousClock.Instant) {
+    fileprivate init(activity: Activity, id: UInt64, start: ContinuousClock.Instant, log: RequestLog) {
         self.activity = activity
         self.id = id
         self.start = start
+        self.log = log
     }
 
-    var elapsedMilliseconds: Int {
+    var elapsedMilliseconds: Int { Self.milliseconds(since: start) }
+
+    static func milliseconds(since start: ContinuousClock.Instant) -> Int {
         let elapsed = ContinuousClock.now - start
         return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
     }
 
     /// Notes an attempt of `candidate` that started at `since`.
     func tried(_ candidate: Candidate, outcome: String, since: ContinuousClock.Instant) {
-        let elapsed = ContinuousClock.now - since
-        let milliseconds = Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
+        let milliseconds = Self.milliseconds(since: since)
         let attempt = RequestRecord.Attempt(
             provider: candidate.target.provider, account: candidate.keyName, model: candidate.reference, outcome: outcome,
             milliseconds: milliseconds,
@@ -594,14 +616,16 @@ final class RequestTracker: Sendable {
         }
     }
 
-    /// The request ended; `failed` defaults to an error status.
-    func finish(status: Int, note: String? = nil, tokens: TokenCounts? = nil, failed: Bool? = nil) {
+    /// The request ended: its record is kept and its line logged.
+    /// `failed` defaults to an error status.
+    func finish(status: Int, note: String? = nil, tokens: TokenCounts? = nil, warnings: Int = 0, failed: Bool? = nil) {
         let elapsed = elapsedMilliseconds
-        activity.end(id) { record in
+        let record = activity.end(id) { record in
             record.status = status
             record.failed = failed ?? (status >= 400)
             record.note = note
             record.tokens = tokens
+            record.warnings = warnings
             record.milliseconds = elapsed
             // A request no account served is counted against the last one tried.
             if record.provider == nil, let last = record.attempts.last {
@@ -609,5 +633,6 @@ final class RequestTracker: Sendable {
                 record.account = last.account
             }
         }
+        if let record { log.emit(record.logLine) }
     }
 }
