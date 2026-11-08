@@ -27,7 +27,7 @@ struct UnladenCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "unladen",
         abstract: "A lightweight LLM protocol-translating gateway.",
-        subcommands: [Serve.self, CheckConfig.self],
+        subcommands: [Serve.self, CheckConfig.self, SignIn.self],
         defaultSubcommand: Serve.self,
     )
 
@@ -159,8 +159,10 @@ struct Serve: AsyncParsableCommand {
         var logger = Logger(label: "unladen")
         logger.logLevel = .info
         var gateway = Gateway(configuration: loaded.gateway, transport: AsyncHTTPClientTransport(client: client))
-        // Usage is kept across restarts in the state directory.
-        let usageLog = UsageLog.defaultDirectory { ProcessInfo.processInfo.environment[$0] }.map(UsageLog.init(directory:))
+        // Usage and sign-ins are kept across restarts in the state directory.
+        let stateDirectory = UsageLog.defaultDirectory { ProcessInfo.processInfo.environment[$0] }
+        let usageLog = stateDirectory.map(UsageLog.init(directory:))
+        gateway.signIns = SignIns(directory: stateDirectory)
         let usageLogger = logger
         gateway.activity = Activity(log: usageLog) { usageLogger.warning("\($0)") }
         gateway.activity.restore()
@@ -195,6 +197,58 @@ struct Serve: AsyncParsableCommand {
             throw error
         }
         try await client.shutdown()
+    }
+}
+
+struct SignIn: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "sign-in",
+        abstract: "Sign an account in (a `chatgpt` account), keeping its tokens in the state directory.",
+        discussion: """
+        Prints an address to open in a browser, on any computer. After \
+        signing in there, the browser is sent to a 127.0.0.1 address that \
+        may not load: copy that address and paste it here. A running \
+        gateway picks the sign-in up on its next reload (SIGHUP, or the \
+        control panel's Reload); the control panel can also sign accounts \
+        in itself.
+        """,
+    )
+
+    @Argument(help: "The account, as named under accounts in the configuration.")
+    var account: String
+
+    @OptionGroup var options: ConfigOptions
+
+    func run() async throws {
+        let loaded = try options.load()
+        guard let (provider, key) = loaded.gateway.keyPools.lazy.compactMap({ provider, pool in
+            pool.keys.first { $0.name == account }.map { (provider, $0) }
+        }).first, key.signIn != nil else {
+            throw ValidationError("`\(account)` is not an enabled account that signs in (an account of provider `chatgpt`)")
+        }
+        guard let directory = UsageLog.defaultDirectory(environment: { ProcessInfo.processInfo.environment[$0] }) else {
+            throw ValidationError("no state directory: set HOME or XDG_STATE_HOME")
+        }
+        let signIns = SignIns(directory: directory)
+        let started = try signIns.start(provider: provider, account: account)
+        print("Open this address in a browser and sign in:\n\n\(started.url)\n")
+        print("Then paste the address the browser ends on (http://127.0.0.1:1455/auth/callback?…):")
+        guard let callback = readLine(strippingNewline: true), !callback.isEmpty else {
+            throw ValidationError("no address given")
+        }
+        var clientConfiguration = HTTPClient.Configuration()
+        clientConfiguration.timeout = .init(connect: .nanoseconds(Int64(loaded.server.connectTimeout / .nanoseconds(1))), read: nil)
+        let client = HTTPClient(eventLoopGroup: HTTPClient.defaultEventLoopGroup, configuration: clientConfiguration)
+        let result: Result<SignInCredentials, SignInError>
+        do throws(SignInError) {
+            result = .success(try await signIns.finish(id: started.id, callback: callback, transport: AsyncHTTPClientTransport(client: client)).credentials)
+        } catch {
+            result = .failure(error)
+        }
+        try await client.shutdown()
+        let credentials = try result.get()
+        print("Signed in as \(credentials.user)\(credentials.plan.map { " (\($0))" } ?? "") into \(provider)/\(account).")
+        print("A running gateway uses it after a reload (SIGHUP, or Reload in the control panel).")
     }
 }
 

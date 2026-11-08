@@ -14,12 +14,15 @@ struct Candidate: Sendable, Hashable {
     /// The model reference, `provider/model`.
     var reference: String
     var target: ResolvedModel
-    /// `nil` for endpoints without authentication.
+    /// `nil` for endpoints without authentication, and for accounts that
+    /// sign in (`signIn`), whose token is fetched at the attempt.
     var apiKey: String?
     /// The key's stable name (``UpstreamKey/name``); `""` without a key.
     var keyName: String
     /// How the provider's keys take turns.
     var poolStrategy: KeyPool.Strategy = .order
+    /// How the account `keyName` signs in.
+    var signIn: SignInKind?
 
     var upstreamProtocol: WireProtocol { target.endpoint.apiProtocol.wire }
 
@@ -301,8 +304,8 @@ struct CandidatePlanner: Sendable {
             if keys.isEmpty { missingKeys.append(target.provider) }
             for key in keys {
                 candidates.append(Candidate(
-                    reference: reference, target: target, apiKey: key.secret, keyName: key.name,
-                    poolStrategy: pool?.strategy ?? .order,
+                    reference: reference, target: target, apiKey: key.signIn == nil ? key.secret : nil, keyName: key.name,
+                    poolStrategy: pool?.strategy ?? .order, signIn: key.signIn,
                 ))
             }
         }

@@ -95,12 +95,36 @@ extension Gateway {
         var last: AttemptFailure?
         var strictWarnings: [WireWarning]?
         var unreachable: Set<String> = []
-        for candidate in candidates where !unreachable.contains(candidate.endpointID) {
+        var remaining = candidates[...]
+        // Sign-in tokens OpenAI turned away: the account is tried once more
+        // with a refreshed one.
+        var rejected: [String: String] = [:]
+        while let candidate = remaining.popFirst() {
+            guard !unreachable.contains(candidate.endpointID) else { continue }
             try Task.checkCancellation()
             let began = ContinuousClock.now
             var outcome = "skipped"
             defer { tracker.tried(candidate, outcome: outcome, since: began) }
-            let call = UpstreamCall(target: candidate.target, apiKey: candidate.apiKey, transport: transport)
+            var apiKey = candidate.apiKey
+            if candidate.signIn != nil {
+                do {
+                    apiKey = try await signIns.token(
+                        provider: candidate.target.provider, account: candidate.keyName, transport: transport,
+                        rejected: rejected[SignIns.key(candidate.target.provider, candidate.keyName)],
+                    )
+                } catch {
+                    if Task.isCancelled { throw CancellationError() }
+                    // Not signed in stays so until someone signs in; a
+                    // failed refresh may pass.
+                    if !error.needsSignIn, let scope = candidate.keyScope {
+                        health.recordFailure(scope, base: HealthStore.failureCooldown)
+                    }
+                    last = .gateway(status: error.needsSignIn ? 401 : 502, message: error.message, candidate: candidate)
+                    outcome = error.needsSignIn ? "not signed in" : "token refresh failed"
+                    continue
+                }
+            }
+            let call = UpstreamCall(target: candidate.target, apiKey: apiKey, transport: transport)
             let prepared: UpstreamRequest
             do {
                 prepared = try call.prepare(request, stream: stream, clientHeaders: clientHeaders)
@@ -154,6 +178,13 @@ extension Gateway {
                 case .http(let http):
                     let status = http.status.code
                     outcome = "\(status)"
+                    if status == 401, candidate.signIn != nil, rejected[SignIns.key(candidate.target.provider, candidate.keyName)] == nil, let apiKey {
+                        rejected[SignIns.key(candidate.target.provider, candidate.keyName)] = apiKey
+                        remaining.insert(candidate, at: remaining.startIndex)
+                        last = .upstream(candidate, http)
+                        outcome = "401: trying again with a refreshed token"
+                        continue
+                    }
                     guard Self.isRetryable(status) else { return .failure(.upstream(candidate, http)) }
                     recordFailure(status: status, retryAfter: http.retryAfter, of: candidate, log: log)
                     last = .upstream(candidate, http)

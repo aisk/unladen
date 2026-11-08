@@ -401,6 +401,9 @@ private func streamedText(_ events: [WireEvent]) -> String {
         let request = try ResponsesCodec.parseRequest(Array(body.utf8)).value
         let target = try ProviderRegistry.builtIn.resolve("chatgpt/gpt-6.1-sol")
         let prepared = try UpstreamCall(target: target, apiKey: "token", transport: transport(Recorder(), body: [])).prepare(request, stream: true)
-        #expect(try JSONValue(parsing: prepared.body)["prompt_cache_key"] == "mine")
+        let sent = try JSONValue(parsing: prepared.body)
+        #expect(sent["prompt_cache_key"] == "mine")
+        // The bare string is sent as a list of items.
+        #expect(sent["input"]?[0]?["role"] == "user")
     }
 }

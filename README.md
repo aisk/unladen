@@ -96,6 +96,8 @@ The configuration is JSON with comments and trailing commas, read from `--config
 }
 ```
 
+An account of provider `chatgpt` holds no key: it signs in with a ChatGPT account ("Sign in with ChatGPT") and uses that plan through OpenAI's Responses API, for your own use only. Write it as `"chatgpt": {}`, then sign in from the control panel's overview or with `unladen sign-in chatgpt`; the tokens are kept in `~/.local/state/unladen/logins.json` and refreshed as needed.
+
 `unladen check-config` checks a configuration without serving it. The gateway reloads its configuration on `SIGHUP` and when it is saved from the control panel. The control panel also shows requests in flight, recent requests and sessions, and token usage by account, client and model; each finished request is appended to `~/.local/state/unladen/usage-YYYY-MM.jsonl` (or under `$XDG_STATE_HOME`). The design, including what later versions will add, is in [docs/server-config-design.md](docs/server-config-design.md) (Chinese).
 
 ## Tests

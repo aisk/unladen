@@ -64,6 +64,8 @@ final class ConfigManager: Sendable {
             return false
         }
         gateway.replace(loaded.gateway)
+        // A sign-in from the command line writes the file.
+        gateway.signIns.load()
         logger.info("configuration reloaded from \(loaded.path ?? "flags and environment")")
         if loaded.server != server {
             logger.warning("listen and advanced.connect_timeout take effect after a restart")
@@ -176,14 +178,18 @@ enum AdminStatus {
                 for key in pool.keys {
                     let scope = HealthScope.key(provider: id, keyName: key.name)
                     let state = health.disabled.contains(scope) ? "disabled" : (health.isCooling(scope) ? "cooling" : "ready")
-                    accounts.append([
+                    var account: JSONObject = [
                         "name": .string(key.name),
                         "provider": .string(id),
                         "source": pool.fromEnvironment ? "environment" : "file",
                         "pool": .string(pool.strategy.rawValue),
                         "state": .string(state),
                         "cooling_seconds": remaining(scope),
-                    ])
+                    ]
+                    if key.signIn != nil {
+                        account["sign_in"] = signInJSON(gateway.signIns.credentials(provider: id, account: key.name))
+                    }
+                    accounts.append(.object(account))
                 }
             }
             for endpoint in provider.endpoints {
@@ -199,6 +205,16 @@ enum AdminStatus {
                 guard case .model(let endpoint, let model) = scope, endpoint.hasPrefix(id + " ") else { continue }
                 cooling.append(["provider": .string(id), "what": .string("\(model) failing"), "cooling_seconds": remaining(scope)])
             }
+        }
+        /// No token is included.
+        func signInJSON(_ credentials: SignInCredentials?) -> JSONValue {
+            guard let credentials else { return ["state": "signed out"] }
+            return [
+                "state": credentials.lapsed == nil ? "signed in" : "lapsed",
+                "user": .string(credentials.user),
+                "plan": credentials.plan.map(JSONValue.string) ?? .null,
+                "problem": credentials.lapsed.map(JSONValue.string) ?? .null,
+            ]
         }
         let models: [JSONValue] = configuration.routes.all.map { route in
             ["name": .string(route.name), "targets": .array(route.targets.map { .string($0.model) })]
@@ -385,6 +401,69 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         let scope = HealthScope.key(provider: provider, keyName: key)
         gateway.health.forget { $0 == scope }
         return adminJSON(200, ["reset": true])
+    }
+
+    addSignInRoutes(to: router, gateway: gateway)
+}
+
+/// Signing accounts in (``SignIns``): start gives the address to open,
+/// finish takes the address the browser ended on.
+private func addSignInRoutes(to router: Router<GatewayRequestContext>, gateway: Gateway) {
+    @Sendable func body(_ request: Request) async -> JSONValue? {
+        var request = request
+        guard let body = try? await request.collectBody(upTo: 64 << 10) else { return nil }
+        return try? JSONValue(parsing: Array(body.readableBytesView))
+    }
+    /// The account named in `json`, when it is one that signs in.
+    @Sendable func account(_ json: JSONValue?) -> (provider: String, account: String)? {
+        guard let provider = json?["provider"]?.stringValue, let account = json?["account"]?.stringValue,
+              gateway.configuration.keyPools[provider]?.keys.contains(where: { $0.name == account && $0.signIn != nil }) == true
+        else { return nil }
+        return (provider, account)
+    }
+
+    router.post("/admin/api/sign-in/start") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        guard let (provider, name) = account(await body(request)) else {
+            return adminError(400, "expected {\"provider\": \"…\", \"account\": \"…\"} naming an account that signs in")
+        }
+        do throws(SignInError) {
+            let started = try gateway.signIns.start(provider: provider, account: name)
+            return adminJSON(200, ["id": .string(started.id), "url": .string(started.url)])
+        } catch {
+            return adminError(422, error.message)
+        }
+    }
+
+    router.post("/admin/api/sign-in/finish") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        let json = await body(request)
+        guard let id = json?["id"]?.stringValue, let callback = json?["callback"]?.stringValue else {
+            return adminError(400, "expected {\"id\": \"…\", \"callback\": \"…\"}")
+        }
+        do throws(SignInError) {
+            let (provider, name, credentials) = try await gateway.signIns.finish(id: id, callback: callback, transport: gateway.transport) { provider, name in
+                account(["provider": .string(provider), "account": .string(name)]) != nil
+            }
+            let scope = HealthScope.key(provider: provider, keyName: name)
+            gateway.health.forget { $0 == scope }
+            return adminJSON(200, ["user": .string(credentials.user), "plan": credentials.plan.map(JSONValue.string) ?? .null])
+        } catch {
+            return adminError(422, error.message)
+        }
+    }
+
+    router.post("/admin/api/sign-in/forget") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        guard let (provider, name) = account(await body(request)) else {
+            return adminError(400, "expected {\"provider\": \"…\", \"account\": \"…\"} naming an account that signs in")
+        }
+        do throws(SignInError) {
+            try gateway.signIns.forget(provider: provider, account: name)
+            return adminJSON(200, ["forgotten": true])
+        } catch {
+            return adminError(422, error.message)
+        }
     }
 }
 

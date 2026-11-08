@@ -21,6 +21,8 @@ extension WireTransforms {
     public static func chatgptSubscription(_ request: inout WireRequest, warnings: inout [WireWarning]) {
         // Nothing is stored, so each request carries the whole conversation.
         request.store = false
+        // A list of items, never the bare string a client may have sent.
+        request.spellings[.input] = nil
         if request.maxOutputTokens != nil {
             request.maxOutputTokens = nil
             warnings.append(WireWarning(.unsupportedByModel, "a ChatGPT sign-in takes no output limit", path: "max_output_tokens"))

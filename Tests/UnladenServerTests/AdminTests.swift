@@ -277,3 +277,41 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         }
     }
 }
+
+@Suite struct AdminSignInRouteTests {
+    @Test func signingInOverHTTP() async throws {
+        let text = #"{ "panel": { "token": "\#(adminToken)" }, "accounts": { "chatgpt": {}, "deepseek": "sk-1" } }"#
+        let loaded = try ConfigFile.parse(text, file: "c.jsonc") { _ in nil }
+        let gateway = Gateway(configuration: loaded.gateway, transport: MockUpstream { _ in reply("{}") }.transport)
+        let manager = ConfigManager(path: nil, overrides: ConfigOverrides(), server: loaded.server, gateway: gateway, logger: Logger(label: "test"))
+        let app = Application(router: buildRouter(gateway: gateway, manager: manager), configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+        let headers: HTTPFields = [.authorization: "Bearer \(adminToken)", .contentType: "application/json"]
+        @Sendable func body(_ json: JSONValue) -> ByteBuffer { ByteBuffer(bytes: json.encoded()) }
+        try await app.test(.router) { client in
+            let unauthorized = try await client.execute(
+                uri: "/admin/api/sign-in/start", method: .post, body: body(["provider": "chatgpt", "account": "chatgpt"]),
+            )
+            #expect(unauthorized.status == .unauthorized)
+            // Only accounts that sign in.
+            let keyed = try await client.execute(
+                uri: "/admin/api/sign-in/start", method: .post, headers: headers, body: body(["provider": "deepseek", "account": "deepseek"]),
+            )
+            #expect(keyed.status == .badRequest)
+
+            let started = try await client.execute(
+                uri: "/admin/api/sign-in/start", method: .post, headers: headers, body: body(["provider": "chatgpt", "account": "chatgpt"]),
+            )
+            #expect(started.status == .ok)
+            let id = try #require(json(started.body)["id"]?.stringValue)
+            #expect(json(started.body)["url"]?.stringValue?.hasPrefix(ChatGPTSignIn.authorizeEndpoint) == true)
+            let wrong = try await client.execute(
+                uri: "/admin/api/sign-in/finish", method: .post, headers: headers, body: body(["id": .string(id), "callback": "?state=x&code=y"]),
+            )
+            #expect(wrong.status == .unprocessableContent)
+
+            let status = try await client.execute(uri: "/admin/api/status", method: .get, headers: headers)
+            let account = json(status.body)["accounts"]?.arrayValue?.first { $0["provider"] == "chatgpt" }
+            #expect(account?["sign_in"]?["state"] == "signed out")
+        }
+    }
+}

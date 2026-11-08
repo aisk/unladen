@@ -23,6 +23,8 @@ struct Gateway: Sendable {
     var heldStreams = HeldStreams()
     /// Requests in flight and ended, sessions and usage.
     var activity = Activity()
+    /// The tokens of accounts that sign in.
+    var signIns = SignIns()
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
         self.store = ConfigurationStore(configuration)
