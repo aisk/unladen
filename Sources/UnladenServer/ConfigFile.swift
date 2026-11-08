@@ -59,10 +59,8 @@ enum ConfigLoader {
     }
 
     /// Reads the file at `path` (else the default path, when it exists),
-    /// then applies `overrides` and the environment.
-    ///
-    /// - Parameter explicit: whether `path` was asked for; a missing
-    ///   default file is no error, a missing explicit one is.
+    /// then applies `overrides` and the environment. A missing default
+    /// file is no error; a missing `path` is.
     static func load(
         path: String?, overrides: ConfigOverrides = ConfigOverrides(),
         environment: @escaping (String) -> String? = { ProcessInfo.processInfo.environment[$0] },

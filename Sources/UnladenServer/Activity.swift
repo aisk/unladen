@@ -529,13 +529,13 @@ final class Activity: Sendable {
     }
 
     /// In flight (oldest first), recent (newest first), sessions (latest
-    /// first); `limit` caps the last two.
+    /// first); `limit` caps the recent requests.
     func snapshot(limit: Int = 100) -> Snapshot {
         state.withLockedValue { state in
             Snapshot(
                 inFlight: state.inFlight.values.sorted { $0.id < $1.id },
                 recent: Array(state.recent.reversed().prefix(limit)),
-                sessions: Array(state.sessions.values.sorted { $0.last > $1.last }.prefix(limit)),
+                sessions: state.sessions.values.sorted { $0.last > $1.last },
             )
         }
     }
@@ -547,7 +547,7 @@ final class Activity: Sendable {
         }
     }
 
-    /// Usage over the last `days` days, today included, by `group`.
+    /// Usage over the last `days` days, today included.
     func usage(days: Int, now: Int64 = LocalDay.nowMilliseconds()) -> [UsageBucket.Key: UsageBucket] {
         let first = LocalDay(milliseconds: now - Int64(max(days, 1) - 1) * 86_400_000).key
         return state.withLockedValue { state in state.buckets.filter { $0.key.day >= first } }
