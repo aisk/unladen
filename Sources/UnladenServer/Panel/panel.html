@@ -102,9 +102,22 @@
                       <td>
                         <span class="badge" :class="stateClass(a.state)" x-text="a.state"></span>
                         <span class="text-secondary ms-1" x-show="a.cooling_seconds" x-text="a.cooling_seconds + 's'"></span>
+                        <template x-if="a.sign_in">
+                          <div class="small mt-1">
+                            <span class="badge" :class="a.sign_in.state === 'signed in' ? 'bg-green-lt' : 'bg-red-lt'" x-text="a.sign_in.state"></span>
+                            <span class="text-secondary ms-1" x-text="(a.sign_in.user || '') + (a.sign_in.plan ? ' · ' + a.sign_in.plan : '')"></span>
+                            <div class="text-danger" x-show="a.sign_in.problem" x-text="a.sign_in.problem"></div>
+                          </div>
+                        </template>
                       </td>
                       <td class="text-end">
                         <button class="btn btn-sm" x-show="a.state !== 'ready'" @click="resetKey(a.provider, a.name)">Reset</button>
+                        <template x-if="a.sign_in">
+                          <span>
+                            <button class="btn btn-sm btn-primary" @click="startSignIn(a.provider, a.name)" x-text="a.sign_in.state === 'signed in' ? 'Sign in again' : 'Sign in'"></button>
+                            <button class="btn btn-sm btn-ghost-danger" x-show="a.sign_in.state !== 'signed out'" @click="forgetSignIn(a.provider, a.name)">Forget</button>
+                          </span>
+                        </template>
                       </td>
                     </tr>
                   </template>
@@ -312,10 +325,14 @@
                     <input class="form-control mono" x-model="draft.name" @input="draftChanged()" placeholder="work">
                     <div class="form-hint">Shown in logs and the overview.</div>
                   </div>
-                  <div class="col-md-4">
+                  <div class="col-md-4" x-show="!signsIn(draft.provider)">
                     <label class="form-label">Key</label>
                     <input class="form-control mono" x-model="draft.key" placeholder="sk-… or ${ENV_VAR}" autocomplete="off">
                     <div class="form-hint" x-show="!draft.provider">May stay empty for an address without authentication.</div>
+                  </div>
+                  <div class="col-md-4" x-show="signsIn(draft.provider)">
+                    <label class="form-label">Key</label>
+                    <div class="form-hint">None: after saving, sign in from the Overview. For your own use only: a ChatGPT plan is personal.</div>
                   </div>
                   <template x-if="!draft.provider">
                     <div class="col-12">
@@ -375,13 +392,16 @@
                         <span class="badge bg-secondary-lt ms-1" x-show="a.custom">own address</span>
                       </td>
                       <td>
+                        <template x-if="signsIn(accountProvider(a)) && !a.key">
+                          <span class="text-secondary">signs in (Overview)</span>
+                        </template>
                         <template x-if="isHidden(a.key)">
                           <div class="d-flex align-items-center gap-2">
                             <span class="mono text-secondary" x-text="'•••• ' + hiddenName(a.key)"></span>
                             <button class="btn btn-sm" @click="a.key = ''">Replace</button>
                           </div>
                         </template>
-                        <template x-if="!isHidden(a.key)">
+                        <template x-if="!isHidden(a.key) && !(signsIn(accountProvider(a)) && !a.key)">
                           <input class="form-control form-control-sm mono" x-model="a.key" :placeholder="a.custom ? 'none' : 'sk-… or ${ENV_VAR}'" autocomplete="off">
                         </template>
                         <template x-if="a.custom">
@@ -602,6 +622,26 @@
         </div>
       </div>
     </div>
+
+    <template x-if="signing">
+      <div class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-start justify-content-center p-3" style="background: rgba(0,0,0,.5); z-index: 1050; overflow-y: auto">
+        <div class="card mt-5" style="max-width: 40rem; width: 100%">
+          <div class="card-header"><h3 class="card-title">Sign in <span class="mono" x-text="signing.provider + '/' + signing.account"></span></h3></div>
+          <div class="card-body">
+            <ol class="ps-3">
+              <li class="mb-2">Open <a :href="signing.url" target="_blank" rel="noopener noreferrer">the sign-in page</a> and sign in to ChatGPT.</li>
+              <li class="mb-2">The browser then goes to a <code>127.0.0.1:1455</code> address that may not load. Copy that whole address from the address bar and paste it here:</li>
+            </ol>
+            <input class="form-control mono" x-model="signing.callback" placeholder="http://127.0.0.1:1455/auth/callback?code=…" autocomplete="off" @keydown.enter="signing.callback.trim() && finishSignIn()">
+            <div class="text-danger mt-2" x-text="signing.error"></div>
+          </div>
+          <div class="card-footer d-flex justify-content-end gap-2">
+            <button class="btn" @click="signing = null">Cancel</button>
+            <button class="btn btn-primary" :disabled="!signing.callback.trim() || signing.busy" @click="finishSignIn()">Finish</button>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <datalist id="target-list"><template x-for="t in targetChoices()" :key="t"><option :value="t"></option></template></datalist>
   </div>

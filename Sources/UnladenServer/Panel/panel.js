@@ -6,8 +6,10 @@ const ADVANCED = ['strict', 'keepalive', 'connect_timeout', 'head_timeout', 'idl
 // account of it is added.
 const FAMILIES = {
   anthropic: ['claude-*'], openai: ['gpt-*', 'o3*', 'o4*'], gemini: ['gemini-*'], deepseek: ['deepseek-*'],
-  xai: ['grok-*'], moonshot: ['kimi-*'], mistral: ['mistral-*', 'codestral-*'],
+  xai: ['grok-*'], moonshot: ['kimi-*'], mistral: ['mistral-*', 'codestral-*'], chatgpt: ['gpt-*'],
 };
+// Providers whose accounts sign in instead of holding a key.
+const SIGN_IN = ['chatgpt'];
 let counter = 0;
 
 function panel() {
@@ -46,6 +48,8 @@ function panel() {
     menu: false,
     adding: false,
     draft: null,
+    // The account being signed in: {provider, account, id, url, callback, error, busy}.
+    signing: null,
     jsonText: '',
     jsonError: '',
     activity: null,
@@ -262,6 +266,35 @@ function panel() {
       await this.refreshStatus();
     },
 
+    signsIn(provider) { return SIGN_IN.includes(provider); },
+    async startSignIn(provider, account) {
+      const result = await this.api('POST', 'sign-in/start', { provider, account });
+      if (result.status === 200) this.signing = { provider, account, id: result.json.id, url: result.json.url, callback: '', error: '', busy: false };
+      else if (result.status !== 401) this.say('danger', 'Cannot sign in', result.json.error || 'HTTP ' + result.status);
+    },
+    async finishSignIn() {
+      const s = this.signing;
+      s.busy = true;
+      s.error = '';
+      try {
+        const result = await this.api('POST', 'sign-in/finish', { id: s.id, callback: s.callback.trim() });
+        if (result.status === 200) {
+          this.signing = null;
+          this.say('success', 'Signed in ' + s.provider + '/' + s.account, result.json.user + (result.json.plan ? ' (' + result.json.plan + ')' : ''));
+          await this.refreshStatus();
+        } else if (result.status !== 401) {
+          s.error = result.json.error || 'HTTP ' + result.status;
+        }
+      } finally {
+        s.busy = false;
+      }
+    },
+    async forgetSignIn(provider, account) {
+      if (!confirm('Forget the sign-in of ' + provider + '/' + account + '?')) return;
+      await this.api('POST', 'sign-in/forget', { provider, account });
+      await this.refreshStatus();
+    },
+
     say(kind, title, text) {
       this.messages.push({ id: ++counter, kind, title, text });
       if (kind !== 'danger' && kind !== 'warning') { const id = counter; setTimeout(() => { this.messages = this.messages.filter(m => m.id !== id); }, 5000); }
@@ -318,13 +351,13 @@ function panel() {
       if (/[\/*]/.test(name) || name.startsWith('@')) return 'A name cannot contain / or * or start with @.';
       if (this.model.accounts.some(a => a.name.trim() === name)) return 'Another account has this name.';
       if (d.provider && name !== d.provider && this.presets.includes(name)) return name + ' is a provider: give this account another name.';
-      if (d.provider && !d.key.trim()) return 'Enter the key.';
+      if (d.provider && !this.signsIn(d.provider) && !d.key.trim()) return 'Enter the key.';
       if (!d.provider && !/^https?:\/\//.test(d.url.trim())) return 'Enter the endpoint address (http:// or https://).';
       return '';
     },
     addAccount() {
       const d = this.draft, name = d.name.trim();
-      const account = { uid: ++counter, name, provider: '', key: d.key.trim(), enabled: true, custom: false, preset: '', endpoints: [], headers: [], rest: {} };
+      const account = { uid: ++counter, name, provider: '', key: this.signsIn(d.provider) ? '' : d.key.trim(), enabled: true, custom: false, preset: '', endpoints: [], headers: [], rest: {} };
       if (d.provider) {
         account.provider = d.provider === name ? '' : d.provider;
       } else {
