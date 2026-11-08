@@ -156,9 +156,16 @@ struct Serve: AsyncParsableCommand {
         let client = HTTPClient(eventLoopGroup: HTTPClient.defaultEventLoopGroup, configuration: clientConfiguration)
 
         let gateway = Gateway(configuration: loaded.gateway, transport: AsyncHTTPClientTransport(client: client))
+        var logger = Logger(label: "unladen")
+        logger.logLevel = .info
+        // Reloads (SIGHUP, the control panel) and the panel's saves.
+        let manager = ConfigManager(
+            path: loaded.path ?? options.config, overrides: options.overrides, server: server, gateway: gateway, logger: logger,
+        )
         let app = Application(
-            router: buildRouter(gateway: gateway),
+            router: buildRouter(gateway: gateway, manager: manager),
             configuration: .init(address: .hostname(server.host, port: server.port), serverName: "unladen"),
+            logger: logger,
         )
         if let warning = UnladenCommand.exposureWarning(host: server.host, hasClientKeys: !loaded.gateway.clientKeys.isEmpty) {
             UnladenCommand.printToStandardError(warning)
@@ -168,10 +175,9 @@ struct Serve: AsyncParsableCommand {
         for line in Summary.lines(loaded.gateway) { app.logger.info("\(line)") }
 
         // SIGHUP: read the configuration again and install it.
-        let reloader = Reloader(path: loaded.path ?? options.config, overrides: options.overrides, server: server, gateway: gateway, logger: app.logger)
         signal(SIGHUP, SIG_IGN)
         let hangup = DispatchSource.makeSignalSource(signal: SIGHUP, queue: .global())
-        hangup.setEventHandler { reloader.reload() }
+        hangup.setEventHandler { manager.reload() }
         hangup.resume()
         defer { hangup.cancel() }
 
@@ -182,35 +188,6 @@ struct Serve: AsyncParsableCommand {
             throw error
         }
         try await client.shutdown()
-    }
-}
-
-/// Reloads the configuration on request (SIGHUP; later, the control
-/// panel). A configuration that fails to load leaves the current one in
-/// force.
-struct Reloader: Sendable {
-    var path: String?
-    var overrides: ConfigOverrides
-    /// What the listener and the HTTP client were started with.
-    var server: ServerSettings
-    var gateway: Gateway
-    var logger: Logger
-
-    func reload() {
-        let loaded: LoadedConfiguration
-        do {
-            loaded = try ConfigLoader.load(path: path, overrides: overrides)
-        } catch {
-            logger.error("configuration not reloaded, the current one stays: \(error)")
-            return
-        }
-        gateway.replace(loaded.gateway)
-        logger.info("configuration reloaded from \(loaded.path ?? "flags and environment")")
-        if loaded.server != server {
-            logger.warning("server.listen and server.connect_timeout take effect after a restart")
-        }
-        for warning in loaded.warnings { logger.warning("\(warning)") }
-        for line in Summary.lines(loaded.gateway) { logger.info("\(line)") }
     }
 }
 
@@ -244,6 +221,7 @@ enum Summary {
             "\(route.name) → \(route.targets.map(\.model).joined(separator: ", "))"
         }.joined(separator: "; ")))
         lines.append("client keys: " + (configuration.clientKeys.isEmpty ? "none" : configuration.clientKeys.map(\.name).joined(separator: ", ")))
+        lines.append("control panel: " + (configuration.adminToken == nil ? "off (set server.admin.token)" : "/admin"))
         return lines
     }
 }

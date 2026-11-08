@@ -26,8 +26,10 @@ struct GatewayRequestContext: RequestContext {
 /// - `GET /v1/models`: the configured models, in a shape OpenAI and
 ///   Anthropic clients both read;
 /// - `GET /health`: `ok`, without authentication.
-func buildRouter(gateway: Gateway) -> Router<GatewayRequestContext> {
+/// - `/admin` and `/admin/api/*` with a `manager`: the control panel.
+func buildRouter(gateway: Gateway, manager: ConfigManager? = nil) -> Router<GatewayRequestContext> {
     let router = Router(context: GatewayRequestContext.self)
+    if let manager { addAdminRoutes(to: router, manager: manager) }
 
     router.get("/health") { _, _ in
         Response(status: .ok, headers: [.contentType: "text/plain"], body: ResponseBody(byteBuffer: ByteBuffer(string: "ok\n")))

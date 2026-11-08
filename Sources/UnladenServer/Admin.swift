@@ -1,0 +1,303 @@
+// The control panel's backend: the configuration file read and saved as a
+// document, reloads (the panel's and SIGHUP's), and the status of key pools.
+// See docs/server-config-design.md ("控制面板").
+
+import Foundation
+import HTTPTypes
+import Hummingbird
+import Logging
+import NIOConcurrencyHelpers
+import NIOCore
+@_spi(Wire) import UnladenCore
+
+#if canImport(Glibc)
+import Glibc
+private let systemWrite = Glibc.write
+#elseif canImport(Darwin)
+import Darwin
+private let systemWrite = Darwin.write
+#endif
+
+/// Loads, reloads and saves the configuration. Saves and reloads run one
+/// at a time; a configuration that fails to load leaves the current one in
+/// force.
+final class ConfigManager: Sendable {
+    /// The file reloads read and saves write; `nil`: flags and environment
+    /// only, nothing to save.
+    let path: String?
+    let overrides: ConfigOverrides
+    /// What the listener and the HTTP client were started with.
+    let server: ServerSettings
+    let gateway: Gateway
+    let logger: Logger
+    let environment: @Sendable (String) -> String?
+    private let lock = NIOLock()
+
+    init(
+        path: String?, overrides: ConfigOverrides, server: ServerSettings, gateway: Gateway, logger: Logger,
+        environment: @escaping @Sendable (String) -> String? = { ProcessInfo.processInfo.environment[$0] },
+    ) {
+        self.path = path
+        self.overrides = overrides
+        self.server = server
+        self.gateway = gateway
+        self.logger = logger
+        self.environment = environment
+    }
+
+    /// Reads the file again and serves it.
+    @discardableResult
+    func reload() -> Bool {
+        lock.withLock { reloadLocked() }
+    }
+
+    private func reloadLocked() -> Bool {
+        let loaded: LoadedConfiguration
+        do {
+            loaded = try ConfigLoader.load(path: path, overrides: overrides, environment: environment)
+        } catch {
+            logger.error("configuration not reloaded, the current one stays: \(error)")
+            return false
+        }
+        gateway.replace(loaded.gateway)
+        logger.info("configuration reloaded from \(loaded.path ?? "flags and environment")")
+        if loaded.server != server {
+            logger.warning("server.listen and server.connect_timeout take effect after a restart")
+        }
+        for warning in loaded.warnings { logger.warning("\(warning)") }
+        for line in Summary.lines(loaded.gateway) { logger.info("\(line)") }
+        return true
+    }
+
+    /// The file as the panel edits it.
+    func document() throws(ConfigError) -> ConfigDocument.Snapshot {
+        try ConfigDocument.read(try readFile(), file: path ?? "config")
+    }
+
+    enum SaveOutcome: Sendable, Equatable {
+        case saved(hash: String, warnings: [String])
+        /// The file changed since the panel read it.
+        case conflict(hash: String)
+        case invalid(ConfigError)
+    }
+
+    /// Writes `document` over the file, when the file is still the one
+    /// whose hash is `baseHash` and the result loads; then serves it.
+    func save(_ document: JSONValue, baseHash: String) -> SaveOutcome {
+        lock.withLock {
+            guard let path else {
+                return .invalid(ConfigError(message: "the gateway runs without a configuration file; start it with --config to save"))
+            }
+            do throws(ConfigError) {
+                let current = try ConfigDocument.read(try readFile(), file: path)
+                guard current.hash == baseHash else { return .conflict(hash: current.hash) }
+                let text = ConfigDocument.header + (try ConfigDocument.yaml(from: document, secrets: current.secrets))
+                let loaded = try ConfigFile.parse(text, file: path, overrides: overrides, environment: environment)
+                guard loaded.gateway.adminToken != nil else {
+                    throw ConfigError(message: "server.admin.token is needed: without it the panel would lock itself out")
+                }
+                try Self.write(text, to: path)
+                logger.info("configuration saved from the control panel")
+                _ = reloadLocked()
+                return .saved(hash: ConfigDocument.hash(text), warnings: loaded.warnings)
+            } catch {
+                return .invalid(error)
+            }
+        }
+    }
+
+    private func readFile() throws(ConfigError) -> String {
+        guard let path, FileManager.default.fileExists(atPath: path) else { return "" }
+        guard let data = FileManager.default.contents(atPath: path) else {
+            throw ConfigError(message: "cannot read the configuration file \(path)")
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Replaces the file in one step (a new file renamed over it, through
+    /// a symlink to its target), keeping its permissions; 0600 for a new one.
+    static func write(_ text: String, to path: String) throws(ConfigError) {
+        let target = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        let attributes = try? FileManager.default.attributesOfItem(atPath: target.path)
+        let permissions = (attributes?[.posixPermissions] as? Int).map { mode_t($0 & 0o777) } ?? 0o600
+        let temporary = target.deletingLastPathComponent()
+            .appendingPathComponent(".\(target.lastPathComponent).\(getpid()).saving").path
+        let descriptor = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+        guard descriptor >= 0 else {
+            throw ConfigError(message: "cannot write \(temporary): \(String(cString: strerror(errno)))")
+        }
+        let bytes = Array(text.utf8)
+        var written = 0
+        while written < bytes.count {
+            let count = bytes[written...].withUnsafeBytes { systemWrite(descriptor, $0.baseAddress, $0.count) }
+            if count <= 0 { break }
+            written += count
+        }
+        let complete = written == bytes.count && fchmod(descriptor, permissions) == 0 && fsync(descriptor) == 0
+        close(descriptor)
+        guard complete, rename(temporary, target.path) == 0 else {
+            let reason = String(cString: strerror(errno))
+            unlink(temporary)
+            throw ConfigError(message: "cannot write \(target.path): \(reason)")
+        }
+    }
+}
+
+// MARK: - Status
+
+enum AdminStatus {
+    /// Key pools with their cooldowns, routes and client keys, as the
+    /// panel shows them; no secret is included.
+    static func json(gateway: Gateway, path: String?) -> JSONValue {
+        let configuration = gateway.configuration
+        let health = gateway.health.snapshot()
+        func remaining(_ scope: HealthScope) -> JSONValue {
+            guard let until = health.cooldowns[scope], until > health.now else { return .null }
+            let seconds = (until - health.now).components.seconds + 1
+            return .number(JSONNumber(seconds))
+        }
+
+        var providers: [JSONValue] = []
+        for id in configuration.registry.providers.keys.sorted() {
+            guard let provider = configuration.registry[id] else { continue }
+            let pool = configuration.keyPools[id]
+            let keys: [JSONValue] = (pool?.keys ?? []).map { key in
+                let scope = HealthScope.key(provider: id, keyName: key.name)
+                let state = health.disabled.contains(scope) ? "disabled" : (health.isCooling(scope) ? "cooling" : "ready")
+                return ["name": .string(key.name), "state": .string(state), "cooling_seconds": remaining(scope)]
+            }
+            let endpoints: [JSONValue] = provider.endpoints.map { endpoint in
+                let scope = HealthScope.endpoint("\(id) \(endpoint.apiProtocol.rawValue) \(endpoint.baseURL)")
+                return ["protocol": .string(endpoint.apiProtocol.rawValue), "base_url": .string("\(endpoint.baseURL)"), "cooling_seconds": remaining(scope)]
+            }
+            var models: [JSONValue] = []
+            for (scope, _) in health.cooldowns {
+                guard case .model(let endpoint, let model) = scope, endpoint.hasPrefix(id + " ") else { continue }
+                models.append(["model": .string(model), "endpoint": .string(String(endpoint.dropFirst(id.count + 1))), "cooling_seconds": remaining(scope)])
+            }
+            let configured = pool != nil || ProviderRegistry.builtIn[id] != provider
+            providers.append([
+                "id": .string(id),
+                "configured": .bool(configured),
+                "strategy": pool.map { .string($0.strategy.rawValue) } ?? .null,
+                "keys": .array(keys),
+                "endpoints": .array(endpoints),
+                "cooling_models": .array(models),
+            ])
+        }
+        let routes: [JSONValue] = configuration.routes.all.map { route in
+            ["name": .string(route.name), "targets": .array(route.targets.map { .string($0.model) })]
+        }
+        let clients: [JSONValue] = configuration.clientKeys.map { key in
+            [
+                "name": .string(key.name),
+                "routes": key.routes.map { .array($0.map(JSONValue.string)) } ?? .null,
+                "passthrough": .array(key.passthrough.map(JSONValue.string)),
+            ]
+        }
+        return [
+            "config_path": path.map(JSONValue.string) ?? .null,
+            "providers": .array(providers),
+            "presets": .array(ProviderRegistry.builtIn.providers.keys.sorted().map(JSONValue.string)),
+            "routes": .array(routes),
+            "client_keys": .array(clients),
+        ]
+    }
+}
+
+// MARK: - Routes
+
+/// `/admin` (the panel) and `/admin/api/*`, open only with
+/// `server.admin.token` set; 404 otherwise, as though they did not exist.
+func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigManager) {
+    let gateway = manager.gateway
+
+    @Sendable func page(_ request: Request) -> Response {
+        guard gateway.configuration.adminToken != nil else { return adminError(404, "not found") }
+        var headers: HTTPFields = [.contentType: "text/html; charset=utf-8", .cacheControl: "no-store"]
+        headers[HTTPField.Name("x-frame-options")!] = "DENY"
+        headers[HTTPField.Name("referrer-policy")!] = "no-referrer"
+        return Response(status: .ok, headers: headers, body: ResponseBody(byteBuffer: ByteBuffer(string: AdminPage.html)))
+    }
+    router.get("/admin") { request, _ in page(request) }
+
+    router.get("/admin/api/status") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        return adminJSON(200, AdminStatus.json(gateway: gateway, path: manager.path))
+    }
+
+    router.get("/admin/api/config") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        do throws(ConfigError) {
+            let snapshot = try manager.document()
+            return adminJSON(200, [
+                "path": manager.path.map(JSONValue.string) ?? .null,
+                "hash": .string(snapshot.hash),
+                "document": snapshot.document,
+            ])
+        } catch {
+            return adminError(500, error.description)
+        }
+    }
+
+    router.put("/admin/api/config") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        var request = request
+        guard let body = try? await request.collectBody(upTo: 4 << 20),
+              let json = try? JSONValue(parsing: Array(body.readableBytesView)),
+              let document = json["document"], document.objectValue != nil,
+              let hash = json["hash"]?.stringValue
+        else { return adminError(400, "expected {\"document\": {…}, \"hash\": \"…\"}") }
+        switch manager.save(document, baseHash: hash) {
+        case .saved(let hash, let warnings):
+            return adminJSON(200, ["hash": .string(hash), "warnings": .array(warnings.map(JSONValue.string))])
+        case .conflict(let hash):
+            return adminJSON(409, ["error": "the file changed since it was loaded; reload it and redo the change", "hash": .string(hash)])
+        case .invalid(let error):
+            return adminJSON(422, ["error": .string(error.message), "location": error.location.map(JSONValue.string) ?? .null])
+        }
+    }
+
+    router.post("/admin/api/reload") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        return manager.reload() ? adminJSON(200, ["reloaded": true]) : adminError(422, "the file does not load; see the log")
+    }
+
+    /// Clears what is recorded against one key: its cooldown, its 401
+    /// count, and its being disabled.
+    router.post("/admin/api/keys/reset") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        var request = request
+        guard let body = try? await request.collectBody(upTo: 64 << 10),
+              let json = try? JSONValue(parsing: Array(body.readableBytesView)),
+              let provider = json["provider"]?.stringValue, let key = json["key"]?.stringValue
+        else { return adminError(400, "expected {\"provider\": \"…\", \"key\": \"…\"}") }
+        let scope = HealthScope.key(provider: provider, keyName: key)
+        gateway.health.forget { $0 == scope }
+        return adminJSON(200, ["reset": true])
+    }
+}
+
+/// `nil` when the request carries the admin token.
+private func adminDenied(_ request: Request, gateway: Gateway) -> Response? {
+    guard let token = gateway.configuration.adminToken else { return adminError(404, "not found") }
+    var presented: String?
+    if let authorization = request.headers[.authorization] {
+        let parts = authorization.split(separator: " ", maxSplits: 1)
+        if parts.count == 2, parts[0].lowercased() == "bearer" { presented = parts[1].trimmingBlanks() }
+    }
+    guard let presented, constantTimeEqual(presented, token) else { return adminError(401, "invalid or missing admin token") }
+    return nil
+}
+
+private func adminJSON(_ status: Int, _ json: JSONValue) -> Response {
+    Response(
+        status: HTTPResponse.Status(code: status),
+        headers: [.contentType: "application/json", .cacheControl: "no-store"],
+        body: ResponseBody(byteBuffer: ByteBuffer(bytes: json.encoded())),
+    )
+}
+
+private func adminError(_ status: Int, _ message: String) -> Response {
+    adminJSON(status, ["error": .string(message)])
+}

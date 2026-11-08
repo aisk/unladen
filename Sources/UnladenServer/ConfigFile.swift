@@ -270,7 +270,7 @@ private struct Field {
     /// A duration; `off` is `nil` when `allowingOff`.
     func duration(allowingOff: Bool) throws(ConfigError) -> Duration? {
         let text = try string().trimmingBlanks()
-        if allowingOff, text == "off" || node.scalar?.tag == Tag(.bool) && node.bool == false { return nil }
+        if allowingOff, text == "off" || node.scalar?.style == .plain && node.bool == false { return nil }
         let units: [(String, Int64)] = [("ms", 1), ("s", 1000), ("m", 60_000), ("h", 3_600_000)]
         if let seconds = Int64(text), seconds > 0 { return .seconds(seconds) }
         for (unit, milliseconds) in units where text.hasSuffix(unit) {
@@ -331,9 +331,9 @@ extension ConfigFile {
             return value
         }
 
-        func server(_ field: Field, into loaded: inout LoadedConfiguration) throws(ConfigError) {
+        mutating func server(_ field: Field, into loaded: inout LoadedConfiguration) throws(ConfigError) {
             for (name, value) in try field.mapping(
-                allowed: ["listen", "strict", "keepalive", "connect_timeout", "max_request_bytes", "head_timeout", "idle_timeout"],
+                allowed: ["listen", "strict", "keepalive", "connect_timeout", "max_request_bytes", "head_timeout", "idle_timeout", "admin"],
             ) {
                 switch name {
                 case "listen":
@@ -352,6 +352,12 @@ extension ConfigFile {
                 case "max_request_bytes": loaded.gateway.maxRequestBytes = try value.byteCount()
                 case "head_timeout": loaded.gateway.headTimeout = try value.duration(allowingOff: true)
                 case "idle_timeout": loaded.gateway.idleTimeout = try value.duration(allowingOff: true)
+                case "admin":
+                    for (key, setting) in try value.mapping(allowed: ["token"]) where key == "token" {
+                        let token = try secret(setting)
+                        guard token.count >= 16 else { throw setting.error("is too short: use at least 16 characters") }
+                        loaded.gateway.adminToken = token
+                    }
                 default: break
                 }
             }

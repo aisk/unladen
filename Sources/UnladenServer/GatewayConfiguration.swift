@@ -54,6 +54,9 @@ struct GatewayConfiguration: Sendable {
     var routes = RouteTable()
     /// Keys clients must present; none: clients are not authenticated.
     var clientKeys: [ClientKey] = []
+    /// Opens the control panel and its API (`server.admin.token`); without
+    /// it they answer 404.
+    var adminToken: String?
 }
 
 // MARK: - Key pools
