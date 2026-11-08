@@ -508,7 +508,9 @@ extension ConfigFile {
                         parts.endpoints = try endpoints(item)
                         parts.given = true
                     case "headers":
-                        for (header, text) in try item.mapping() { parts.headers[header.lowercased()] = try text.string() }
+                        for (header, text) in try item.mapping() {
+                            parts.headers[header.lowercased()] = ConfigDocument.isCredentialHeader(header) ? try secret(text) : try text.string()
+                        }
                         parts.given = true
                     default: break
                     }

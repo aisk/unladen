@@ -40,13 +40,22 @@ enum ConfigDocument {
     }
 
     /// Paths whose values are secrets: an account given as its key alone,
-    /// accounts' and clients' `key`, and `panel.token`.
+    /// accounts' and clients' `key`, `panel.token`, and accounts' headers
+    /// that carry credentials.
     static func isSecretPath(_ path: [String]) -> Bool {
         switch path.count {
         case 2: path[0] == "accounts" || path == ["panel", "token"]
         case 3: (path[0] == "accounts" || path[0] == "clients") && path[2] == "key"
+        case 4: path[0] == "accounts" && path[2] == "headers" && isCredentialHeader(path[3])
         default: false
         }
+    }
+
+    /// `Authorization`, `Cookie`, and names that speak of a key, token,
+    /// secret or auth (`X-Api-Key`, `X-Auth-Token`).
+    static func isCredentialHeader(_ name: String) -> Bool {
+        let name = name.lowercased()
+        return name == "cookie" || ["auth", "key", "token", "secret"].contains { name.contains($0) }
     }
 
     // MARK: Reading

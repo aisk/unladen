@@ -67,6 +67,17 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         #expect(!text.contains("sk-from-env"))
     }
 
+    @Test func credentialHeadersAreHidden() throws {
+        let text = #"{ "accounts": { "relay": { "endpoints": { "chat": "https://r.example/v1" }, "key": "${R}", "headers": { "X-Api-Key": "hk-secret", "x-team": "infra" } } } }"#
+        let snapshot = try ConfigDocument.read(text)
+        let headers = snapshot.document["accounts"]?["relay"]?["headers"]
+        #expect(headers?["X-Api-Key"]?.stringValue.map(ConfigDocument.isPlaceholder) == true)
+        #expect(headers?["x-team"] == "infra")
+        let written = try ConfigDocument.text(from: snapshot.document, secrets: snapshot.secrets)
+        #expect(written.contains("hk-secret"))
+        #expect(try ConfigFile.parse(text) { $0 == "R" ? "r" : nil }.hasLiteralSecrets)
+    }
+
     @Test func writtenTextIsIndentedJSON() throws {
         let document: JSONValue = [
             "listen": "127.0.0.1:4141",
