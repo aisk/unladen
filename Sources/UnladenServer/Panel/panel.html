@@ -41,7 +41,7 @@
         <ul class="navbar-nav me-auto">
           <template x-for="t in tabs" :key="t.id">
             <li class="nav-item" :class="tab === t.id && 'active'">
-              <a class="nav-link" href="#" @click.prevent="tab = t.id">
+              <a class="nav-link" :href="'#' + t.id" @click.prevent="tab = t.id; history.pushState(null, '', '#' + t.id)">
                 <i class="ti me-1" :class="t.icon"></i><span x-text="t.label"></span>
               </a>
             </li>
@@ -238,8 +238,13 @@
 
           <!-- Usage -->
           <div x-show="tab === 'usage'">
-            <div class="d-flex mb-3 align-items-center">
+            <div class="d-flex mb-3 align-items-center flex-wrap gap-2">
               <div class="text-secondary me-auto">Tokens as the upstreams reported them, by local day.</div>
+              <div class="btn-group">
+                <template x-for="g in usageGroups">
+                  <button class="btn" :class="usageBy === g.id && 'active'" @click="usageBy = g.id" x-text="'By ' + g.label.toLowerCase()"></button>
+                </template>
+              </div>
               <div class="btn-group">
                 <template x-for="d in [1, 7, 30]">
                   <button class="btn" :class="usageDays === d && 'active'" @click="usageDays = d; refreshUsage()" x-text="d === 1 ? 'Today' : d + ' days'"></button>
@@ -256,14 +261,12 @@
                 </div>
               </template>
             </div>
-            <template x-for="g in [['accounts', 'By account'], ['clients', 'By client'], ['programs', 'By program'], ['models', 'By model']]">
               <div class="card mb-3">
-                <div class="card-header"><h3 class="card-title" x-text="g[1]"></h3></div>
                 <div class="table-responsive">
                 <table class="table card-table table-sm">
-                  <thead><tr><th>Name</th><th class="text-end">Requests</th><th class="text-end">Failed</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache read</th><th class="text-end">Cache write</th><th class="text-end">Cache hit</th></tr></thead>
+                  <thead><tr><th x-text="usageGroups.find(g => g.id === usageBy).label"></th><th class="text-end">Requests</th><th class="text-end">Failed</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache read</th><th class="text-end">Cache write</th><th class="text-end">Cache hit</th></tr></thead>
                   <tbody>
-                    <template x-for="row in usage?.[g[0]] || []" :key="row.name">
+                    <template x-for="row in usage?.[usageBy] || []" :key="row.name">
                       <tr>
                         <td class="mono" x-text="row.name"></td>
                         <td class="text-end" x-text="row.requests"></td>
@@ -275,12 +278,11 @@
                         <td class="text-end" x-text="cacheShare(row.tokens)"></td>
                       </tr>
                     </template>
-                    <tr x-show="!(usage?.[g[0]] || []).length"><td colspan="8" class="text-secondary">No request in this period.</td></tr>
+                    <tr x-show="!(usage?.[usageBy] || []).length"><td colspan="8" class="text-secondary">No request in this period.</td></tr>
                   </tbody>
                 </table>
                 </div>
               </div>
-            </template>
           </div>
 
           <!-- Accounts -->

@@ -54,9 +54,21 @@ function panel() {
     expanded: {},
     usage: null,
     usageDays: 1,
+    usageBy: 'accounts',
+    usageGroups: [
+      { id: 'accounts', label: 'Account' }, { id: 'clients', label: 'Client' },
+      { id: 'programs', label: 'Program' }, { id: 'models', label: 'Model' },
+    ],
 
     async start() {
+      // The page's state lives in the URL's fragment, so a reload or a
+      // shared link opens the same view: #usage?days=7&by=models.
+      this.readHash();
+      window.addEventListener('hashchange', () => this.readHash());
+      for (const name of ['tab', 'usageDays', 'usageBy', 'session']) this.$watch(name, () => this.writeHash());
       if (this.token) await this.load();
+      if (this.tab === 'activity') this.refreshActivity();
+      if (this.tab === 'usage') this.refreshUsage();
       setInterval(() => { if (this.token && this.tab === 'overview') this.refreshStatus(); }, 5000);
       setInterval(() => { if (this.token && this.tab === 'activity') this.refreshActivity(); }, 2000);
       setInterval(() => { if (this.token && this.tab === 'usage') this.refreshUsage(); }, 10000);
@@ -64,6 +76,36 @@ function panel() {
         if (tab === 'activity') this.refreshActivity();
         if (tab === 'usage') this.refreshUsage();
       });
+    },
+
+    readHash() {
+      const fragment = location.hash.slice(1);
+      const mark = fragment.indexOf('?');
+      const name = decodeURIComponent(mark < 0 ? fragment : fragment.slice(0, mark));
+      const params = new URLSearchParams(mark < 0 ? '' : fragment.slice(mark + 1));
+      this.tab = this.tabs.some(t => t.id === name) ? name : 'overview';
+      const days = Number(params.get('days'));
+      if ([1, 7, 30].includes(days) && days !== this.usageDays) { this.usageDays = days; if (this.model) this.refreshUsage(); }
+      const by = params.get('by');
+      if (this.usageGroups.some(g => g.id === by)) this.usageBy = by;
+      const session = params.get('session');
+      if (session !== (this.session?.id ?? null)) {
+        this.session = session ? { id: session } : null;
+        this.sessionRequests = [];
+        if (this.model && this.tab === 'activity') this.refreshActivity();
+      }
+    },
+
+    writeHash() {
+      const params = new URLSearchParams();
+      if (this.tab === 'usage') {
+        if (this.usageDays !== 1) params.set('days', this.usageDays);
+        if (this.usageBy !== 'accounts') params.set('by', this.usageBy);
+      }
+      if (this.tab === 'activity' && this.session) params.set('session', this.session.id);
+      const query = params.toString();
+      const hash = '#' + this.tab + (query ? '?' + query : '');
+      if (location.hash !== hash) history.replaceState(null, '', hash);
     },
 
     async refreshActivity() {
