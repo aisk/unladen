@@ -50,6 +50,12 @@ public enum ProfileTransform: String, Hashable, Sendable, CaseIterable {
     /// id; its own reply ids are valid everywhere, so replies need no
     /// mapping back.
     case mistralToolIDs
+    /// Fits a request to what OpenAI's API takes with a ChatGPT sign-in's
+    /// token ("Sign in with ChatGPT"): not stored, no output limit, none of
+    /// the Responses fields it refuses, `system` messages as `developer`,
+    /// no hosted tools, and a `prompt_cache_key` naming the conversation
+    /// when the client gave none. Responses targets only.
+    case chatgptSubscription
 }
 
 /// What a transform needs to know about its target.
@@ -108,6 +114,9 @@ extension ProfileTransform {
             WireTransforms.dropUnsupportedParams(&request, profile: context.profile, warnings: &outcome.warnings)
         case .mistralToolIDs:
             WireTransforms.mistralToolIDs(&request)
+        case .chatgptSubscription:
+            guard context.target == .responses else { return }
+            WireTransforms.chatgptSubscription(&request, warnings: &outcome.warnings)
         }
     }
 

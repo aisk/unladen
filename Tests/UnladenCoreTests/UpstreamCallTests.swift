@@ -369,3 +369,38 @@ private func streamedText(_ events: [WireEvent]) -> String {
         #expect(!received.contains { if case .finish = $0 { true } else { false } })
     }
 }
+
+@Suite struct ChatGPTSubscriptionTests {
+    @Test func aRequestIsFittedToWhatASignInTakes() throws {
+        let body = #"""
+        {"model":"gpt-6.1-sol","stream":false,"temperature":0.3,"max_output_tokens":500,"store":true,
+         "metadata":{"a":"b"},"previous_response_id":"resp_1","truncation":"auto",
+         "instructions":"Be brief.",
+         "input":[{"role":"system","content":"Answer in English."},{"role":"user","content":"Hi"}],
+         "tools":[{"type":"function","name":"look","parameters":{"type":"object"}},{"type":"code_interpreter","container":{"type":"auto"}}]}
+        """#
+        let request = try ResponsesCodec.parseRequest(Array(body.utf8)).value
+        let target = try ProviderRegistry.builtIn.resolve("chatgpt/gpt-6.1-sol")
+        let prepared = try UpstreamCall(target: target, apiKey: "token", transport: transport(Recorder(), body: [])).prepare(request, stream: false)
+        let sent = try JSONValue(parsing: prepared.body)
+        #expect(prepared.streams)
+        #expect(sent["stream"] == true)
+        #expect(sent["store"] == false)
+        for field in ["temperature", "max_output_tokens", "metadata", "previous_response_id", "truncation"] {
+            #expect(sent[field] == nil, "\(field)")
+        }
+        #expect(sent["instructions"] == "Be brief.")
+        #expect(sent["input"]?[0]?["role"] == "developer")
+        #expect(sent["tools"]?.arrayValue?.compactMap { $0["type"]?.stringValue } == ["function"])
+        #expect(sent["prompt_cache_key"]?.stringValue?.hasPrefix("unladen-") == true)
+        #expect(prepared.warnings.contains { $0.path == "max_output_tokens" })
+    }
+
+    @Test func theClientsOwnCacheKeyIsKept() throws {
+        let body = #"{"model":"gpt-6.1-sol","prompt_cache_key":"mine","input":"Hi"}"#
+        let request = try ResponsesCodec.parseRequest(Array(body.utf8)).value
+        let target = try ProviderRegistry.builtIn.resolve("chatgpt/gpt-6.1-sol")
+        let prepared = try UpstreamCall(target: target, apiKey: "token", transport: transport(Recorder(), body: [])).prepare(request, stream: true)
+        #expect(try JSONValue(parsing: prepared.body)["prompt_cache_key"] == "mine")
+    }
+}

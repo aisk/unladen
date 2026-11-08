@@ -137,20 +137,7 @@ struct RequestOrigin: Sendable, Hashable {
 
     /// `h-` and a hash of the instructions and the first user message.
     static func openingHash(_ request: WireRequest) -> String? {
-        guard let first = request.messages.first(where: { $0.role == .user }) else { return nil }
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        func add(_ text: String) {
-            for byte in text.utf8.prefix(16 << 10) {
-                hash ^= UInt64(byte)
-                hash = hash &* 0x0000_0100_0000_01b3
-            }
-            hash ^= 0xff
-            hash = hash &* 0x0000_0100_0000_01b3
-        }
-        for part in request.instructions ?? [] { if case .text(let text) = part { add(text.text) } }
-        for part in first.parts { if case .text(let text) = part { add(text.text) } }
-        let hex = String(hash, radix: 16)
-        return "h-" + String(repeating: "0", count: 16 - hex.count) + hex
+        request.openingFingerprint.map { "h-" + $0 }
     }
 }
 

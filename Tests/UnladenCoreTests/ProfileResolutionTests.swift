@@ -85,7 +85,7 @@ import Testing
 
     @Test func presetsAreWellFormed() throws {
         let ids = Set(Presets.all.map(\.id))
-        #expect(ids == ["openai", "anthropic", "gemini", "deepseek", "moonshot", "openrouter", "groq", "mistral", "xai", "together", "ollama"])
+        #expect(ids == ["openai", "chatgpt", "anthropic", "gemini", "deepseek", "moonshot", "openrouter", "groq", "mistral", "xai", "together", "ollama"])
         for provider in Presets.all {
             #expect(!provider.endpoints.isEmpty)
             for endpoint in provider.endpoints {

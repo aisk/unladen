@@ -5,7 +5,7 @@
 /// rules or providers on a ``ProviderRegistry`` copy to extend or override.
 public enum Presets {
     public static var all: [Provider] {
-        [openAI, anthropic, gemini, deepSeek, moonshot, openRouter, groq, mistral, xAI, together, ollama]
+        [openAI, chatGPT, anthropic, gemini, deepSeek, moonshot, openRouter, groq, mistral, xAI, together, ollama]
     }
 
     // MARK: - Shared profiles
@@ -137,6 +137,21 @@ public enum Presets {
             Endpoint(system: "openai", apiProtocol: .chatCompletions, baseURL: "https://api.openai.com/v1",
                      forwardedHeaders: ["openai-organization", "openai-project"],
                      defaults: Profile(maxTokensField: .maxCompletionTokens, transforms: base)),
+        ],
+        models: openAIRules(prefix: ""),
+    ))
+
+    /// A ChatGPT plan used through OpenAI's API, as OpenAI's "Sign in with
+    /// ChatGPT" lets an app on the user's own machine: no API key, but the
+    /// signed-in account's access token. Streamed, and fitted by
+    /// ``ProfileTransform/chatgptSubscription``; the plan's usage limit is
+    /// shared with ChatGPT itself.
+    public static let chatGPT = declaringProtocolGaps(Provider(
+        id: "chatgpt",
+        endpoints: [
+            Endpoint(system: "openai", apiProtocol: .responses, baseURL: "https://api.openai.com/v1",
+                     defaults: Profile(unsupportedParameters: [.temperature, .topP, .user], streaming: .always,
+                                       transforms: base + [.chatgptSubscription])),
         ],
         models: openAIRules(prefix: ""),
     ))
