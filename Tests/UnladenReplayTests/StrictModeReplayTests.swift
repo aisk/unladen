@@ -20,7 +20,7 @@ import Testing
         let recording = Recording.named(upstream)
         let target = try #require(recording.target)
         let replay = ReplayTransport([recording])
-        var gateway = replayGateway(defaultModel: target, registry: registry(target, speaking: recording.wire), transport: replay)
+        let gateway = replayGateway(defaultModel: target, registry: registry(target, speaking: recording.wire), transport: replay)
         gateway.configuration.strict = true
         let request = Recording.named(client)
         let response = try await Application(router: buildRouter(gateway: gateway)).test(.router) { http in

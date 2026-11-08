@@ -108,7 +108,7 @@ private func message(_ response: TestResponse) -> String {
     /// Anthropic `budget_tokens` to an effort-only model over Chat.
     @Test func thinkingBudgetToGPT5OverChatPassesStrict() async throws {
         let upstream = MockUpstream { _ in reply(Self.chatReply) }
-        var gateway = makeGateway(upstream, model: "openai/gpt-5", strict: true)
+        let gateway = makeGateway(upstream, model: "openai/gpt-5", strict: true)
         var registry = gateway.configuration.registry
         var openAI = try #require(registry["openai"])
         openAI.endpoints = openAI.endpoints.filter { $0.apiProtocol == .chatCompletions }

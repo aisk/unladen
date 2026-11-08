@@ -75,7 +75,7 @@ private func keyScope(_ secret: String) -> HealthScope { .key(provider: "togethe
             },
             { _ in chatStream([roleChunk, textChunk, stopChunk]) },
         ])
-        var gateway = makeGateway(upstream, keys: keys)
+        let gateway = makeGateway(upstream, keys: keys)
         gateway.configuration.headTimeout = .milliseconds(200)
         let start = ContinuousClock.now
         try await makeApp(gateway).test(.router) { client in
@@ -151,7 +151,7 @@ private func keyScope(_ secret: String) -> HealthScope { .key(provider: "togethe
                 continuation.onTermination = { _ in task.cancel() }
             })
         }
-        var gateway = makeGateway(upstream, keys: keys, keepalive: .milliseconds(50))
+        let gateway = makeGateway(upstream, keys: keys, keepalive: .milliseconds(50))
         gateway.configuration.idleTimeout = .milliseconds(300)
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x", stream: true))
