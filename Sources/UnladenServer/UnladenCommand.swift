@@ -80,7 +80,7 @@ struct ConfigOptions: ParsableArguments {
     @Option(help: "Port to listen on (overrides listen).")
     var port: Int?
 
-    @Option(help: "Model (provider/model) for every model name the menu does not list: the `*` entry of models.")
+    @Option(help: "The `*` entry of models: provider, provider/model or @name, for every model name the menu does not list.")
     var model: String?
 
     @Option(name: .customLong("api-key"), help: "A client key allowed every model name. Also UNLADEN_API_KEY when the file has no clients.")

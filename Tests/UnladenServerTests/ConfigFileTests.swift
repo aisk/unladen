@@ -183,6 +183,15 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         #expect(loaded.warnings.contains { $0.contains("--model replaces") })
     }
 
+    @Test func modelOnTheCommandLineIsAMenuEntry() throws {
+        // It may name an entry, and the `*` it replaces is not checked.
+        let text = #"{ "models": { "fast": "deepseek/deepseek-chat", "*": "nowhere" } }"#
+        let loaded = try parse(text, overrides: ConfigOverrides(model: "@fast"))
+        #expect(loaded.gateway.routes.catchAll?.targets == [RouteTarget(model: "deepseek/deepseek-chat")])
+        let error = #expect(throws: ConfigError.self) { try parse(text, overrides: ConfigOverrides(model: "nowhere")) }
+        #expect(error?.message.hasPrefix("--model: unknown provider `nowhere`") == true)
+    }
+
     @Test func unknownFieldsAreRefusedWithTheirPlace() {
         let error = parseError("{\n  \"advanced\": {\n    \"strict\": true,\n    \"stict\": true\n  }\n}")
         #expect(error?.message.contains("advanced.stict: unknown field") == true)

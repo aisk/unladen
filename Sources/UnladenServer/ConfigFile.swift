@@ -141,21 +141,16 @@ enum ConfigFile {
         loaded.gateway.clientKeys = clientKeys ?? []
         loaded.gateway.disabledClients = disabledClients
 
-        // The menu, checked against the final registry.
-        var routes = try parser.routes(menu, registry: registry)
+        // The menu, checked against the final registry; --model is its
+        // `*` entry.
         if let model = overrides.model {
-            if routes.contains(where: { $0.name == "*" }) {
+            if menu.contains(where: { $0.name == "*" }) {
                 loaded.warnings.append("--model replaces the `*` entry of models")
             }
-            routes.removeAll { $0.name == "*" }
-            let target = RouteTarget(model: Parser.expand(model))
-            do throws(ConfigError) {
-                try check(target, registry: registry)
-            } catch {
-                throw ConfigError(message: "--model: \(error.message)")
-            }
-            routes.append(Route(name: "*", targets: [target]))
+            menu.removeAll { $0.name == "*" }
+            menu.append(Parser.MenuEntry(name: "*", target: model.trimmingBlanks(), field: nil))
         }
+        let routes = try parser.routes(menu, registry: registry)
         for route in routes {
             if route.name == "*" {
                 loaded.warnings.append("models: `*` serves every model name no other entry matches: such requests are answered by \(route.targets.map(\.model).joined(separator: ", "))")
@@ -163,7 +158,7 @@ enum ConfigFile {
                 loaded.warnings.append("models: `\(route.name)` takes the place of the provider/model reference of the same name")
             }
             for target in route.targets {
-                guard let (provider, _) = try? ProviderRegistry.parse(target.model.replacing("$model", with: "model")),
+                guard let (provider, _) = try? ProviderRegistry.parse(target.probe),
                       loaded.gateway.keyPools[provider] == nil,
                       registry[provider]?.endpoints.contains(where: { $0.auth != .none }) == true
                 else { continue }
@@ -179,9 +174,8 @@ enum ConfigFile {
     /// A target must name a known provider; without `$model`, a model it
     /// can resolve. The error is the message alone.
     static func check(_ target: RouteTarget, registry: ProviderRegistry) throws(ConfigError) {
-        let probe = target.model.replacing("$model", with: "model")
         do {
-            let (provider, _) = try ProviderRegistry.parse(probe)
+            let (provider, _) = try ProviderRegistry.parse(target.probe)
             guard registry[provider] != nil else {
                 throw ConfigError(message: "unknown provider `\(provider)` (providers: \(registry.providers.keys.sorted().joined(separator: ", ")))")
             }
@@ -620,7 +614,12 @@ extension ConfigFile {
             var name: String
             /// As written: `provider`, `provider/model` or `@name`.
             var target: String
-            var field: Field
+            /// Where it is written; `nil`: on the command line (`--model`).
+            var field: Field?
+
+            func error(_ message: String) -> ConfigError {
+                field?.error(message) ?? ConfigError(message: "--model: \(message)")
+            }
         }
 
         func menu(_ field: Field) throws(ConfigError) -> [MenuEntry] {
@@ -661,13 +660,13 @@ extension ConfigFile {
                 while current.target.hasPrefix("@") {
                     let name = String(current.target.dropFirst())
                     guard let next = byName[name.lowercased()] else {
-                        throw entry.field.error("`@\(name)` names no entry of models")
+                        throw entry.error("`@\(name)` names no entry of models")
                     }
                     guard !next.name.contains("*") else {
-                        throw entry.field.error("`@\(name)` names a pattern: only an entry without * can be referred to")
+                        throw entry.error("`@\(name)` names a pattern: only an entry without * can be referred to")
                     }
                     guard !chain.contains(where: { $0.lowercased() == next.name.lowercased() }) else {
-                        throw entry.field.error("refers back to itself: \((chain + [next.name]).joined(separator: " → "))")
+                        throw entry.error("refers back to itself: \((chain + [next.name]).joined(separator: " → "))")
                     }
                     chain.append(next.name)
                     current = next
@@ -676,7 +675,7 @@ extension ConfigFile {
                 do throws(ConfigError) {
                     try ConfigFile.check(target, registry: registry)
                 } catch {
-                    throw current.field.error(error.message)
+                    throw current.error(error.message)
                 }
                 routes.append(Route(name: entry.name, targets: [target]))
             }
@@ -712,4 +711,9 @@ extension ConfigFile {
             return (keys, disabled)
         }
     }
+}
+
+extension RouteTarget {
+    /// The target with `$model` filled in, to check what it names.
+    var probe: String { model.replacing("$model", with: "model") }
 }
