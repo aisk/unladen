@@ -21,25 +21,36 @@ struct Candidate: Sendable, Hashable {
     /// How the provider's keys take turns.
     var poolStrategy: KeyPool.Strategy = .order
 
-    var healthKey: HealthKey { HealthKey(reference: reference, keyName: keyName) }
     var upstreamProtocol: WireProtocol { target.endpoint.apiProtocol.wire }
-}
 
-/// What a candidate's health is recorded under.
-struct HealthKey: Hashable, Sendable {
-    var reference: String
-    var keyName: String
-
-    /// An upstream key: its provider and name.
-    struct Key: Hashable, Sendable {
-        var provider: String
-        var keyName: String
+    /// The upstream address this candidate calls.
+    var endpointID: String {
+        "\(target.provider) \(target.endpoint.apiProtocol.rawValue) \(target.endpoint.baseURL)"
     }
 
-    var key: Key {
-        Key(provider: String(reference.prefix { $0 != "/" }), keyName: keyName)
+    /// Its key, when it has one.
+    var keyScope: HealthScope? {
+        keyName.isEmpty ? nil : .key(provider: target.provider, keyName: keyName)
     }
+
+    var endpointScope: HealthScope { .endpoint(endpointID) }
+    var modelScope: HealthScope { .model(endpoint: endpointID, model: target.model) }
+
+    /// Every scope whose cooldown keeps this candidate back.
+    var scopes: [HealthScope] { (keyScope.map { [$0] } ?? []) + [endpointScope, modelScope] }
 }
+
+/// What a failure is recorded against: the narrowest thing it says is
+/// wrong (docs/server-config-design.md, "健康状态").
+enum HealthScope: Hashable, Sendable {
+    /// An upstream key: refused (401/402/403) or rate limited (429).
+    case key(provider: String, keyName: String)
+    /// An upstream address: unreachable, for every key and model.
+    case endpoint(String)
+    /// A model at an address: server errors, 404, broken replies.
+    case model(endpoint: String, model: String)
+}
+
 
 /// What a strategy may look at besides the candidates.
 struct RoutingContext: Sendable {
@@ -58,7 +69,7 @@ protocol RoutingStrategy: Sendable {
 /// Route order; within a model, keys in pool order, or from a
 /// round-robin offset per provider for `rotate` pools; candidates cooling
 /// down go last (still tried, in the same order, when nothing else is
-/// left).
+/// left); disabled keys are left out.
 final class KeyPoolOrdering: RoutingStrategy {
     private let counters = NIOLockedValueBox<[String: Int]>([:])
 
@@ -89,70 +100,139 @@ final class KeyPoolOrdering: RoutingStrategy {
             let start = offset % group.count
             ordered += group[start...] + group[..<start]
         }
-        let ready = ordered.filter { !health.isCooling($0.healthKey) }
-        let cooling = ordered.filter { health.isCooling($0.healthKey) }
+        let usable = ordered.filter { !health.isDisabled($0) }
+        let ready = usable.filter { !health.isCooling($0) }
+        let cooling = usable.filter { health.isCooling($0) }
         return ready + cooling
     }
 }
 
-/// Cooldowns at one instant.
+/// Health at one instant.
 struct HealthSnapshot: Sendable {
     var now: ContinuousClock.Instant
-    var cooldowns: [HealthKey: ContinuousClock.Instant]
+    var cooldowns: [HealthScope: ContinuousClock.Instant]
+    var disabled: Set<HealthScope> = []
 
-    func isCooling(_ key: HealthKey) -> Bool {
-        guard let until = cooldowns[key] else { return false }
+    func isCooling(_ scope: HealthScope) -> Bool {
+        guard let until = cooldowns[scope] else { return false }
         return until > now
+    }
+
+    func isCooling(_ candidate: Candidate) -> Bool {
+        candidate.scopes.contains { isCooling($0) }
+    }
+
+    /// A key refused again and again: not tried until the configuration
+    /// is reloaded.
+    func isDisabled(_ candidate: Candidate) -> Bool {
+        candidate.keyScope.map { disabled.contains($0) } ?? false
     }
 }
 
-/// In-memory candidate health: a cooldown after a rate limit, a server
-/// error or a connection failure.
+/// In-memory health: cooldowns that grow while failures repeat, and keys
+/// disabled after repeated 401s.
 final class HealthStore: Sendable {
-    private let cooldowns = NIOLockedValueBox<[HealthKey: ContinuousClock.Instant]>([:])
+    struct Entry: Sendable {
+        var until: ContinuousClock.Instant
+        /// Failures since the last success, for the doubling.
+        var failures: Int
+    }
 
-    /// Cooldown after a 5xx or a connection failure.
+    struct State: Sendable {
+        var entries: [HealthScope: Entry] = [:]
+        var unauthorized: [HealthScope: Int] = [:]
+        var disabled: Set<HealthScope> = []
+    }
+
+    private let state = NIOLockedValueBox(State())
+
+    /// First cooldown after a 5xx, a broken reply or a connection failure.
     static let failureCooldown: Duration = .seconds(10)
-    /// Cooldown after a 429 without a usable `Retry-After`.
+    /// First cooldown after a 429 without a usable `Retry-After`.
     static let rateLimitCooldown: Duration = .seconds(30)
-    /// Longest cooldown, whatever `Retry-After` says.
+    /// Longest cooldown a doubling reaches, and the cap on `Retry-After`.
     static let maxCooldown: Duration = .seconds(300)
+    /// After a 402 (out of credit): the key will not recover soon.
+    static let paymentCooldown: Duration = .seconds(1800)
+    /// Consecutive 401s after which a key is disabled.
+    static let unauthorizedLimit = 2
 
     init() {}
 
     func snapshot() -> HealthSnapshot {
         let now = ContinuousClock.now
-        return cooldowns.withLockedValue { cooldowns in
-            cooldowns = cooldowns.filter { $0.value > now }
-            return HealthSnapshot(now: now, cooldowns: cooldowns)
+        return state.withLockedValue { state in
+            HealthSnapshot(
+                now: now,
+                cooldowns: state.entries.filter { $0.value.until > now }.mapValues(\.until),
+                disabled: state.disabled,
+            )
         }
     }
 
-    func recordFailure(_ key: HealthKey, cooldown: Duration) {
-        let until = ContinuousClock.now + min(cooldown, Self.maxCooldown)
-        cooldowns.withLockedValue { cooldowns in
-            cooldowns[key] = max(cooldowns[key] ?? until, until)
+    /// Cools `scope`: `base` for a first failure, doubled for each one
+    /// after it (up to ``maxCooldown``, or `base` when longer); a
+    /// `retryAfter` the upstream sent replaces the doubling.
+    func recordFailure(_ scope: HealthScope, base: Duration, retryAfter: Duration? = nil) {
+        let now = ContinuousClock.now
+        state.withLockedValue { state in
+            var entry = state.entries[scope] ?? Entry(until: now, failures: 0)
+            // A failure long after the last one starts the doubling afresh.
+            if entry.until + Self.maxCooldown < now { entry.failures = 0 }
+            entry.failures += 1
+            let cap = max(base, Self.maxCooldown)
+            let cooldown: Duration
+            if let retryAfter {
+                cooldown = min(retryAfter, cap)
+            } else {
+                cooldown = min(base * (1 << min(entry.failures - 1, 16)), cap)
+            }
+            entry.until = max(entry.until, now + cooldown)
+            state.entries[scope] = entry
         }
     }
 
-    func recordSuccess(_ key: HealthKey) {
-        _ = cooldowns.withLockedValue { $0.removeValue(forKey: key) }
-    }
-
-    /// Drops the cooldowns of the keys `matching` selects.
-    func forget(_ matching: (HealthKey) -> Bool) {
-        cooldowns.withLockedValue { cooldowns in cooldowns = cooldowns.filter { !matching($0.key) } }
-    }
-
-    /// The cooldown for an upstream status, honouring a `Retry-After` in
-    /// seconds (HTTP dates are not parsed and get the default).
-    static func cooldown(status: Int, retryAfter: String?) -> Duration {
-        if let retryAfter, let seconds = Int(retryAfter.trimmingBlanks()), seconds >= 0 {
-            return .seconds(seconds)
+    /// Notes a 401 for `key`; true when this one disables it.
+    func recordUnauthorized(_ key: HealthScope) -> Bool {
+        state.withLockedValue { state in
+            let count = state.unauthorized[key, default: 0] + 1
+            state.unauthorized[key] = count
+            return count >= Self.unauthorizedLimit && state.disabled.insert(key).inserted
         }
-        return status == 429 ? rateLimitCooldown : failureCooldown
+    }
+
+    /// Clears what `candidate` answering disproves.
+    func recordSuccess(_ candidate: Candidate) {
+        state.withLockedValue { state in
+            for scope in candidate.scopes { state.entries.removeValue(forKey: scope) }
+            if let key = candidate.keyScope { state.unauthorized.removeValue(forKey: key) }
+        }
+    }
+
+    /// Drops everything recorded against the scopes `matching` selects.
+    func forget(_ matching: (HealthScope) -> Bool) {
+        state.withLockedValue { state in
+            state.entries = state.entries.filter { !matching($0.key) }
+            state.unauthorized = state.unauthorized.filter { !matching($0.key) }
+            state.disabled = state.disabled.filter { !matching($0) }
+        }
+    }
+
+    /// Gives every disabled key another chance (a reload).
+    func enableDisabledKeys() {
+        state.withLockedValue { state in
+            for key in state.disabled { state.unauthorized.removeValue(forKey: key) }
+            state.disabled = []
+        }
+    }
+
+    /// A `Retry-After` in seconds (HTTP dates are not parsed).
+    static func retryAfter(_ value: String?) -> Duration? {
+        guard let value, let seconds = Int(value.trimmingBlanks()), seconds >= 0 else { return nil }
+        return .seconds(seconds)
     }
 }
+
 
 /// Why a request has no candidate.
 struct PlanningError: Error, Sendable {

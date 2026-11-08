@@ -41,6 +41,13 @@ struct GatewayConfiguration: Sendable {
     var keepaliveInterval: Duration = .seconds(15)
     /// Largest request body accepted.
     var maxRequestBytes = 64 << 20
+    /// How long one upstream may take to its first content (a complete
+    /// reply, when the client does not stream) before the next key is
+    /// tried; `nil`: no limit.
+    var headTimeout: Duration? = .seconds(300)
+    /// How long a stream may go without an upstream event, once it is
+    /// being forwarded, before it is ended with an error; `nil`: no limit.
+    var idleTimeout: Duration? = .seconds(300)
     var registry = ProviderRegistry.builtIn
     /// Upstream keys by provider id.
     var keyPools: [String: KeyPool] = [:]

@@ -35,17 +35,19 @@ struct Gateway: Sendable {
 
     /// Installs `configuration` for the requests that start from now on.
     /// Health stays with each key's name, except for keys whose secret
-    /// changed: they start afresh.
+    /// changed: they start afresh. Keys disabled after repeated 401s get
+    /// another chance.
     func replace(_ configuration: GatewayConfiguration) {
         let old = store.replace(configuration)
-        var changed: Set<HealthKey.Key> = []
+        var changed: Set<HealthScope> = []
         for (provider, pool) in old.keyPools {
             let now = configuration.keyPools[provider]?.keys ?? []
             for key in pool.keys where now.contains(where: { $0.name == key.name && $0.secret != key.secret }) {
-                changed.insert(HealthKey.Key(provider: provider, keyName: key.name))
+                changed.insert(.key(provider: provider, keyName: key.name))
             }
         }
-        if !changed.isEmpty { health.forget { changed.contains($0.key) } }
+        if !changed.isEmpty { health.forget { changed.contains($0) } }
+        health.enableDisabledKeys()
     }
 
     // MARK: Handling
@@ -98,13 +100,20 @@ struct Gateway: Sendable {
         let ordered = strategy.order(
             candidates, context: RoutingContext(clientProtocol: clientProtocol, stream: stream), health: health.snapshot(),
         )
+        if ordered.isEmpty {
+            return fail(
+                503, "no upstream is available for model `\(request.model)`",
+                detail: "every key is disabled after repeated 401s; reload the configuration to try them again",
+                warnings: decoded.warnings,
+            )
+        }
 
         let outcome: AttemptOutcome
         do {
             outcome = try await monitor.run {
                 try await self.attempt(
                     request, decodeWarnings: decoded.warnings, candidates: ordered, stream: stream, clientHeaders: headers,
-                    strict: configuration.strict,
+                    strict: configuration.strict, headTimeout: configuration.headTimeout, log: log,
                 )
             }
         } catch {
@@ -127,13 +136,13 @@ struct Gateway: Sendable {
             return response
 
         case .reply(let served):
-            let (candidate, reply) = (served.candidate, served.reply)
+            let candidate = served.candidate
             line.candidate = candidate.reference
             let warnings = served.requestWarnings + served.responseWarnings
             let defaults = ReplyDefaults(clientProtocol: clientProtocol, model: request.model, candidate: candidate)
             var fields = HTTPFields()
             fields[Self.modelHeader] = candidate.reference
-            switch reply.body {
+            switch served.body {
             case .response(let response):
                 monitor.uninstall()
                 let encoded = ClientCodec.encodeResponse(response, for: clientProtocol, defaults: defaults)
@@ -162,6 +171,7 @@ struct Gateway: Sendable {
                     for: clientProtocol, defaults: defaults, includeUsage: request.streamOptions?.includeUsage ?? false,
                 )
                 let interval = configuration.keepaliveInterval
+                let idle = configuration.idleTimeout
                 let finalLine = line
                 let requestWarnings = warnings.count
                 return Response(status: .ok, headers: fields, body: ResponseBody { writer in
@@ -172,10 +182,16 @@ struct Gateway: Sendable {
                     var encoder = encoder
                     do {
                         summary = try await Self.pump(
-                            events, encoder: &encoder, leading: leading, keepalive: interval, monitor: monitor, writer: &writer,
+                            events, encoder: &encoder, leading: leading, keepalive: interval, idleTimeout: idle,
+                            monitor: monitor, writer: &writer,
                         )
                     } catch {
                         summary.disconnected = true
+                    }
+                    // An upstream that breaks off mid-stream cools down; a
+                    // client that leaves says nothing about it.
+                    if summary.failure != nil, !summary.disconnected {
+                        self.health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
                     }
                     for warning in summary.warnings { log.emit("warning: \(warning)") }
                     line.warnings = requestWarnings + summary.warnings.count
@@ -201,13 +217,19 @@ struct Gateway: Sendable {
     /// The candidate that answered, and the warnings of its exchange.
     struct Served: Sendable {
         var candidate: Candidate
-        var reply: UpstreamReply
+        var body: ServedBody
         /// Decoding the client's request plus transforming and encoding it
         /// for this candidate, merged (``WireWarning/merged(decoded:encoded:)``).
         var requestWarnings: [WireWarning]
         /// Decoding the upstream's reply (complete replies; a stream's are
         /// reported at its end).
         var responseWarnings: [WireWarning]
+    }
+
+    enum ServedBody: Sendable {
+        case response(WireResponse)
+        /// Read up to its first content; the rest is still to come.
+        case events(PrimedEvents)
     }
 
     enum AttemptFailure: Sendable {
@@ -229,35 +251,50 @@ struct Gateway: Sendable {
     }
 
     /// Statuses after which the next candidate is tried: rate limits,
-    /// server errors, timeouts and key problems (another key or provider
-    /// may work). Other 4xx are the request's fault and end it.
+    /// server errors, timeouts, key problems and a model the key cannot
+    /// reach (another key may work). Other 4xx are the request's fault and
+    /// end it.
     static func isRetryable(_ status: Int) -> Bool {
         switch status {
-        case 401, 402, 403, 408, 409, 425, 429: true
+        case 401, 402, 403, 404, 408, 409, 425, 429: true
         case 500..<600: true
         default: false
         }
     }
 
-    /// Tries `candidates` in order until one returns a 2xx head. Each gets
-    /// its own copy of `request` (value semantics), transformed and encoded
-    /// for its endpoint.
+    /// No content within the head timeout.
+    struct HeadTimeout: Error {}
+
+    /// Tries `candidates` in order until one answers: a complete reply, or
+    /// a stream that reached its first content. Anything that goes wrong
+    /// before that (an error status, an error event, a stream that ends
+    /// empty or breaks off, `headTimeout`) moves on to the next candidate,
+    /// since nothing has reached the client yet. Each candidate gets its
+    /// own copy of `request` (value semantics), transformed and encoded for
+    /// its endpoint.
     ///
-    /// With `--strict`, a candidate whose request would lose something
+    /// With `strict`, a candidate whose request would lose something
     /// (``WireWarning/isEscalatedWhenStrict``, judged on the decoding
     /// warnings and its own transform and encoding warnings) is skipped
     /// without being called.
+    ///
+    /// Failures are recorded against their scope (``HealthScope``). An
+    /// unreachable address is not tried again with the request's other
+    /// keys.
     func attempt(
         _ request: WireRequest,
         decodeWarnings: [WireWarning] = [],
         candidates: [Candidate],
         stream: Bool,
         clientHeaders: HTTPFields,
-        strict: Bool,
+        strict: Bool = false,
+        headTimeout: Duration? = nil,
+        log: RequestLog = .silent,
     ) async throws -> AttemptOutcome {
         var last: AttemptFailure?
         var strictWarnings: [WireWarning]?
-        for candidate in candidates {
+        var unreachable: Set<String> = []
+        for candidate in candidates where !unreachable.contains(candidate.endpointID) {
             try Task.checkCancellation()
             let call = UpstreamCall(target: candidate.target, apiKey: candidate.apiKey, transport: transport)
             let prepared: UpstreamRequest
@@ -276,45 +313,128 @@ struct Gateway: Sendable {
                 }
             }
             do {
-                let reply = try await call.send(prepared, stream: stream)
-                health.recordSuccess(candidate.healthKey)
+                let (reply, primed) = try await Self.within(headTimeout) { () async throws -> (UpstreamReply, PrimeOutcome?) in
+                    let reply = try await call.send(prepared, stream: stream)
+                    guard case .events(let events) = reply.body else { return (reply, nil) }
+                    return (reply, try await Self.prime(events))
+                }
+                let body: ServedBody
+                switch (reply.body, primed) {
+                case (.response(let response), _):
+                    body = .response(response)
+                case (.events, .ready(let events)?):
+                    body = .events(events)
+                case (.events, .failed(let message)?):
+                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
+                    last = .gateway(status: 502, message: "\(candidate.reference) failed before any content: \(message)", candidate: candidate)
+                    continue
+                case (.events, nil):
+                    continue // not reached: an event stream is always primed
+                }
+                health.recordSuccess(candidate)
                 return .reply(Served(
-                    candidate: candidate, reply: reply, requestWarnings: requestWarnings,
+                    candidate: candidate, body: body, requestWarnings: requestWarnings,
                     responseWarnings: Array(reply.warnings.dropFirst(prepared.warnings.count)),
                 ))
+            } catch is HeadTimeout {
+                // Slow but alive: no cooldown.
+                let limit = headTimeout.map { " within \($0)" } ?? ""
+                last = .gateway(status: 504, message: "\(candidate.reference) sent no content\(limit)", candidate: candidate)
             } catch let error as UpstreamError {
                 switch error {
                 case .http(let http):
                     let status = http.status.code
                     guard Self.isRetryable(status) else { return .failure(.upstream(candidate, http)) }
-                    let cooldown: Duration = [401, 402, 403].contains(status)
-                        ? HealthStore.maxCooldown
-                        : HealthStore.cooldown(status: status, retryAfter: http.retryAfter)
-                    health.recordFailure(candidate.healthKey, cooldown: cooldown)
+                    recordFailure(status: status, retryAfter: http.retryAfter, of: candidate, log: log)
                     last = .upstream(candidate, http)
                 case .decoding(let decoding, _):
-                    health.recordFailure(candidate.healthKey, cooldown: HealthStore.failureCooldown)
+                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
                     last = .gateway(status: 502, message: "\(candidate.reference) sent a reply that cannot be decoded: \(decoding)", candidate: candidate)
                 case .stream(let streamError):
-                    health.recordFailure(candidate.healthKey, cooldown: HealthStore.failureCooldown)
+                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
                     last = .gateway(status: 502, message: "\(candidate.reference) failed: \(streamError.message)", candidate: candidate)
                 case .invalidBaseURL(let url):
                     last = .gateway(status: 500, message: "invalid base URL \(url)", candidate: candidate)
                 }
             } catch let error as HTTPResponseBodyTooLargeError {
-                health.recordFailure(candidate.healthKey, cooldown: HealthStore.failureCooldown)
+                health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
                 last = .gateway(
                     status: 502, message: "\(candidate.reference) sent a reply larger than \(error.maxBytes) bytes", candidate: candidate,
                 )
             } catch {
                 if Task.isCancelled || error is CancellationError { throw CancellationError() }
-                health.recordFailure(candidate.healthKey, cooldown: HealthStore.failureCooldown)
+                health.recordFailure(candidate.endpointScope, base: HealthStore.failureCooldown)
+                unreachable.insert(candidate.endpointID)
                 last = .gateway(status: 502, message: "\(candidate.reference) is unreachable: \(error)", candidate: candidate)
             }
         }
         if let last { return .failure(last) }
         if let strictWarnings { return .failure(.strict(strictWarnings)) }
         return .failure(.gateway(status: 503, message: "no upstream available", candidate: nil))
+    }
+
+    /// Records an upstream error status against what it is about: the key
+    /// (refused, out of credit, rate limited) or the model at its address.
+    func recordFailure(status: Int, retryAfter: String?, of candidate: Candidate, log: RequestLog) {
+        let key = candidate.keyScope ?? candidate.modelScope
+        switch status {
+        case 401:
+            if let scope = candidate.keyScope, health.recordUnauthorized(scope) {
+                log.emit(
+                    "key \(candidate.keyName) of \(candidate.target.provider) is disabled after \(HealthStore.unauthorizedLimit) "
+                        + "refusals in a row (401); reload the configuration to use it again",
+                )
+            }
+            health.recordFailure(key, base: HealthStore.maxCooldown)
+        case 402: health.recordFailure(key, base: HealthStore.paymentCooldown)
+        case 403: health.recordFailure(key, base: HealthStore.maxCooldown)
+        case 429: health.recordFailure(key, base: HealthStore.rateLimitCooldown, retryAfter: HealthStore.retryAfter(retryAfter))
+        case 404: health.recordFailure(candidate.modelScope, base: HealthStore.maxCooldown)
+        default:
+            health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, retryAfter: HealthStore.retryAfter(retryAfter))
+        }
+    }
+
+    // MARK: First content
+
+    enum PrimeOutcome: Sendable {
+        case ready(PrimedEvents)
+        case failed(String)
+    }
+
+    /// Reads `events` up to the first event worth sending (content, or the
+    /// finish of an empty reply): an error event, a stream that ends or
+    /// breaks off before it, is a failure.
+    static func prime(_ events: UpstreamEventStream) async throws -> PrimeOutcome {
+        var iterator = events.makeAsyncIterator()
+        var buffered: [WireEvent] = []
+        do {
+            while let event = try await iterator.next() {
+                if case .error(let error) = event { return .failed(error.message) }
+                buffered.append(event)
+                if event.startsTheReply { return .ready(PrimedEvents(buffered: buffered, iterator: iterator)) }
+            }
+        } catch {
+            if Task.isCancelled || error is CancellationError { throw CancellationError() }
+            return .failed("the stream broke off: \(error)")
+        }
+        return .failed("the stream ended without content")
+    }
+
+    /// `operation`, or ``HeadTimeout`` when it takes longer than `limit`
+    /// (the operation is then cancelled).
+    static func within<T: Sendable>(_ limit: Duration?, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        guard let limit else { return try await operation() }
+        return try await withThrowingTaskGroup(of: T?.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: limit)
+                return nil
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next(), let value = first else { throw HeadTimeout() }
+            return value
+        }
     }
 
     // MARK: Errors
@@ -408,14 +528,16 @@ struct Gateway: Sendable {
     /// task for keepalives, and the disconnect monitor. The writer (this
     /// task) is the only consumer; leaving the loop, for any reason,
     /// cancels the reader, which cancels the upstream request. A keepalive is sent when no event has
-    /// been written for `keepalive`. An upstream that fails mid-stream is
-    /// reported with the client encoder's error rendering; there is no
-    /// fallback once the response has started.
+    /// been written for `keepalive`. An upstream that fails mid-stream, or
+    /// sends nothing (not even a ping) for `idleTimeout`, is reported with
+    /// the client encoder's error rendering; there is no fallback once the
+    /// response has started.
     @concurrent static func pump(
-        _ events: UpstreamEventStream,
+        _ events: PrimedEvents,
         encoder: inout ClientStreamEncoder,
         leading: [SSEElement],
         keepalive: Duration,
+        idleTimeout: Duration? = nil,
         monitor: DisconnectMonitor,
         writer: inout any ResponseBodyWriter,
     ) async throws -> StreamSummary {
@@ -427,7 +549,8 @@ struct Gateway: Sendable {
         }
         var summary = StreamSummary()
         let reader = Task {
-            var iterator = events.makeAsyncIterator()
+            for event in events.buffered { continuation.yield(.event(event)) }
+            var iterator = events.iterator
             do {
                 while let event = try await iterator.next() {
                     continuation.yield(.event(event))
@@ -442,7 +565,7 @@ struct Gateway: Sendable {
             }
         }
         let ticker = Task {
-            let tick = keepalive / 4
+            let tick = min(keepalive, idleTimeout ?? keepalive) / 4
             while !Task.isCancelled {
                 try? await Task.sleep(for: tick)
                 continuation.yield(.tick)
@@ -454,21 +577,30 @@ struct Gateway: Sendable {
         }
 
         var lastEvent = ContinuousClock.now
+        var lastUpstream = ContinuousClock.now
         if !leading.isEmpty { try await writer.write(Self.frames(leading)) }
         loop: for await signal in signals {
             var out: [SSEElement] = []
+            var done = false
             switch signal {
             case .event(let event):
+                lastUpstream = .now
                 out = encoder.encode(event)
             case .end(let warnings):
                 summary.warnings += warnings
                 out = encoder.finish()
+                done = true
             case .failed(let message, let warnings):
                 summary.warnings += warnings
                 summary.failure = message
                 out = encoder.encode(.error(WireStreamError(message: "upstream stream failed: \(message)"))) + encoder.finish()
+                done = true
             case .tick:
-                if ContinuousClock.now - lastEvent >= keepalive {
+                if let idleTimeout, ContinuousClock.now - lastUpstream >= idleTimeout {
+                    summary.failure = "no upstream event for \(idleTimeout)"
+                    out = encoder.encode(.error(WireStreamError(message: "upstream stream stalled: \(summary.failure!)"))) + encoder.finish()
+                    done = true
+                } else if ContinuousClock.now - lastEvent >= keepalive {
                     out = encoder.keepalive()
                     lastEvent = .now
                 }
@@ -480,10 +612,7 @@ struct Gateway: Sendable {
                 try await writer.write(Self.frames(out))
                 if out.contains(where: { if case .event = $0 { true } else { false } }) { lastEvent = .now }
             }
-            switch signal {
-            case .end, .failed: break loop
-            default: continue
-            }
+            if done { break loop }
         }
         summary.warnings += encoder.warnings
         return summary
@@ -580,5 +709,35 @@ struct LogLine: Sendable {
         var text = "\(clientProtocol.displayName)\(stream ? " stream" : "") \(clientModel) → \(candidate ?? "-") status=\(status) \(ms)ms warnings=\(warnings)"
         if let note { text += " (\(note.prefix(300)))" }
         return text
+    }
+}
+
+/// An upstream stream read up to its first content: the events read so far,
+/// and the iterator for the rest.
+///
+/// One task at a time uses it: the attempt that primes it, then the pump's
+/// reader, which takes the iterator over.
+final class PrimedEvents: @unchecked Sendable {
+    let buffered: [WireEvent]
+    let iterator: UpstreamEventStream.Iterator
+
+    init(buffered: [WireEvent], iterator: UpstreamEventStream.Iterator) {
+        self.buffered = buffered
+        self.iterator = iterator
+    }
+}
+
+extension WireEvent {
+    /// Whether the client can be sent the reply from this event on:
+    /// content, or the finish of a reply without any.
+    var startsTheReply: Bool {
+        switch self {
+        case .textStart, .textDelta, .textEnd, .reasoningStart, .reasoningDelta, .reasoningSignatureDelta, .reasoningEnd,
+             .refusalStart, .refusalDelta, .refusalEnd, .toolInputStart, .toolInputDelta, .toolInputEnd, .toolCall, .opaque,
+             .finish:
+            true
+        case .responseMetadata, .ping, .error:
+            false
+        }
     }
 }

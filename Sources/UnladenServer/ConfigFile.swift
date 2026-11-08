@@ -263,13 +263,20 @@ private struct Field {
     }
 
     func duration() throws(ConfigError) -> Duration {
+        guard let duration = try duration(allowingOff: false) else { throw error("expected a duration") }
+        return duration
+    }
+
+    /// A duration; `off` is `nil` when `allowingOff`.
+    func duration(allowingOff: Bool) throws(ConfigError) -> Duration? {
         let text = try string().trimmingBlanks()
+        if allowingOff, text == "off" || node.scalar?.tag == Tag(.bool) && node.bool == false { return nil }
         let units: [(String, Int64)] = [("ms", 1), ("s", 1000), ("m", 60_000), ("h", 3_600_000)]
         if let seconds = Int64(text), seconds > 0 { return .seconds(seconds) }
         for (unit, milliseconds) in units where text.hasSuffix(unit) {
             if let value = Int64(text.dropLast(unit.count)), value > 0 { return .milliseconds(value * milliseconds) }
         }
-        throw error("expected a positive duration such as 500ms, 15s, 2m or 1h")
+        throw error("expected a positive duration such as 500ms, 15s, 2m or 1h\(allowingOff ? ", or off" : "")")
     }
 
     func byteCount() throws(ConfigError) -> Int {
@@ -325,7 +332,9 @@ extension ConfigFile {
         }
 
         func server(_ field: Field, into loaded: inout LoadedConfiguration) throws(ConfigError) {
-            for (name, value) in try field.mapping(allowed: ["listen", "strict", "keepalive", "connect_timeout", "max_request_bytes"]) {
+            for (name, value) in try field.mapping(
+                allowed: ["listen", "strict", "keepalive", "connect_timeout", "max_request_bytes", "head_timeout", "idle_timeout"],
+            ) {
                 switch name {
                 case "listen":
                     let text = try value.string()
@@ -341,6 +350,8 @@ extension ConfigFile {
                 case "keepalive": loaded.gateway.keepaliveInterval = try value.duration()
                 case "connect_timeout": loaded.server.connectTimeout = try value.duration()
                 case "max_request_bytes": loaded.gateway.maxRequestBytes = try value.byteCount()
+                case "head_timeout": loaded.gateway.headTimeout = try value.duration(allowingOff: true)
+                case "idle_timeout": loaded.gateway.idleTimeout = try value.duration(allowingOff: true)
                 default: break
                 }
             }

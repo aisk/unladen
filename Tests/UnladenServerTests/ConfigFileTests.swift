@@ -261,10 +261,10 @@ private func parseError(_ yaml: String, environment: [String: String] = [:]) -> 
         var configuration = GatewayConfiguration()
         configuration.keyPools = ["deepseek": KeyPool(keys: [UpstreamKey(name: "a", secret: "s1"), UpstreamKey(name: "b", secret: "s2")])]
         let gateway = Gateway(configuration: configuration, transport: upstream.transport)
-        let a = HealthKey(reference: "deepseek/deepseek-chat", keyName: "a")
-        let b = HealthKey(reference: "deepseek/deepseek-chat", keyName: "b")
-        gateway.health.recordFailure(a, cooldown: .seconds(60))
-        gateway.health.recordFailure(b, cooldown: .seconds(60))
+        let a = HealthScope.key(provider: "deepseek", keyName: "a")
+        let b = HealthScope.key(provider: "deepseek", keyName: "b")
+        gateway.health.recordFailure(a, base: .seconds(60))
+        gateway.health.recordFailure(b, base: .seconds(60))
 
         // `a` keeps its secret and moves; `b` gets a new one.
         configuration.keyPools = ["deepseek": KeyPool(keys: [UpstreamKey(name: "b", secret: "s3"), UpstreamKey(name: "a", secret: "s1")])]

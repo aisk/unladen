@@ -325,7 +325,7 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         }
         #expect(upstream.requests.map { $0.header("authorization") } == ["Bearer k1", "Bearer k2"])
         // The rate-limited key cools down: the next request starts elsewhere.
-        #expect(gateway.health.snapshot().isCooling(HealthKey(reference: chatOnlyModel, keyName: Self.keyName("k1"))))
+        #expect(gateway.health.snapshot().isCooling(.key(provider: "together", keyName: Self.keyName("k1"))))
     }
 
     @Test func keyFailoverStaysOnTheRoutesModel() async throws {
@@ -543,8 +543,10 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         }
     }
 
+    // Keepalives start with the response, at the upstream's first content:
+    // the stalls below come after it.
     @Test func chatGetsComments() async throws {
-        let upstream = Self.stalling(fixture("Chat/streams/text_usage.sse"), splitAt: "data: ", occurrence: 1)
+        let upstream = Self.stalling(fixture("Chat/streams/text_usage.sse"), splitAt: "data: ", occurrence: 2)
         let gateway = makeGateway(upstream, keepalive: .milliseconds(100))
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x", stream: true))
@@ -555,7 +557,7 @@ private func canonical(_ value: JSONValue) -> JSONValue {
     }
 
     @Test func geminiGetsNothing() async throws {
-        let upstream = Self.stalling(fixture("Chat/streams/text_usage.sse"), splitAt: "data: ", occurrence: 1)
+        let upstream = Self.stalling(fixture("Chat/streams/text_usage.sse"), splitAt: "data: ", occurrence: 2)
         let gateway = makeGateway(upstream, keepalive: .milliseconds(100))
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post(ClientRequest.geminiPath(model: "x", stream: true), ClientRequest.gemini)
