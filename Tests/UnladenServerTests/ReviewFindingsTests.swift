@@ -31,7 +31,7 @@ private func message(_ response: TestResponse) -> String {
 }
 
 @Suite struct UpstreamCredentialErrorTests {
-    static let openAI401 = #"{"error":{"message":"Incorrect API key provided: sk-proj-****************************************AbCd. You can find your API key at https://platform.openai.com/account/api-keys.","type":"invalid_request_error","param":null,"code":"invalid_api_key"}}"#
+    static let openAI401 = #"{"error":{"message":"Incorrect API key provided: sk-proj-****************************************FAKE. You can find your API key at https://platform.openai.com/account/api-keys.","type":"invalid_request_error","param":null,"code":"invalid_api_key"}}"#
 
     @Test(arguments: [401, 402, 403])
     func credentialRejectionIsA502WithoutKeyMaterial(_ status: Int) async throws {
@@ -43,7 +43,7 @@ private func message(_ response: TestResponse) -> String {
             #expect(response.status == .badGateway)
             #expect(message(response) == "upstream rejected the gateway's credentials for openai/gpt-4o")
             #expect(!String(buffer: response.body).contains("sk-proj"))
-            #expect(!String(buffer: response.body).contains("AbCd"))
+            #expect(!String(buffer: response.body).contains("FAKE"))
             #expect(response.headers[modelHeader] == "openai/gpt-4o")
             // Another client protocol: same, in its shape.
             response = try await client.post("/v1/messages", ClientRequest.anthropic(model: "openai/gpt-4o"))
@@ -56,11 +56,11 @@ private func message(_ response: TestResponse) -> String {
     }
 
     @Test func keysAreRedactedFromLoggedMessages() {
-        let redacted = Gateway.redactingSecrets("Incorrect API key provided: sk-proj-****AbCd. You can find your API key at https://platform.openai.com/account/api-keys.")
-        #expect(!redacted.contains("sk-proj") && !redacted.contains("AbCd"))
+        let redacted = Gateway.redactingSecrets("Incorrect API key provided: sk-proj-****FAKE. You can find your API key at https://platform.openai.com/account/api-keys.")
+        #expect(!redacted.contains("sk-proj") && !redacted.contains("FAKE"))
         #expect(redacted.contains("Incorrect API key provided"))
         #expect(redacted.contains("https://platform.openai.com/account/api-keys"))
-        for secret in ["AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW", "sk-ant-api03-abcDEF123456", "xai-1234567890abcdefABCDEF", "gsk_abcdef1234567890ABCDEF"] {
+        for secret in ["AIza-FAKE-gemini-test-key", "sk-ant-api03-FAKE-test-key", "xai-FAKE-test-key", "gsk_FAKE_test_key"] {
             #expect(!Gateway.redactingSecrets("API key not valid: \(secret).").contains(secret), "\(secret)")
         }
         #expect(Gateway.redactingSecrets("model `gpt-4o` not found") == "model `gpt-4o` not found")
