@@ -491,10 +491,6 @@ struct Gateway: Sendable {
         var last: AttemptFailure?
         var strictWarnings: [WireWarning]?
         var unreachable: Set<String> = []
-        // Upstream Chat streams report usage only when asked; the client's
-        // own encoder still follows what the client asked for.
-        var request = request
-        if stream { request.streamOptions = WireStreamOptions(includeUsage: true, extra: request.streamOptions?.extra ?? [:]) }
         for candidate in candidates where !unreachable.contains(candidate.endpointID) {
             try Task.checkCancellation()
             let began = ContinuousClock.now

@@ -157,7 +157,11 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
         } else {
             request.stream = streams ? true : (request.stream == nil ? nil : false)
         }
-        if !streams { request.streamOptions = nil }
+        if !streams {
+            request.streamOptions = nil
+        } else if wire == .chatCompletions, profile.chatStreamUsage != false {
+            request.streamOptions = WireStreamOptions(includeUsage: true, extra: request.streamOptions?.extra ?? [:])
+        }
 
         let encoded: WireEncoded
         let suffix: String

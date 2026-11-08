@@ -58,6 +58,11 @@ public struct Profile: Hashable, Sendable {
     /// breakpoints; Responses and Gemini have none (caching there is
     /// automatic, or uses `cachedContent`).
     public var chatCacheControl: Bool?
+    /// Whether a Chat stream is asked for its usage
+    /// (`stream_options.include_usage`), which most upstreams send only
+    /// when asked. `nil`: asked. `false`: not asked, for an upstream that
+    /// reports usage unasked and checks the fields it gets (Mistral).
+    public var chatStreamUsage: Bool?
     /// The most prompt-cache breakpoints one request may carry (Claude: 4).
     /// The excess is left out with a cache-hint warning, keeping the
     /// breakpoints on tools, instructions and leading system messages and
@@ -104,6 +109,7 @@ public struct Profile: Hashable, Sendable {
         maxTokensField: MaxTokensField? = nil,
         strictUnknownFields: Bool? = nil,
         chatCacheControl: Bool? = nil,
+        chatStreamUsage: Bool? = nil,
         maxCacheBreakpoints: Int? = nil,
         forcedProtocol: APIProtocol? = nil,
         streaming: StreamingRequirement? = nil,
@@ -126,6 +132,7 @@ public struct Profile: Hashable, Sendable {
         self.maxTokensField = maxTokensField
         self.strictUnknownFields = strictUnknownFields
         self.chatCacheControl = chatCacheControl
+        self.chatStreamUsage = chatStreamUsage
         self.maxCacheBreakpoints = maxCacheBreakpoints
         self.forcedProtocol = forcedProtocol
         self.streaming = streaming
@@ -156,6 +163,7 @@ public struct Profile: Hashable, Sendable {
             maxTokensField: maxTokensField ?? base.maxTokensField,
             strictUnknownFields: strictUnknownFields ?? base.strictUnknownFields,
             chatCacheControl: chatCacheControl ?? base.chatCacheControl,
+            chatStreamUsage: chatStreamUsage ?? base.chatStreamUsage,
             maxCacheBreakpoints: maxCacheBreakpoints ?? base.maxCacheBreakpoints,
             forcedProtocol: forcedProtocol ?? base.forcedProtocol,
             streaming: streaming ?? base.streaming,

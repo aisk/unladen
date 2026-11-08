@@ -241,7 +241,7 @@ public enum Presets {
         endpoints: [
             // 422 extra_forbidden on any field it does not know.
             Endpoint(system: "mistral", apiProtocol: .chatCompletions, baseURL: "https://api.mistral.ai/v1",
-                     defaults: Profile(maxTokensField: .maxTokens, strictUnknownFields: true, transforms: base + [.mistralToolIDs])),
+                     defaults: Profile(maxTokensField: .maxTokens, strictUnknownFields: true, chatStreamUsage: false, transforms: base + [.mistralToolIDs])),
         ],
     ))
 
