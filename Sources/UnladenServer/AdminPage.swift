@@ -1,5 +1,5 @@
 // The control panel: one page, Tabler for the look and Alpine.js for the
-// behaviour, both from a CDN. It talks to `/admin/api/*` with the admin
+// behaviour, both from a CDN. It talks to `/admin/api/*` with the panel
 // token, which it keeps in the browser's localStorage.
 
 enum AdminPage {
@@ -15,9 +15,9 @@ enum AdminPage {
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.5/dist/cdn.min.js"></script>
 <style>
   [x-cloak] { display: none !important; }
-  .secret { font-family: var(--tblr-font-monospace); }
+  .mono { font-family: var(--tblr-font-monospace); }
   .table td { vertical-align: middle; }
-  .w-strategy { width: 9rem; }
+  textarea.mono { font-size: .8125rem; }
 </style>
 </head>
 <body>
@@ -30,8 +30,8 @@ enum AdminPage {
       <form class="card card-md" @submit.prevent="signIn()">
         <div class="card-body">
           <h2 class="h3 text-center mb-4">Control panel</h2>
-          <label class="form-label">Admin token</label>
-          <input type="password" class="form-control" x-model="tokenInput" autocomplete="current-password" placeholder="server.admin.token">
+          <label class="form-label">Panel token</label>
+          <input type="password" class="form-control" x-model="tokenInput" autocomplete="current-password" placeholder="panel.token">
           <div class="text-danger mt-2" x-text="signInError"></div>
           <button class="btn btn-primary w-100 mt-4" type="submit">Sign in</button>
         </div>
@@ -84,77 +84,68 @@ enum AdminPage {
       <div class="page-body mt-2">
         <div class="container-xl">
 
-          <!-- Status -->
-          <div x-show="tab === 'status'">
+          <!-- Overview -->
+          <div x-show="tab === 'overview'">
             <div class="text-secondary mb-3">
               Configuration file: <code x-text="path || 'none'"></code>
               <span class="ms-2">Refreshed every 5 seconds.</span>
             </div>
-            <div class="row row-cards">
-              <template x-for="p in (status?.providers || []).filter(p => p.configured)" :key="p.id">
-                <div class="col-md-6 col-xl-4">
-                  <div class="card">
-                    <div class="card-header">
-                      <h3 class="card-title" x-text="p.id"></h3>
-                      <div class="card-actions"><span class="badge" x-show="p.strategy" x-text="p.strategy"></span></div>
-                    </div>
-                    <table class="table card-table">
-                      <tbody>
-                        <template x-for="k in p.keys" :key="k.name">
-                          <tr>
-                            <td class="secret" x-text="k.name"></td>
-                            <td>
-                              <span class="badge" :class="stateClass(k.state)" x-text="k.state"></span>
-                              <span class="text-secondary ms-1" x-show="k.cooling_seconds" x-text="k.cooling_seconds + 's'"></span>
-                            </td>
-                            <td class="text-end">
-                              <button class="btn btn-sm" x-show="k.state !== 'ready'" @click="resetKey(p.id, k.name)">Reset</button>
-                            </td>
-                          </tr>
-                        </template>
-                        <tr x-show="!p.keys.length"><td colspan="3" class="text-secondary">No key</td></tr>
-                        <template x-for="e in p.endpoints.filter(e => e.cooling_seconds)" :key="e.protocol">
-                          <tr><td colspan="3" class="text-warning">
-                            <span x-text="e.protocol + ' endpoint unreachable, retried in ' + e.cooling_seconds + 's'"></span>
-                          </td></tr>
-                        </template>
-                        <template x-for="m in p.cooling_models" :key="m.endpoint + m.model">
-                          <tr><td colspan="3" class="text-warning">
-                            <span x-text="m.model + ' failing, retried in ' + m.cooling_seconds + 's'"></span>
-                          </td></tr>
-                        </template>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </template>
+            <div class="card mb-3">
+              <div class="card-header"><h3 class="card-title">Accounts</h3></div>
+              <table class="table card-table">
+                <thead><tr><th>Account</th><th>Provider</th><th>State</th><th></th></tr></thead>
+                <tbody>
+                  <template x-for="a in status?.accounts || []" :key="a.provider + ' ' + a.name">
+                    <tr>
+                      <td>
+                        <span class="mono" x-text="a.name"></span>
+                        <span class="badge bg-secondary-lt ms-1" x-show="a.source === 'environment'">environment</span>
+                      </td>
+                      <td>
+                        <span class="mono" x-text="a.provider"></span>
+                        <span class="badge ms-1" x-show="a.pool !== 'order'" x-text="a.pool"></span>
+                      </td>
+                      <td>
+                        <span class="badge" :class="stateClass(a.state)" x-text="a.state"></span>
+                        <span class="text-secondary ms-1" x-show="a.cooling_seconds" x-text="a.cooling_seconds + 's'"></span>
+                      </td>
+                      <td class="text-end">
+                        <button class="btn btn-sm" x-show="a.state !== 'ready'" @click="resetKey(a.provider, a.name)">Reset</button>
+                      </td>
+                    </tr>
+                  </template>
+                  <tr x-show="!(status?.accounts || []).length"><td colspan="4" class="text-secondary">No account: add one on the Accounts page.</td></tr>
+                  <template x-for="c in status?.cooling || []" :key="c.provider + c.what">
+                    <tr><td colspan="4" class="text-warning">
+                      <span x-text="c.provider + ': ' + c.what + ', retried in ' + c.cooling_seconds + 's'"></span>
+                    </td></tr>
+                  </template>
+                </tbody>
+              </table>
             </div>
-            <div class="row row-cards mt-2">
+            <div class="row row-cards">
               <div class="col-md-6">
                 <div class="card">
-                  <div class="card-header"><h3 class="card-title">Routes in force</h3></div>
+                  <div class="card-header"><h3 class="card-title">Models in force</h3></div>
                   <table class="table card-table">
                     <tbody>
-                      <template x-for="r in status?.routes || []" :key="r.name">
-                        <tr><td class="secret" x-text="r.name"></td><td x-text="r.targets.join(', ')"></td></tr>
+                      <template x-for="r in status?.models || []" :key="r.name">
+                        <tr><td class="mono" x-text="r.name"></td><td class="mono" x-text="r.targets.join(', ')"></td></tr>
                       </template>
-                      <tr x-show="!(status?.routes || []).length"><td class="text-secondary">No route: clients name provider/model.</td></tr>
+                      <tr x-show="!(status?.models || []).length"><td class="text-secondary">No model: clients name provider/model.</td></tr>
                     </tbody>
                   </table>
                 </div>
               </div>
               <div class="col-md-6">
                 <div class="card">
-                  <div class="card-header"><h3 class="card-title">Client keys in force</h3></div>
+                  <div class="card-header"><h3 class="card-title">Clients in force</h3></div>
                   <table class="table card-table">
                     <tbody>
-                      <template x-for="c in status?.client_keys || []" :key="c.name">
-                        <tr>
-                          <td x-text="c.name"></td>
-                          <td class="text-secondary" x-text="'routes: ' + (c.routes ? c.routes.join(', ') : 'all') + ' · passthrough: ' + (c.passthrough.join(', ') || 'none')"></td>
-                        </tr>
+                      <template x-for="c in status?.clients || []" :key="c.name">
+                        <tr><td x-text="c.name"></td><td class="text-secondary" x-text="clientSummary(c.models)"></td></tr>
                       </template>
-                      <tr x-show="!(status?.client_keys || []).length"><td class="text-warning">None: any client may use the gateway.</td></tr>
+                      <tr x-show="!(status?.clients || []).length"><td class="text-warning">None: any client may use the gateway.</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -162,213 +153,316 @@ enum AdminPage {
             </div>
           </div>
 
-          <!-- Providers -->
-          <div x-show="tab === 'providers'">
-            <div class="d-flex mb-3">
+          <!-- Accounts -->
+          <div x-show="tab === 'accounts'">
+            <div class="d-flex mb-3 align-items-start">
               <div class="text-secondary me-auto">
-                Built-in presets need only keys. A provider of another id names the preset it is like and its endpoints.
+                The upstream accounts the gateway pays with. Accounts of one provider form a pool, tried in this order:
+                the next is used only when the one before fails.
               </div>
-              <button class="btn" @click="addProvider()"><i class="ti ti-plus me-1"></i>Add provider</button>
+              <button class="btn" @click="startAdding()" x-show="!adding"><i class="ti ti-plus me-1"></i>Add account</button>
             </div>
-            <template x-for="(p, pi) in model.providers" :key="p.uid">
+
+            <template x-if="adding">
+            <div class="card mb-3">
+              <div class="card-header"><h3 class="card-title">Add an account</h3></div>
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label">Provider</label>
+                    <select class="form-select" x-model="draft.provider" @change="draftChanged()">
+                      <template x-for="id in providerIds()" :key="id"><option :value="id" x-text="id" :selected="draft.provider === id"></option></template>
+                      <option value="">another address…</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Name</label>
+                    <input class="form-control mono" x-model="draft.name" @input="draftChanged()" placeholder="work">
+                    <div class="form-hint">Shown in logs and the overview.</div>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Key</label>
+                    <input class="form-control mono" x-model="draft.key" placeholder="sk-… or ${ENV_VAR}" autocomplete="off">
+                    <div class="form-hint" x-show="!draft.provider">May stay empty for an address without authentication.</div>
+                  </div>
+                  <template x-if="!draft.provider">
+                    <div class="col-12">
+                      <div class="row g-3">
+                        <div class="col-md-4">
+                          <label class="form-label">Speaks like</label>
+                          <select class="form-select" x-model="draft.preset">
+                            <option value="">nothing built in</option>
+                            <template x-for="id in presets" :key="id"><option :value="id" x-text="id"></option></template>
+                          </select>
+                        </div>
+                        <div class="col-md-8">
+                          <label class="form-label">Endpoint</label>
+                          <div class="input-group">
+                            <select class="form-select" style="max-width: 9rem" x-model="draft.protocol">
+                              <template x-for="proto in protocols" :key="proto"><option :value="proto" x-text="proto" :selected="draft.protocol === proto"></option></template>
+                            </select>
+                            <input class="form-control mono" x-model="draft.url" placeholder="https://relay.example.com/v1">
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  <div class="col-12" x-show="draft.suggestions.length">
+                    <label class="form-label">Models</label>
+                    <template x-for="s in draft.suggestions" :key="s.name">
+                      <label class="form-check">
+                        <input class="form-check-input" type="checkbox" x-model="s.chosen">
+                        <span class="form-check-label">
+                          <span x-text="s.current ? 'Point' : 'Add'"></span>
+                          <code x-text="s.name"></code> →
+                          <code x-text="s.target"></code>
+                          <span class="text-secondary" x-show="s.current" x-text="'(now ' + s.current + ')'"></span>
+                        </span>
+                      </label>
+                    </template>
+                  </div>
+                </div>
+              </div>
+              <div class="card-footer d-flex gap-2">
+                <button class="btn btn-primary" @click="addAccount()" :disabled="!!draftProblem()">Add</button>
+                <button class="btn btn-ghost-secondary" @click="adding = false">Cancel</button>
+                <span class="text-secondary align-self-center" x-text="draftProblem()"></span>
+              </div>
+            </div>
+            </template>
+
+            <div class="card">
+              <table class="table card-table">
+                <thead><tr><th style="width: 13rem">Name</th><th style="width: 11rem">Provider</th><th>Key</th><th style="width: 5rem">Enabled</th><th style="width: 8rem"></th></tr></thead>
+                <tbody>
+                  <template x-for="(a, ai) in model.accounts" :key="a.uid">
+                    <tr>
+                      <td><input class="form-control form-control-sm mono" x-model="a.name"></td>
+                      <td>
+                        <span class="mono" x-text="accountProvider(a)"></span>
+                        <span class="badge bg-secondary-lt ms-1" x-show="a.custom">own address</span>
+                      </td>
+                      <td>
+                        <template x-if="isHidden(a.key)">
+                          <div class="d-flex align-items-center gap-2">
+                            <span class="mono text-secondary" x-text="'•••• ' + hiddenName(a.key)"></span>
+                            <button class="btn btn-sm" @click="a.key = ''">Replace</button>
+                          </div>
+                        </template>
+                        <template x-if="!isHidden(a.key)">
+                          <input class="form-control form-control-sm mono" x-model="a.key" :placeholder="a.custom ? 'none' : 'sk-… or ${ENV_VAR}'" autocomplete="off">
+                        </template>
+                        <template x-if="a.custom">
+                          <div class="mt-2">
+                            <template x-for="(e, ei) in a.endpoints" :key="e.uid">
+                              <div class="input-group input-group-sm mb-1">
+                                <select class="form-select" style="max-width: 8rem" x-model="e.protocol">
+                                  <template x-for="proto in protocols" :key="proto"><option :value="proto" x-text="proto" :selected="e.protocol === proto"></option></template>
+                                </select>
+                                <input class="form-control mono" x-model="e.url">
+                                <button class="btn btn-icon" @click="a.endpoints.splice(ei, 1)"><i class="ti ti-x"></i></button>
+                              </div>
+                            </template>
+                            <template x-for="(h, hi) in a.headers" :key="h.uid">
+                              <div class="input-group input-group-sm mb-1">
+                                <input class="form-control mono" style="max-width: 12rem" x-model="h.name" placeholder="Header-Name">
+                                <input class="form-control mono" x-model="h.value" placeholder="value or ${ENV_VAR}">
+                                <button class="btn btn-icon" @click="a.headers.splice(hi, 1)"><i class="ti ti-x"></i></button>
+                              </div>
+                            </template>
+                            <button class="btn btn-sm" @click="a.endpoints.push({uid: uid(), protocol: 'chat', url: ''})"><i class="ti ti-plus me-1"></i>Endpoint</button>
+                            <button class="btn btn-sm" @click="a.headers.push({uid: uid(), name: '', value: ''})"><i class="ti ti-plus me-1"></i>Header</button>
+                            <span class="text-secondary ms-2" x-show="a.preset" x-text="'speaks like ' + a.preset"></span>
+                          </div>
+                        </template>
+                      </td>
+                      <td><input type="checkbox" class="form-check-input" x-model="a.enabled"></td>
+                      <td class="text-end text-nowrap">
+                        <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Earlier in the pool" @click="move(model.accounts, ai, -1)" :disabled="ai === 0"><i class="ti ti-arrow-up"></i></button>
+                        <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Later in the pool" @click="move(model.accounts, ai, 1)" :disabled="ai === model.accounts.length - 1"><i class="ti ti-arrow-down"></i></button>
+                        <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="model.accounts.splice(ai, 1)"><i class="ti ti-trash"></i></button>
+                      </td>
+                    </tr>
+                  </template>
+                  <tr x-show="!model.accounts.length"><td colspan="5" class="text-secondary">No account in the file: providers use keys from the environment.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Models -->
+          <div x-show="tab === 'models'">
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Models</h3>
+                <div class="card-actions"><button class="btn" @click="model.models.push({uid: uid(), name: '', target: '', raw: undefined})"><i class="ti ti-plus me-1"></i>Add model</button></div>
+              </div>
+              <div class="card-body text-secondary">
+                The names clients may ask for, and who answers them. A target is a provider (the name asked for is passed on),
+                <code>provider/model</code>, or <code>@name</code> for another entry. Names may use <code>*</code>;
+                <code>*</code> alone answers every other name.
+              </div>
+              <table class="table card-table">
+                <thead><tr><th style="width: 35%">Name</th><th>Target</th><th style="width: 3rem"></th></tr></thead>
+                <tbody>
+                  <template x-for="(r, ri) in model.models" :key="r.uid">
+                    <tr>
+                      <td><input class="form-control mono" x-model="r.name" placeholder="claude-*, fast, *"></td>
+                      <td>
+                        <template x-if="r.raw === undefined">
+                          <input class="form-control mono" x-model="r.target" placeholder="anthropic, deepseek/deepseek-chat, @fast" list="target-list">
+                        </template>
+                        <template x-if="r.raw !== undefined">
+                          <code class="text-secondary" x-text="JSON.stringify(r.raw)" title="Edit it under Settings, Edit as JSON"></code>
+                        </template>
+                      </td>
+                      <td><button class="btn btn-ghost-danger btn-icon" @click="model.models.splice(ri, 1)"><i class="ti ti-x"></i></button></td>
+                    </tr>
+                  </template>
+                  <tr x-show="!model.models.length"><td colspan="3" class="text-secondary">No model: clients name provider/model directly.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Clients -->
+          <div x-show="tab === 'clients'">
+            <div class="d-flex mb-3 align-items-start">
+              <div class="text-secondary me-auto">
+                The keys clients present (Bearer, <code>x-api-key</code> or <code>x-goog-api-key</code>). With none, any client may use the gateway.
+              </div>
+              <button class="btn" @click="addClient()"><i class="ti ti-plus me-1"></i>Add client</button>
+            </div>
+            <template x-for="(c, ci) in model.clients" :key="c.uid">
               <div class="card mb-3">
                 <div class="card-header">
-                  <input class="form-control form-control-flush h3 mb-0 secret" style="max-width: 16rem" x-model="p.id" placeholder="provider id" list="preset-list">
-                  <div class="card-actions d-flex gap-2 align-items-center">
-                    <select class="form-select w-strategy" x-model="p.strategy" title="How a request picks among the keys">
-                      <option value="">order</option>
-                      <option value="rotate">rotate</option>
-                    </select>
-                    <button class="btn btn-ghost-danger btn-icon" title="Remove the provider" @click="model.providers.splice(pi, 1)"><i class="ti ti-trash"></i></button>
+                  <input class="form-control form-control-flush h3 mb-0" style="max-width: 16rem" x-model="c.name" placeholder="name">
+                  <div class="card-actions d-flex gap-3 align-items-center">
+                    <label class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" x-model="c.enabled"><span class="form-check-label">Enabled</span></label>
+                    <button class="btn btn-ghost-danger btn-icon" title="Remove" @click="model.clients.splice(ci, 1)"><i class="ti ti-trash"></i></button>
                   </div>
                 </div>
                 <div class="card-body">
-                  <div class="row g-3">
-                    <div class="col-md-4" x-show="!isPreset(p.id) || p.preset">
-                      <label class="form-label">Preset</label>
-                      <select class="form-select" x-model="p.preset">
-                        <option value="">none</option>
-                        <template x-for="id in presets" :key="id"><option :value="id" x-text="id" :selected="p.preset === id"></option></template>
-                      </select>
+                  <label class="form-label">Key</label>
+                  <template x-if="isHidden(c.key)">
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="mono text-secondary" x-text="'•••• ' + hiddenName(c.key)"></span>
+                      <button class="btn btn-sm" @click="c.key = ''">Replace</button>
                     </div>
+                  </template>
+                  <template x-if="!isHidden(c.key)">
+                    <div class="input-group">
+                      <input class="form-control mono" x-model="c.key" placeholder="key or ${ENV_VAR}" autocomplete="off">
+                      <button class="btn btn-icon" title="Generate" @click="c.key = generateSecret()"><i class="ti ti-dice-5"></i></button>
+                      <button class="btn btn-icon" title="Copy" @click="navigator.clipboard.writeText(c.key)"><i class="ti ti-copy"></i></button>
+                    </div>
+                  </template>
+                  <label class="form-label mt-3">May use</label>
+                  <div class="btn-group mb-2">
+                    <button class="btn btn-sm" :class="c.access === 'menu' && 'btn-primary'" @click="c.access = 'menu'">Every model</button>
+                    <button class="btn btn-sm" :class="c.access === 'some' && 'btn-primary'" @click="c.access = 'some'">Some models</button>
+                    <button class="btn btn-sm" :class="c.access === 'all' && 'btn-primary'" @click="c.access = 'all'">Everything, provider/model too</button>
                   </div>
-
-                  <h4 class="mt-3">Keys</h4>
-                  <table class="table table-sm">
-                    <thead><tr><th style="width: 12rem">Name</th><th>Key</th><th style="width: 6rem">Enabled</th><th style="width: 3rem"></th></tr></thead>
-                    <tbody>
-                      <template x-for="(k, ki) in p.keys" :key="k.uid">
-                        <tr>
-                          <td><input class="form-control form-control-sm" x-model="k.name" placeholder="key-…"></td>
-                          <td>
-                            <template x-if="isHidden(k.key)">
-                              <div class="d-flex align-items-center gap-2">
-                                <span class="secret text-secondary" x-text="'•••• ' + hiddenName(k.key)"></span>
-                                <button class="btn btn-sm" @click="k.key = ''">Replace</button>
-                              </div>
-                            </template>
-                            <template x-if="!isHidden(k.key)">
-                              <input class="form-control form-control-sm secret" x-model="k.key" placeholder="sk-… or ${ENV_VAR}" autocomplete="off">
-                            </template>
-                          </td>
-                          <td><input type="checkbox" class="form-check-input" x-model="k.enabled"></td>
-                          <td><button class="btn btn-sm btn-ghost-danger btn-icon" @click="p.keys.splice(ki, 1)"><i class="ti ti-x"></i></button></td>
-                        </tr>
+                  <div x-show="c.access === 'some'">
+                    <div class="d-flex flex-wrap gap-3 mb-2">
+                      <template x-for="name in menuNames()" :key="name">
+                        <label class="form-check mb-0">
+                          <input class="form-check-input" type="checkbox" :checked="c.chosen.includes(name)" @change="toggle(c.chosen, name)">
+                          <span class="form-check-label mono" x-text="name"></span>
+                        </label>
                       </template>
-                      <tr x-show="!p.keys.length"><td colspan="4" class="text-secondary">No key in the file: the environment's are used.</td></tr>
-                    </tbody>
-                  </table>
-                  <button class="btn btn-sm" @click="p.keys.push(newKey())"><i class="ti ti-plus me-1"></i>Key</button>
-
-                  <h4 class="mt-4">Endpoints <span class="text-secondary fw-normal" x-show="isPreset(p.id) || p.preset">(empty: the preset's)</span></h4>
-                  <template x-for="(e, ei) in p.endpoints" :key="e.uid">
-                    <div class="input-group input-group-sm mb-2">
-                      <select class="form-select" style="max-width: 9rem" x-model="e.protocol">
-                        <template x-for="proto in protocols" :key="proto"><option :value="proto" x-text="proto" :selected="e.protocol === proto"></option></template>
-                      </select>
-                      <input class="form-control" x-model="e.url" placeholder="https://api.example.com/v1">
-                      <button class="btn btn-icon" @click="p.endpoints.splice(ei, 1)"><i class="ti ti-x"></i></button>
                     </div>
-                  </template>
-                  <button class="btn btn-sm" @click="p.endpoints.push({uid: uid(), protocol: 'chat', url: ''})"><i class="ti ti-plus me-1"></i>Endpoint</button>
-
-                  <h4 class="mt-4">Headers</h4>
-                  <template x-for="(h, hi) in p.headers" :key="h.uid">
-                    <div class="input-group input-group-sm mb-2">
-                      <input class="form-control" style="max-width: 16rem" x-model="h.name" placeholder="Header-Name">
-                      <input class="form-control" x-model="h.value" placeholder="value or ${ENV_VAR}">
-                      <button class="btn btn-icon" @click="p.headers.splice(hi, 1)"><i class="ti ti-x"></i></button>
-                    </div>
-                  </template>
-                  <button class="btn btn-sm" @click="p.headers.push({uid: uid(), name: '', value: ''})"><i class="ti ti-plus me-1"></i>Header</button>
+                    <input class="form-control form-control-sm mono" x-model="c.extra" placeholder="also, comma-separated: deepseek/*, openai/gpt-4o">
+                  </div>
                 </div>
               </div>
             </template>
-            <div class="empty" x-show="!model.providers.length">
-              <p class="empty-title">No provider in the file</p>
-              <p class="empty-subtitle text-secondary">Built-in presets still work with keys from the environment.</p>
+            <div class="empty" x-show="!model.clients.length">
+              <p class="empty-title">No client key</p>
+              <p class="empty-subtitle text-secondary">Any client that reaches the gateway may use it.</p>
             </div>
           </div>
 
-          <!-- Routes -->
-          <div x-show="tab === 'routes'">
-            <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">Routes</h3>
-                <div class="card-actions"><button class="btn" @click="model.routes.push({uid: uid(), name: '', target: ''})"><i class="ti ti-plus me-1"></i>Add route</button></div>
-              </div>
-              <div class="card-body text-secondary">
-                A model name a client asks for → the <code>provider/model</code> that serves it.
-                Names may use <code>*</code>; <code>$model</code> in the target stands for the name asked for;
-                <code>*</code> alone catches every other name.
-              </div>
-              <table class="table card-table">
-                <thead><tr><th style="width: 40%">Model name</th><th>Target</th><th style="width: 3rem"></th></tr></thead>
-                <tbody>
-                  <template x-for="(r, ri) in model.routes" :key="r.uid">
-                    <tr>
-                      <td><input class="form-control secret" x-model="r.name" placeholder="claude-sonnet, gpt-*, *"></td>
-                      <td><input class="form-control secret" x-model="r.target" placeholder="provider/model" list="provider-list"></td>
-                      <td><button class="btn btn-ghost-danger btn-icon" @click="model.routes.splice(ri, 1)"><i class="ti ti-x"></i></button></td>
-                    </tr>
-                  </template>
-                  <tr x-show="!model.routes.length"><td colspan="3" class="text-secondary">No route: clients name provider/model directly.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Client keys -->
-          <div x-show="tab === 'clients'">
-            <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">Client keys</h3>
-                <div class="card-actions"><button class="btn" @click="addClient()"><i class="ti ti-plus me-1"></i>Add client key</button></div>
-              </div>
-              <div class="card-body text-secondary">
-                Keys clients present (Bearer, <code>x-api-key</code> or <code>x-goog-api-key</code>). With none, any client may use the gateway.
-              </div>
-              <table class="table card-table">
-                <thead><tr><th style="width: 12rem">Name</th><th>Secret</th><th>Routes</th><th>Passthrough</th><th style="width: 5rem">Enabled</th><th style="width: 3rem"></th></tr></thead>
-                <tbody>
-                  <template x-for="(c, ci) in model.clients" :key="c.uid">
-                    <tr>
-                      <td><input class="form-control form-control-sm" x-model="c.name"></td>
-                      <td>
-                        <template x-if="isHidden(c.secret)">
-                          <div class="d-flex align-items-center gap-2">
-                            <span class="secret text-secondary" x-text="'•••• ' + hiddenName(c.secret)"></span>
-                            <button class="btn btn-sm" @click="c.secret = ''">Replace</button>
-                          </div>
-                        </template>
-                        <template x-if="!isHidden(c.secret)">
-                          <div class="input-group input-group-sm">
-                            <input class="form-control secret" x-model="c.secret" placeholder="secret or ${ENV_VAR}" autocomplete="off">
-                            <button class="btn btn-icon" title="Generate" @click="c.secret = generateSecret()"><i class="ti ti-dice-5"></i></button>
-                            <button class="btn btn-icon" title="Copy" @click="navigator.clipboard.writeText(c.secret)"><i class="ti ti-copy"></i></button>
-                          </div>
-                        </template>
-                      </td>
-                      <td><input class="form-control form-control-sm secret" x-model="c.routes" placeholder="all"></td>
-                      <td>
-                        <div class="input-group input-group-sm">
-                          <select class="form-select" style="max-width: 6rem" x-model="c.passMode">
-                            <option value="none">none</option><option value="all">all</option><option value="some">some</option>
-                          </select>
-                          <input class="form-control secret" x-show="c.passMode === 'some'" x-model="c.passthrough" placeholder="deepseek/*, openai/gpt-*">
-                        </div>
-                      </td>
-                      <td><input type="checkbox" class="form-check-input" x-model="c.enabled"></td>
-                      <td><button class="btn btn-sm btn-ghost-danger btn-icon" @click="model.clients.splice(ci, 1)"><i class="ti ti-x"></i></button></td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-              <div class="card-footer text-secondary">
-                Routes and passthrough take comma-separated globs. Passthrough lets the client name <code>provider/model</code> directly.
-              </div>
-            </div>
-          </div>
-
-          <!-- Server -->
-          <div x-show="tab === 'server'">
-            <div class="card">
+          <!-- Settings -->
+          <div x-show="tab === 'settings'">
+            <div class="card mb-3">
               <div class="card-body">
                 <div class="row g-3">
-                  <template x-for="f in serverFields" :key="f.name">
+                  <div class="col-md-6">
+                    <label class="form-label"><span class="mono">listen</span><span class="badge bg-secondary-lt ms-1">restart</span></label>
+                    <input class="form-control mono" x-model="model.listen" placeholder="127.0.0.1:4141">
+                    <div class="form-hint">host:port</div>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label"><span class="mono">panel.token</span></label>
+                    <template x-if="isHidden(model.panelToken)">
+                      <div class="d-flex align-items-center gap-2">
+                        <span class="mono text-secondary" x-text="'•••• ' + hiddenName(model.panelToken)"></span>
+                        <button class="btn btn-sm" @click="model.panelToken = ''">Replace</button>
+                      </div>
+                    </template>
+                    <template x-if="!isHidden(model.panelToken)">
+                      <input class="form-control mono" x-model="model.panelToken" placeholder="${UNLADEN_ADMIN_TOKEN}" autocomplete="off">
+                    </template>
+                    <div class="form-hint">Opens this panel; at least 16 characters. After a change, sign in again.</div>
+                  </div>
+                </div>
+                <h4 class="mt-4">Advanced</h4>
+                <div class="row g-3">
+                  <template x-for="f in advancedFields" :key="f.name">
                     <div class="col-md-6">
                       <label class="form-label">
-                        <span class="secret" x-text="f.name"></span>
+                        <span class="mono" x-text="f.name"></span>
                         <span class="badge bg-secondary-lt ms-1" x-show="f.restart">restart</span>
                       </label>
                       <template x-if="f.kind === 'bool'">
                         <label class="form-check form-switch">
-                          <input class="form-check-input" type="checkbox" x-model="model.server[f.name]">
+                          <input class="form-check-input" type="checkbox" x-model="model.advanced[f.name]">
                           <span class="form-check-label" x-text="f.help"></span>
                         </label>
                       </template>
                       <template x-if="f.kind !== 'bool'">
                         <div>
-                          <input class="form-control secret" x-model="model.server[f.name]" :placeholder="f.placeholder">
+                          <input class="form-control mono" x-model="model.advanced[f.name]" :placeholder="f.placeholder">
                           <div class="form-hint" x-text="f.help"></div>
                         </div>
                       </template>
                     </div>
                   </template>
                   <div class="col-md-6">
-                    <label class="form-label"><span class="secret">admin.token</span></label>
-                    <template x-if="isHidden(model.server.adminToken)">
-                      <div class="d-flex align-items-center gap-2">
-                        <span class="secret text-secondary" x-text="'•••• ' + hiddenName(model.server.adminToken)"></span>
-                        <button class="btn btn-sm" @click="model.server.adminToken = ''">Replace</button>
+                    <label class="form-label"><span class="mono">pools</span></label>
+                    <template x-for="id in poolProviders()" :key="id">
+                      <div class="input-group input-group-sm mb-1">
+                        <span class="input-group-text mono" style="min-width: 9rem" x-text="id"></span>
+                        <select class="form-select" @change="model.pools[id] = $event.target.value">
+                          <option value="order" :selected="(model.pools[id] || 'order') === 'order'">order</option>
+                          <option value="rotate" :selected="model.pools[id] === 'rotate'">rotate</option>
+                        </select>
                       </div>
                     </template>
-                    <template x-if="!isHidden(model.server.adminToken)">
-                      <input class="form-control secret" x-model="model.server.adminToken" placeholder="${UNLADEN_ADMIN_TOKEN}" autocomplete="off">
-                    </template>
-                    <div class="form-hint">Opens this panel; at least 16 characters. After a change, sign in again.</div>
+                    <div class="form-hint">
+                      How a provider's accounts take turns. <code>order</code>: the next only when one fails.
+                      <code>rotate</code>: each request starts at the next account; it spreads load but breaks prompt caches.
+                    </div>
                   </div>
                 </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Edit as JSON</h3>
+                <div class="card-actions d-flex gap-2">
+                  <button class="btn btn-sm" @click="showJSON()">Show the current form</button>
+                  <button class="btn btn-sm btn-primary" @click="applyJSON()" :disabled="!jsonText">Apply to the form</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="text-secondary mb-2">
+                  The whole file as JSON, keys hidden as <code>&lt;hidden key-…&gt;</code> (kept as they are when saved).
+                  Applying fills the pages above; Save writes the file. Comments in the file are not kept.
+                </div>
+                <textarea class="form-control mono" rows="18" x-model="jsonText" spellcheck="false"></textarea>
+                <div class="text-danger mt-2" x-text="jsonError"></div>
               </div>
             </div>
           </div>
@@ -377,8 +471,7 @@ enum AdminPage {
       </div>
     </div>
 
-    <datalist id="preset-list"><template x-for="id in presets" :key="id"><option :value="id"></option></template></datalist>
-    <datalist id="provider-list"><template x-for="id in providerIds()" :key="id"><option :value="id + '/'"></option></template></datalist>
+    <datalist id="target-list"><template x-for="t in targetChoices()" :key="t"><option :value="t"></option></template></datalist>
   </div>
   </template>
 </div>
@@ -386,6 +479,14 @@ enum AdminPage {
 <script>
 const TOKEN_KEY = 'unladen.adminToken';
 const HIDDEN = /^<hidden (key-[0-9a-f]{8})>$/;
+const SECTIONS = ['listen', 'panel', 'accounts', 'models', 'clients', 'advanced'];
+const ADVANCED = ['strict', 'keepalive', 'connect_timeout', 'head_timeout', 'idle_timeout', 'max_request_bytes'];
+// The names a provider's own models go by, offered as models when an
+// account of it is added.
+const FAMILIES = {
+  anthropic: ['claude-*'], openai: ['gpt-*', 'o3*', 'o4*'], gemini: ['gemini-*'], deepseek: ['deepseek-*'],
+  xai: ['grok-*'], moonshot: ['kimi-*'], mistral: ['mistral-*', 'codestral-*'],
+};
 let counter = 0;
 
 function panel() {
@@ -393,21 +494,20 @@ function panel() {
     token: localStorage.getItem(TOKEN_KEY) || '',
     tokenInput: '',
     signInError: '',
-    tab: 'status',
+    tab: 'overview',
     tabs: [
-      { id: 'status', label: 'Status', icon: 'ti-activity' },
-      { id: 'providers', label: 'Providers', icon: 'ti-server' },
-      { id: 'routes', label: 'Routes', icon: 'ti-route' },
-      { id: 'clients', label: 'Client keys', icon: 'ti-key' },
-      { id: 'server', label: 'Server', icon: 'ti-settings' },
+      { id: 'overview', label: 'Overview', icon: 'ti-activity' },
+      { id: 'accounts', label: 'Accounts', icon: 'ti-wallet' },
+      { id: 'models', label: 'Models', icon: 'ti-list-details' },
+      { id: 'clients', label: 'Clients', icon: 'ti-key' },
+      { id: 'settings', label: 'Settings', icon: 'ti-settings' },
     ],
     protocols: ['chat', 'responses', 'anthropic', 'gemini'],
-    serverFields: [
-      { name: 'listen', placeholder: '127.0.0.1:4141', help: 'host:port', restart: true },
+    advancedFields: [
       { name: 'strict', kind: 'bool', help: 'Refuse requests a model cannot take exactly' },
       { name: 'keepalive', placeholder: '15s', help: 'Keepalive interval for streams' },
       { name: 'connect_timeout', placeholder: '10s', help: 'Upstream connection timeout', restart: true },
-      { name: 'head_timeout', placeholder: '240s', help: 'Wait for the first content before the next key; off: no limit' },
+      { name: 'head_timeout', placeholder: '240s', help: 'Wait for the first content before the next account; off: no limit' },
       { name: 'idle_timeout', placeholder: '300s', help: 'Longest silence of a forwarded stream; off: no limit' },
       { name: 'max_request_bytes', placeholder: '64MiB', help: 'Largest request body' },
     ],
@@ -421,10 +521,14 @@ function panel() {
     messages: [],
     saving: false,
     menu: false,
+    adding: false,
+    draft: null,
+    jsonText: '',
+    jsonError: '',
 
     async start() {
       if (this.token) await this.load();
-      setInterval(() => { if (this.token && this.tab === 'status') this.refreshStatus(); }, 5000);
+      setInterval(() => { if (this.token && this.tab === 'overview') this.refreshStatus(); }, 5000);
     },
 
     async api(method, path, body) {
@@ -435,7 +539,7 @@ function panel() {
       });
       let json = {};
       try { json = await response.json(); } catch (e) {}
-      if (response.status === 401) { this.signOut('The admin token was refused.'); }
+      if (response.status === 401) { this.signOut('The panel token was refused.'); }
       return { status: response.status, json };
     },
 
@@ -465,6 +569,9 @@ function panel() {
       this.original = config.json.document || {};
       this.model = fromDocument(this.original);
       this.pristine = JSON.stringify(toDocument(this.model, this.original));
+      this.adding = false;
+      this.jsonText = '';
+      this.jsonError = '';
       await this.refreshStatus();
     },
 
@@ -515,26 +622,128 @@ function panel() {
 
     say(kind, title, text) {
       this.messages.push({ id: ++counter, kind, title, text });
-      if (kind === 'success') { const id = counter; setTimeout(() => { this.messages = this.messages.filter(m => m.id !== id); }, 5000); }
+      if (kind !== 'danger' && kind !== 'warning') { const id = counter; setTimeout(() => { this.messages = this.messages.filter(m => m.id !== id); }, 5000); }
     },
+
+    // Accounts
+
+    accountProvider(a) { return a.custom ? a.name : (a.provider || a.name); },
+    // Presets, and the accounts that are providers of their own.
+    providerIds() {
+      const ids = new Set(this.presets);
+      for (const a of this.model.accounts) if (a.custom && a.name.trim()) ids.add(a.name.trim());
+      return [...ids].sort();
+    },
+    // Providers with more than one account, and those the file sets.
+    poolProviders() {
+      const counts = {};
+      for (const a of this.model.accounts) { const p = this.accountProvider(a).trim(); if (p) counts[p] = (counts[p] || 0) + 1; }
+      const ids = new Set(Object.keys(counts).filter(p => counts[p] > 1));
+      for (const id of Object.keys(this.model.pools)) ids.add(id);
+      return [...ids].sort();
+    },
+
+    startAdding() {
+      this.draft = { provider: this.presets[0] || '', name: '', autoName: '', key: '', preset: '', protocol: 'chat', url: '', suggestions: [] };
+      this.draftChanged(true);
+      this.adding = true;
+    },
+    // A name that follows the provider until it is typed over, and the
+    // models the provider's family suggests.
+    draftChanged(fresh) {
+      const d = this.draft;
+      if (fresh || d.autoName === d.name) {
+        const taken = new Set(this.model.accounts.map(a => a.name.trim()));
+        const base = d.provider || 'relay';
+        let name = base, n = 2;
+        while (taken.has(name)) name = base + '-' + n++;
+        d.name = d.autoName = name;
+      }
+      const provider = d.provider || d.name.trim();
+      d.suggestions = [];
+      for (const name of FAMILIES[d.provider] || []) {
+        const existing = this.model.models.find(r => r.name.trim() === name);
+        const current = existing ? (existing.raw === undefined ? existing.target.trim() : JSON.stringify(existing.raw)) : '';
+        if (existing && current === provider) continue;
+        d.suggestions.push({ name, target: provider, current, chosen: !existing });
+      }
+    },
+    draftProblem() {
+      const d = this.draft;
+      if (!d) return '';
+      const name = d.name.trim();
+      if (!name) return 'Give the account a name.';
+      if (/[\/*]/.test(name) || name.startsWith('@')) return 'A name cannot contain / or * or start with @.';
+      if (this.model.accounts.some(a => a.name.trim() === name)) return 'Another account has this name.';
+      if (d.provider && name !== d.provider && this.presets.includes(name)) return name + ' is a provider: give this account another name.';
+      if (d.provider && !d.key.trim()) return 'Enter the key.';
+      if (!d.provider && !/^https?:\/\//.test(d.url.trim())) return 'Enter the endpoint address (http:// or https://).';
+      return '';
+    },
+    addAccount() {
+      const d = this.draft, name = d.name.trim();
+      const account = { uid: ++counter, name, provider: '', key: d.key.trim(), enabled: true, custom: false, preset: '', endpoints: [], headers: [], rest: {} };
+      if (d.provider) {
+        account.provider = d.provider === name ? '' : d.provider;
+      } else {
+        account.custom = true;
+        account.preset = d.preset;
+        account.endpoints = [{ uid: ++counter, protocol: d.protocol, url: d.url.trim() }];
+      }
+      this.model.accounts.push(account);
+      for (const s of d.suggestions.filter(s => s.chosen)) {
+        const existing = this.model.models.find(r => r.name.trim() === s.name);
+        if (existing) { existing.target = s.target; existing.raw = undefined; }
+        else this.model.models.push({ uid: ++counter, name: s.name, target: s.target, raw: undefined });
+      }
+      this.adding = false;
+      this.say('info', 'Added ' + name, 'Save to put it in force.');
+    },
+
+    // Models and clients
+
+    menuNames() { return this.model.models.map(r => r.name.trim()).filter(Boolean); },
+    targetChoices() {
+      const providers = new Set(this.model.accounts.map(a => this.accountProvider(a).trim()).filter(Boolean));
+      for (const a of this.status?.accounts || []) providers.add(a.provider);
+      return [...[...providers].sort(), ...this.menuNames().filter(n => !n.includes('*')).map(n => '@' + n)];
+    },
+    addClient() {
+      this.model.clients.push({ uid: ++counter, name: '', key: generateSecret(), access: 'menu', chosen: [], extra: '', enabled: true, rest: {} });
+    },
+    clientSummary(models) {
+      if (models === null || models === undefined) return 'every model';
+      if (models.includes('*')) return 'everything, provider/model too';
+      return models.join(', ');
+    },
+
+    // Settings
+
+    showJSON() {
+      this.jsonText = JSON.stringify(toDocument(this.model, this.original), null, 2);
+      this.jsonError = '';
+    },
+    applyJSON() {
+      try {
+        const document = JSON.parse(this.jsonText);
+        if (typeof document !== 'object' || document === null || Array.isArray(document)) throw new Error('expected an object');
+        this.model = fromDocument(document);
+        this.original = document;
+        this.jsonError = '';
+        this.say('info', 'Applied', 'Save to write the file.');
+      } catch (e) {
+        this.jsonError = 'Not valid JSON: ' + e.message;
+      }
+    },
+
+    // Helpers
 
     stateClass(state) { return { ready: 'bg-success-lt', cooling: 'bg-warning-lt', disabled: 'bg-danger-lt' }[state]; },
     isHidden(value) { return typeof value === 'string' && HIDDEN.test(value); },
     hiddenName(value) { return value.match(HIDDEN)[1]; },
-    isPreset(id) { return this.presets.includes(id); },
-    providerIds() {
-      const ids = new Set(this.model.providers.map(p => p.id).filter(Boolean));
-      for (const p of this.status?.providers || []) if (p.configured) ids.add(p.id);
-      return [...ids].sort();
-    },
+    move(items, index, by) { const [item] = items.splice(index, 1); items.splice(index + by, 0, item); },
+    toggle(items, value) { const i = items.indexOf(value); if (i < 0) items.push(value); else items.splice(i, 1); },
     uid() { return ++counter; },
-    newKey() { return { uid: ++counter, name: '', key: '', enabled: true, rest: {} }; },
-    addProvider() {
-      this.model.providers.push({ uid: ++counter, id: '', preset: '', strategy: '', keys: [this.newKey()], endpoints: [], headers: [], rest: {} });
-    },
-    addClient() {
-      this.model.clients.push({ uid: ++counter, name: '', secret: generateSecret(), routes: '', passMode: 'none', passthrough: '', enabled: true, rest: {} });
-    },
     generateSecret,
   };
 }
@@ -546,7 +755,7 @@ function generateSecret() {
 }
 
 // The document (the file as JSON) ↔ what the forms edit. Fields the forms
-// do not know are carried in `rest` and written back as they were.
+// do not know are carried in `rest` (or `raw`) and written back as they were.
 
 function omit(object, keys) {
   const rest = {};
@@ -559,126 +768,132 @@ function list(value) {
   return Array.isArray(value) ? value : [value];
 }
 
-function fromDocument(doc) {
-  const server = doc.server || {};
-  const model = { server: {}, providers: [], routes: [], clients: [] };
-  for (const field of ['listen', 'keepalive', 'connect_timeout', 'head_timeout', 'idle_timeout', 'max_request_bytes']) {
-    model.server[field] = server[field] === undefined || server[field] === null ? '' : String(server[field]);
-  }
-  model.server.strict = server.strict === true;
-  model.server.adminToken = server.admin?.token ?? '';
-  model.server.rest = omit(server, ['listen', 'strict', 'keepalive', 'connect_timeout', 'head_timeout', 'idle_timeout', 'max_request_bytes', 'admin']);
-  model.server.adminRest = omit(server.admin, ['token']);
+function text(value) {
+  return value === undefined || value === null ? '' : String(value);
+}
 
-  for (const [id, p] of Object.entries(doc.providers || {})) {
-    const provider = p || {};
-    model.providers.push({
-      uid: ++counter, id,
-      preset: provider.preset || '',
-      strategy: provider.strategy === 'rotate' ? 'rotate' : '',
-      keys: list(provider.keys).map(k => typeof k === 'object'
-        ? { uid: ++counter, name: k.name || '', key: k.key ?? '', enabled: k.enabled !== false, rest: omit(k, ['name', 'key', 'enabled']) }
-        : { uid: ++counter, name: '', key: String(k), enabled: true, rest: {} }),
-      endpoints: Object.entries(provider.endpoints || {}).map(([protocol, url]) => ({ uid: ++counter, protocol, url: String(url) })),
-      headers: Object.entries(provider.headers || {}).map(([name, value]) => ({ uid: ++counter, name, value: String(value) })),
-      rest: omit(provider, ['preset', 'strategy', 'keys', 'endpoints', 'headers']),
+function fromDocument(doc) {
+  const advanced = doc.advanced || {};
+  const model = {
+    listen: text(doc.listen),
+    panelToken: text(doc.panel?.token),
+    panelRest: omit(doc.panel, ['token']),
+    advanced: {},
+    advancedRest: omit(advanced, [...ADVANCED, 'pools']),
+    pools: { ...(advanced.pools || {}) },
+    accounts: [], models: [], clients: [],
+  };
+  for (const field of ADVANCED) model.advanced[field] = field === 'strict' ? advanced.strict === true : text(advanced[field]);
+
+  for (const [name, a] of Object.entries(doc.accounts || {})) {
+    if (typeof a !== 'object' || a === null) {
+      model.accounts.push({ uid: ++counter, name, provider: '', key: text(a), enabled: true, custom: false, preset: '', endpoints: [], headers: [], rest: {} });
+      continue;
+    }
+    model.accounts.push({
+      uid: ++counter, name,
+      provider: a.provider && a.provider !== name ? a.provider : '',
+      key: text(a.key),
+      enabled: a.enabled !== false,
+      custom: 'preset' in a || 'endpoints' in a || 'headers' in a,
+      preset: a.preset || '',
+      endpoints: Object.entries(a.endpoints || {}).map(([protocol, url]) => ({ uid: ++counter, protocol, url: String(url) })),
+      headers: Object.entries(a.headers || {}).map(([name, value]) => ({ uid: ++counter, name, value: String(value) })),
+      rest: omit(a, ['provider', 'key', 'enabled', 'preset', 'endpoints', 'headers']),
     });
   }
 
-  for (const [name, r] of Object.entries(doc.routes || {})) {
-    if (typeof r === 'object' && r !== null) {
-      const first = list(r.targets)[0];
-      const target = typeof first === 'object' && first !== null ? first.model : first;
-      model.routes.push({ uid: ++counter, name, target: target || '', rest: omit(r, ['targets']) });
-    } else {
-      model.routes.push({ uid: ++counter, name, target: String(r ?? ''), rest: null });
-    }
+  for (const [name, r] of Object.entries(doc.models || {})) {
+    const simple = typeof r === 'string';
+    model.models.push({ uid: ++counter, name, target: simple ? r : '', raw: simple ? undefined : r });
   }
+  const menu = model.models.map(r => r.name);
 
-  for (const c of list(doc.client_keys)) {
-    const pass = c.passthrough;
-    const passList = pass === true || pass === false ? [] : list(pass).map(String);
+  for (const [name, c] of Object.entries(doc.clients || {})) {
+    const client = c || {};
+    const models = client.models === undefined ? null : list(client.models).map(String);
+    const access = models === null ? 'menu' : models.includes('*') ? 'all' : 'some';
     model.clients.push({
-      uid: ++counter,
-      name: c.name || '',
-      secret: c.secret ?? '',
-      routes: c.routes === undefined ? '' : list(c.routes).join(', '),
-      passMode: pass === true || (passList.length === 1 && passList[0] === '*') ? 'all' : passList.length ? 'some' : 'none',
-      passthrough: passList.join(', '),
-      enabled: c.enabled !== false,
-      rest: omit(c, ['name', 'secret', 'routes', 'passthrough', 'enabled']),
+      uid: ++counter, name,
+      key: text(client.key),
+      access,
+      chosen: access === 'some' ? models.filter(m => menu.includes(m)) : [],
+      extra: access === 'some' ? models.filter(m => !menu.includes(m)).join(', ') : '',
+      enabled: client.enabled !== false,
+      rest: omit(client, ['key', 'models', 'enabled']),
     });
   }
   return model;
 }
 
-function globs(text) {
-  return text.split(',').map(s => s.trim()).filter(Boolean);
+function globs(value) {
+  return value.split(',').map(s => s.trim()).filter(Boolean);
 }
 
-function scalar(text) {
-  const t = String(text).trim();
+function scalar(value) {
+  const t = String(value).trim();
   return /^[0-9]+$/.test(t) ? Number(t) : t;
 }
 
 function toDocument(model, original) {
+  const sections = {};
+  if (model.listen.trim()) sections.listen = model.listen.trim();
+
+  const panel = { ...model.panelRest };
+  if (model.panelToken.trim()) panel.token = model.panelToken.trim();
+  if (Object.keys(panel).length) sections.panel = panel;
+
+  const accounts = {};
+  for (const a of model.accounts) {
+    const name = a.name.trim();
+    const key = a.key.trim();
+    if (!a.custom && !a.provider && a.enabled && key && !Object.keys(a.rest).length) { accounts[name] = key; continue; }
+    const entry = {};
+    if (a.provider && !a.custom) entry.provider = a.provider;
+    if (a.custom) {
+      if (a.preset) entry.preset = a.preset;
+      if (a.endpoints.length) entry.endpoints = Object.fromEntries(a.endpoints.map(e => [e.protocol, e.url.trim()]));
+      const headers = a.headers.filter(h => h.name.trim());
+      if (headers.length) entry.headers = Object.fromEntries(headers.map(h => [h.name.trim(), h.value]));
+    }
+    if (key) entry.key = key;
+    if (!a.enabled) entry.enabled = false;
+    accounts[name] = { ...entry, ...a.rest };
+  }
+  if (model.accounts.length) sections.accounts = accounts;
+
+  const models = {};
+  for (const r of model.models) models[r.name.trim()] = r.raw === undefined ? r.target.trim() : r.raw;
+  if (model.models.length) sections.models = models;
+
+  const clients = {};
+  for (const c of model.clients) {
+    const entry = { key: c.key.trim() };
+    if (c.access === 'all') entry.models = '*';
+    if (c.access === 'some') entry.models = [...c.chosen, ...globs(c.extra)];
+    if (!c.enabled) entry.enabled = false;
+    clients[c.name.trim()] = { ...entry, ...c.rest };
+  }
+  if (model.clients.length) sections.clients = clients;
+
+  let advanced = {};
+  for (const field of ADVANCED) {
+    if (field === 'strict') { if (model.advanced.strict) advanced.strict = true; continue; }
+    if (String(model.advanced[field]).trim() !== '') advanced[field] = scalar(model.advanced[field]);
+  }
+  const pools = Object.fromEntries(Object.entries(model.pools).filter(([, pick]) => pick && pick !== 'order'));
+  if (Object.keys(pools).length) advanced.pools = pools;
+  advanced = { ...advanced, ...model.advancedRest };
+  if (Object.keys(advanced).length) sections.advanced = advanced;
+
+  // The file's order of sections, then the usual one; sections the panel
+  // does not know are kept, for the server to name.
   const doc = {};
   const order = Object.keys(original || {});
-  for (const key of ['server', 'providers', 'routes', 'client_keys']) if (!order.includes(key)) order.push(key);
-  const sections = {};
-
-  const server = { ...model.server.rest };
-  for (const field of ['listen', 'keepalive', 'connect_timeout', 'head_timeout', 'idle_timeout', 'max_request_bytes']) {
-    if (String(model.server[field]).trim() !== '') server[field] = scalar(model.server[field]);
-  }
-  if (model.server.strict) server.strict = true;
-  const admin = { ...model.server.adminRest };
-  if (String(model.server.adminToken).trim() !== '') admin.token = model.server.adminToken.trim();
-  if (Object.keys(admin).length) server.admin = admin;
-  if (Object.keys(server).length) sections.server = server;
-
-  const providers = {};
-  for (const p of model.providers) {
-    const provider = { ...p.rest };
-    if (p.preset) provider.preset = p.preset;
-    if (p.endpoints.length) provider.endpoints = Object.fromEntries(p.endpoints.map(e => [e.protocol, e.url.trim()]));
-    if (p.headers.length) provider.headers = Object.fromEntries(p.headers.filter(h => h.name.trim()).map(h => [h.name.trim(), h.value]));
-    if (p.keys.length) {
-      provider.keys = p.keys.map(k => {
-        const key = k.key.trim();
-        if (!k.name.trim() && k.enabled && !Object.keys(k.rest).length) return key;
-        const entry = { ...k.rest };
-        if (k.name.trim()) entry.name = k.name.trim();
-        entry.key = key;
-        if (!k.enabled) entry.enabled = false;
-        return entry;
-      });
-    }
-    if (p.strategy) provider.strategy = p.strategy;
-    providers[p.id.trim()] = provider;
-  }
-  if (model.providers.length) sections.providers = providers;
-
-  const routes = {};
-  for (const r of model.routes) {
-    routes[r.name.trim()] = r.rest ? { ...r.rest, targets: [r.target.trim()] } : r.target.trim();
-  }
-  if (model.routes.length) sections.routes = routes;
-
-  if (model.clients.length) {
-    sections.client_keys = model.clients.map(c => {
-      const entry = { name: c.name.trim(), secret: c.secret.trim(), ...c.rest };
-      if (c.routes.trim()) entry.routes = globs(c.routes);
-      if (c.passMode === 'all') entry.passthrough = true;
-      if (c.passMode === 'some' && globs(c.passthrough).length) entry.passthrough = globs(c.passthrough);
-      if (!c.enabled) entry.enabled = false;
-      return entry;
-    });
-  }
-
+  for (const key of SECTIONS) if (!order.includes(key)) order.push(key);
   for (const key of order) {
     if (key in sections) doc[key] = sections[key];
-    else if (!['server', 'providers', 'routes', 'client_keys'].includes(key)) doc[key] = original[key];
+    else if (!SECTIONS.includes(key)) doc[key] = original[key];
   }
   return doc;
 }

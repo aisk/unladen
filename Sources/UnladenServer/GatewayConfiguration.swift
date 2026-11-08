@@ -1,5 +1,5 @@
 // What one gateway instance serves: upstream providers and their key pools,
-// routes from client model names to upstream models, and the keys clients
+// the menu from client model names to upstream models, and the keys clients
 // present. Built from the configuration file (ConfigFile.swift), command
 // line flags and environment variables; see docs/server-config-design.md.
 
@@ -54,7 +54,7 @@ struct GatewayConfiguration: Sendable {
     var routes = RouteTable()
     /// Keys clients must present; none: clients are not authenticated.
     var clientKeys: [ClientKey] = []
-    /// Opens the control panel and its API (`server.admin.token`); without
+    /// Opens the control panel and its API (`panel.token`); without
     /// it they answer 404.
     var adminToken: String?
 }
@@ -98,6 +98,8 @@ struct KeyPool: Sendable, Hashable {
 
     var keys: [UpstreamKey]
     var strategy: Strategy = .order
+    /// The keys come from environment variables, not accounts of the file.
+    var fromEnvironment = false
 }
 
 /// Where upstream API keys come from when the configuration file gives a
@@ -154,9 +156,9 @@ struct RouteTarget: Sendable, Hashable {
     }
 }
 
-/// A client model name (or glob of names) and the upstream models that
-/// serve it, in order. The first version has one target per route; the
-/// candidate planner already walks a list.
+/// A menu entry: a client model name (or glob of names) and the upstream
+/// models that serve it, in order. The file gives one target per entry for
+/// now; the candidate planner already walks a list.
 struct Route: Sendable, Hashable {
     var name: String
     var targets: [RouteTarget]
@@ -240,17 +242,19 @@ enum Glob {
 struct ClientKey: Sendable, Hashable {
     var name: String
     var secret: String
-    /// Globs over route names; `nil`: every route.
-    var routes: [String]?
-    /// Globs over `provider/model` references a client may name directly.
-    var passthrough: [String] = []
+    /// Globs over the model names the client asks for, menu entries and
+    /// `provider/model` references alike; `nil`: every menu entry, and no
+    /// `provider/model` outside the menu.
+    var models: [String]?
 
-    func mayUse(_ route: Route) -> Bool {
-        routes.map { globs in globs.contains { Glob.matches($0, route.name) } } ?? true
+    /// Whether `name`, which the menu serves, may be asked for.
+    func mayUse(_ name: String) -> Bool {
+        models.map { globs in globs.contains { Glob.matches($0, name) } } ?? true
     }
 
+    /// Whether `reference`, outside the menu, may be named directly.
     func mayPassThrough(_ reference: String) -> Bool {
-        passthrough.contains { Glob.matches($0, reference) }
+        models?.contains { Glob.matches($0, reference) } ?? false
     }
 }
 
@@ -260,10 +264,10 @@ enum ClientAccess: Sendable, Hashable {
     case open
     case key(ClientKey)
 
-    func mayUse(_ route: Route) -> Bool {
+    func mayUse(_ name: String) -> Bool {
         switch self {
         case .open: true
-        case .key(let key): key.mayUse(route)
+        case .key(let key): key.mayUse(name)
         }
     }
 

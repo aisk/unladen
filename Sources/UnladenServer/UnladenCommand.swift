@@ -39,7 +39,7 @@ struct UnladenCommand: AsyncParsableCommand {
         ************************************************************************
         WARNING: unladen is listening on \(host) without a client key.
         Anyone who can reach this address can use the upstream API keys it
-        holds. Configure client_keys or set --api-key (or UNLADEN_API_KEY),
+        holds. Configure clients or set --api-key (or UNLADEN_API_KEY),
         or listen on 127.0.0.1.
         ************************************************************************
 
@@ -73,16 +73,16 @@ struct ConfigOptions: ParsableArguments {
     @Option(help: "Configuration file (JSON; comments and trailing commas allowed). Default: $XDG_CONFIG_HOME/unladen/config.jsonc when it exists.")
     var config: String?
 
-    @Option(help: "Address to listen on (overrides server.listen).")
+    @Option(help: "Address to listen on (overrides listen).")
     var host: String?
 
-    @Option(help: "Port to listen on (overrides server.listen).")
+    @Option(help: "Port to listen on (overrides listen).")
     var port: Int?
 
-    @Option(help: "Model (provider/model) for every model name no route matches: the `*` route.")
+    @Option(help: "Model (provider/model) for every model name the menu does not list: the `*` entry of models.")
     var model: String?
 
-    @Option(name: .customLong("api-key"), help: "A client key allowed every route and model. Also UNLADEN_API_KEY when the file has no client_keys.")
+    @Option(name: .customLong("api-key"), help: "A client key allowed every model name. Also UNLADEN_API_KEY when the file has no clients.")
     var apiKey: String?
 
     @Flag(help: "Refuse to forward a request that would lose something (content or fields the target cannot carry, lossy conversions). Parameters a model's profile declares it does not take are left out and only reported.")
@@ -122,14 +122,14 @@ struct Serve: AsyncParsableCommand {
         (/v1beta/models/{model}:generateContent, :streamGenerateContent) and \
         translates each to whatever protocol the chosen upstream speaks.
 
-        Models: a client model name is looked up in the configuration's routes \
+        Models: a client model name is looked up in the configuration's menu \
         (exact names, then patterns such as claude-*); else a provider/model \
         reference (e.g. deepseek/deepseek-chat) is used as is; else the `*` \
-        route (--model) serves it. When an upstream key fails (rate limit, \
-        server error, refused key), the provider's next key is tried; the \
+        entry (--model) serves it. When an account fails (rate limit, server \
+        error, refused key), the provider's next account is tried; the \
         gateway never switches to another provider or model by itself.
 
-        Upstream keys come from the configuration file, else the environment: \
+        Upstream keys come from the configuration file's accounts, else the environment: \
         UNLADEN_<PROVIDER>_API_KEY, else the provider's usual variable \
         (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, DEEPSEEK_API_KEY, ...). \
         Several comma-separated keys form a pool. Providers: \(ProviderRegistry.builtIn.providers.keys.sorted().joined(separator: ", ")). \
@@ -213,15 +213,16 @@ enum Summary {
     static func lines(_ configuration: GatewayConfiguration) -> [String] {
         var lines: [String] = []
         let pools = configuration.keyPools.sorted { $0.key < $1.key }
-        lines.append("upstream keys: " + (pools.isEmpty ? "none" : pools.map { id, pool in
-            "\(id) [\(pool.keys.map(\.name).joined(separator: ", "))\(pool.strategy == .order ? "" : ", \(pool.strategy.rawValue)")]"
+        lines.append("accounts: " + (pools.isEmpty ? "none" : pools.map { id, pool in
+            let names = pool.fromEnvironment ? "\(pool.keys.count) from the environment" : pool.keys.map(\.name).joined(separator: ", ")
+            return "\(id) [\(names)\(pool.strategy == .order ? "" : ", \(pool.strategy.rawValue)")]"
         }.joined(separator: "; ")))
         let routes = configuration.routes.all
-        lines.append("routes: " + (routes.isEmpty ? "none" : routes.map { route in
+        lines.append("models: " + (routes.isEmpty ? "none" : routes.map { route in
             "\(route.name) → \(route.targets.map(\.model).joined(separator: ", "))"
         }.joined(separator: "; ")))
-        lines.append("client keys: " + (configuration.clientKeys.isEmpty ? "none" : configuration.clientKeys.map(\.name).joined(separator: ", ")))
-        lines.append("control panel: " + (configuration.adminToken == nil ? "off (set server.admin.token)" : "/admin"))
+        lines.append("clients: " + (configuration.clientKeys.isEmpty ? "none" : configuration.clientKeys.map(\.name).joined(separator: ", ")))
+        lines.append("control panel: " + (configuration.adminToken == nil ? "off (set panel.token)" : "/admin"))
         return lines
     }
 }

@@ -13,21 +13,20 @@ private let adminToken = "admin-token-0123456789"
 private let sample = """
 // Hand-written, with comments.
 {
-  "server": {
-    "listen": "127.0.0.1:4141",
+  "listen": "127.0.0.1:4141",
+  "panel": { "token": "\(adminToken)" },
+  "accounts": {
+    "deepseek": "sk-literal-one",
+    "env": { "provider": "deepseek", "key": "${DEEPSEEK_KEY}" },
+  },
+  "models": { "*": "deepseek/deepseek-chat", "gpt-*": "deepseek" },
+  "clients": { "me": { "key": "client-secret", "models": "*" } },
+  "advanced": {
     "strict": true,
     "head_timeout": "off",
     "max_request_bytes": 1048576,
-    "admin": { "token": "\(adminToken)" },
+    "pools": { "deepseek": "rotate" },
   },
-  "providers": {
-    "deepseek": {
-      "strategy": "rotate",
-      "keys": ["sk-literal-one", { "name": "env", "key": "${DEEPSEEK_KEY}" }],
-    },
-  },
-  "routes": { "*": "deepseek/deepseek-chat", "gpt-*": "deepseek/$model" },
-  "client_keys": [{ "name": "me", "secret": "client-secret", "passthrough": true }],
 }
 """
 
@@ -37,16 +36,17 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
     @Test func readingHidesLiteralKeysAndKeepsReferences() throws {
         let snapshot = try ConfigDocument.read(sample)
         let document = snapshot.document
-        let keys = try #require(document["providers"]?["deepseek"]?["keys"]?.arrayValue)
         let hidden = ConfigDocument.placeholder(for: "sk-literal-one")
-        #expect(keys[0] == .string(hidden))
-        #expect(keys[1]["key"] == "${DEEPSEEK_KEY}")
-        #expect(document["client_keys"]?[0]?["secret"] == .string(ConfigDocument.placeholder(for: "client-secret")))
-        #expect(document["server"]?["admin"]?["token"] == .string(ConfigDocument.placeholder(for: adminToken)))
+        #expect(document["accounts"]?["deepseek"] == .string(hidden))
+        #expect(document["accounts"]?["env"]?["key"] == "${DEEPSEEK_KEY}")
+        #expect(document["accounts"]?["env"]?["provider"] == "deepseek")
+        #expect(document["clients"]?["me"]?["key"] == .string(ConfigDocument.placeholder(for: "client-secret")))
+        #expect(document["panel"]?["token"] == .string(ConfigDocument.placeholder(for: adminToken)))
         #expect(snapshot.secrets[hidden] == "sk-literal-one")
-        #expect(document["server"]?["strict"] == true)
-        #expect(document["server"]?["max_request_bytes"] == 1_048_576)
-        #expect(document["server"]?["head_timeout"] == "off")
+        #expect(document["advanced"]?["strict"] == true)
+        #expect(document["advanced"]?["max_request_bytes"] == 1_048_576)
+        #expect(document["advanced"]?["head_timeout"] == "off")
+        #expect(document["models"]?["gpt-*"] == "deepseek")
         #expect(!String(decoding: document.encoded(), as: UTF8.self).contains("sk-literal-one"))
     }
 
@@ -69,28 +69,31 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
 
     @Test func writtenTextIsIndentedJSON() throws {
         let document: JSONValue = [
-            "server": ["listen": "127.0.0.1:4141", "admin": ["token": "${UNLADEN_ADMIN_TOKEN}"]],
-            "routes": ["*": "deepseek/deepseek-chat"],
-            "client_keys": [],
+            "listen": "127.0.0.1:4141",
+            "panel": ["token": "${UNLADEN_ADMIN_TOKEN}"],
+            "models": ["*": "deepseek/deepseek-chat"],
+            "clients": ["ci": ["key": "${CI_KEY}", "models": ["fast", "claude-*"]]],
+            "accounts": [:],
             "dropped": nil,
         ]
         let text = try ConfigDocument.text(from: document, secrets: [:])
         #expect(text == """
         {
-          "server": {
-            "listen": "127.0.0.1:4141",
-            "admin": { "token": "${UNLADEN_ADMIN_TOKEN}" }
+          "listen": "127.0.0.1:4141",
+          "panel": { "token": "${UNLADEN_ADMIN_TOKEN}" },
+          "models": { "*": "deepseek/deepseek-chat" },
+          "clients": {
+            "ci": { "key": "${CI_KEY}", "models": ["fast", "claude-*"] }
           },
-          "routes": { "*": "deepseek/deepseek-chat" },
-          "client_keys": []
+          "accounts": {}
         }
 
         """)
-        #expect(try ConfigDocument.read(text).document["routes"] == document["routes"])
+        #expect(try ConfigDocument.read(text).document["clients"] == document["clients"])
     }
 
     @Test func anUnknownPlaceholderIsRefused() {
-        let document: JSONValue = ["providers": ["deepseek": ["keys": [.string(ConfigDocument.placeholder(for: "other"))]]]]
+        let document: JSONValue = ["accounts": ["deepseek": .string(ConfigDocument.placeholder(for: "other"))]]
         #expect(throws: ConfigError.self) { try ConfigDocument.text(from: document, secrets: [:]) }
     }
 }
@@ -115,9 +118,9 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         let (manager, path) = try makeManager()
         let snapshot = try manager.document()
         var document = try #require(snapshot.document.objectValue)
-        var routes = try #require(document["routes"]?.objectValue)
-        routes["fast"] = "deepseek/deepseek-chat"
-        document["routes"] = .object(routes)
+        var models = try #require(document["models"]?.objectValue)
+        models["fast"] = "deepseek/deepseek-chat"
+        document["models"] = .object(models)
 
         let outcome = manager.save(.object(document), baseHash: snapshot.hash)
         guard case .saved(let hash, _) = outcome else { Issue.record("not saved: \(outcome)"); return }
@@ -140,7 +143,7 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         let (manager, path) = try makeManager()
         let snapshot = try manager.document()
         var document = try #require(snapshot.document.objectValue)
-        document["routes"] = ["x": "nowhere/model"]
+        document["models"] = ["x": "nowhere/model"]
         guard case .invalid = manager.save(.object(document), baseHash: snapshot.hash) else { Issue.record("saved"); return }
         #expect(try String(contentsOfFile: path, encoding: .utf8) == sample)
     }
@@ -149,11 +152,9 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         let (manager, _) = try makeManager()
         let snapshot = try manager.document()
         var document = try #require(snapshot.document.objectValue)
-        var server = try #require(document["server"]?.objectValue)
-        _ = server.removeValue(forKey: "admin")
-        document["server"] = .object(server)
+        _ = document.removeValue(forKey: "panel")
         guard case .invalid(let error) = manager.save(.object(document), baseHash: snapshot.hash) else { Issue.record("saved"); return }
-        #expect(error.message.contains("server.admin.token"))
+        #expect(error.message.contains("panel.token"))
     }
 }
 
@@ -171,7 +172,7 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
     }
 
     @Test func withoutATokenThePanelDoesNotExist() async throws {
-        let manager = try makeManager(#"{ "routes": { "*": "deepseek/deepseek-chat" } }"#)
+        let manager = try makeManager(#"{ "models": { "*": "deepseek/deepseek-chat" } }"#)
         try await app(manager).test(.router) { client in
             let page = try await client.execute(uri: "/admin", method: .get)
             let api = try await client.execute(uri: "/admin/api/config", method: .get)

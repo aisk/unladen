@@ -39,12 +39,12 @@ enum ConfigDocument {
         text.hasPrefix("<hidden key-") && text.hasSuffix(">") && text.count == 21
     }
 
-    /// Paths whose values are secrets.
+    /// Paths whose values are secrets: an account given as its key alone,
+    /// accounts' and clients' `key`, and `panel.token`.
     static func isSecretPath(_ path: [String]) -> Bool {
         switch path.count {
-        case 4: path[0] == "providers" && path[2] == "keys"
-        case 5: path[0] == "providers" && path[2] == "keys" && path[4] == "key"
-        case 3: (path[0] == "client_keys" && path[2] == "secret") || path == ["server", "admin", "token"]
+        case 2: path[0] == "accounts" || path == ["panel", "token"]
+        case 3: (path[0] == "accounts" || path[0] == "clients") && path[2] == "key"
         default: false
         }
     }
@@ -112,8 +112,8 @@ enum ConfigDocument {
         }
     }
 
-    /// Two-space indentation; an array or object of scalars short enough
-    /// stays on one line.
+    /// Two-space indentation; an array of scalars, or an object of scalars
+    /// and such arrays, stays on one line when short enough.
     private static func write(_ value: JSONValue, indent: String, into output: inout String) {
         if let line = inline(value) {
             output += line
@@ -151,8 +151,15 @@ enum ConfigDocument {
             parts = items.map(encoded)
             (open, close) = ("[", "]")
         case .object(let object):
-            guard !object.contains(where: { isContainer($0.value) }) else { return nil }
-            parts = object.map { encoded(.string($0.key)) + ": " + encoded($0.value) }
+            // Lists of scalars may go on the line; objects may not.
+            var entries: [String] = []
+            for (key, item) in object {
+                if case .object = item { return nil }
+                if case .array(let items) = item, items.contains(where: isContainer) { return nil }
+                guard let line = inline(item) else { return nil }
+                entries.append(encoded(.string(key)) + ": " + line)
+            }
+            parts = entries
             (open, close) = ("{ ", " }")
         default:
             return encoded(value)

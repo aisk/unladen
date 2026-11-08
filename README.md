@@ -72,20 +72,27 @@ The configuration is JSON with comments and trailing commas, read from `--config
 
 ```jsonc
 {
-  "server": {
-    "listen": "127.0.0.1:4141",
-    // Opens the control panel at /admin.
-    "admin": { "token": "${UNLADEN_ADMIN_TOKEN}" },
+  "listen": "127.0.0.1:4141",
+  // Opens the control panel at /admin.
+  "panel": { "token": "${UNLADEN_ADMIN_TOKEN}" },
+  // The accounts the gateway pays with. Accounts of one provider form a
+  // pool: the next one is tried when one fails.
+  "accounts": {
+    "anthropic": "${ANTHROPIC_API_KEY}",
+    "deepseek": "${DEEPSEEK_KEY_1}",
+    "deepseek-2": { "provider": "deepseek", "key": "${DEEPSEEK_KEY_2}" },
   },
-  "providers": {
-    // Several keys: the next one is tried when one fails.
-    "deepseek": { "keys": ["${DEEPSEEK_KEY_1}", "${DEEPSEEK_KEY_2}"] },
+  // The model names clients may ask for, and who answers them.
+  "models": {
+    "claude-*": "anthropic",               // the name asked for, passed on
+    "fast": "deepseek/deepseek-chat",
+    "*": "@fast",                          // every other name
   },
-  "routes": {
-    "claude-*": "anthropic/$model",
-    "*": "deepseek/deepseek-chat",
+  // The keys clients present; without models, a client may use every name above.
+  "clients": {
+    "laptop": { "key": "${UNLADEN_KEY_LAPTOP}", "models": "*" },
+    "ci": { "key": "${UNLADEN_KEY_CI}" },
   },
-  "client_keys": [{ "name": "laptop", "secret": "${UNLADEN_KEY_LAPTOP}", "passthrough": true }],
 }
 ```
 

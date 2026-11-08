@@ -152,16 +152,18 @@ func constantTimeEqual(_ a: String, _ b: String) -> Bool {
     return difference == 0
 }
 
-/// The model names a client may ask for: exact route names, then the `*`
-/// route's model when it names one; readable by OpenAI clients (`object`,
+/// The model names a client may ask for: exact menu names, then the `*`
+/// entry's model when it names one the client may name directly; readable by OpenAI clients (`object`,
 /// `data[].id`, `owned_by`) and Anthropic clients (`data[].type`,
 /// `display_name`, `has_more`).
 func modelList(_ configuration: GatewayConfiguration, access: ClientAccess = .open) -> Response {
     var names: [String] = []
-    for route in configuration.routes.all where access.mayUse(route) {
+    for route in configuration.routes.all {
         if route.name == "*" {
-            for target in route.targets where !target.model.contains("$model") { names.append(target.model) }
-        } else if !route.isPattern {
+            for target in route.targets where !target.model.contains("$model") && access.mayPassThrough(target.model) {
+                names.append(target.model)
+            }
+        } else if !route.isPattern, access.mayUse(route.name) {
             names.append(route.name)
         }
     }

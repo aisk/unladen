@@ -41,9 +41,9 @@ struct ConfigError: Error, CustomStringConvertible, Equatable {
 struct ConfigOverrides: Sendable {
     var host: String?
     var port: Int?
-    /// Becomes the `*` route.
+    /// Becomes the `*` entry of the menu.
     var model: String?
-    /// A client key allowed every route and every passthrough.
+    /// A client key allowed every model name.
     var apiKey: String?
     var strict = false
     var connectTimeout: Int?
@@ -93,6 +93,8 @@ enum ConfigLoader {
 }
 
 enum ConfigFile {
+    static let sections: Set<String> = ["listen", "panel", "accounts", "models", "clients", "advanced"]
+
     static func parse(
         _ text: String, file: String = "config", overrides: ConfigOverrides = ConfigOverrides(),
         environment: @escaping (String) -> String?,
@@ -101,35 +103,29 @@ enum ConfigFile {
         var parser = Parser(file: file, environment: environment, locator: locator)
         var loaded = LoadedConfiguration()
         var fileKeys: [String: [UpstreamKey]] = [:]
-        var poolStrategies: [String: KeyPool.Strategy] = [:]
-        var routes: [Route] = []
+        var pools: [String: KeyPool.Strategy] = [:]
+        var menu: [Parser.MenuEntry] = []
         var clientKeys: [ClientKey]?
 
         if !root.isNull {
-            let top = Field(value: root, keys: [], parser: parser)
-            for (name, field) in try top.mapping(allowed: ["server", "providers", "routes", "client_keys"]) {
-                switch name {
-                case "server": try parser.server(field, into: &loaded)
-                case "providers":
-                    for (id, provider) in try field.mapping() {
-                        let built = try parser.provider(id: id, provider, registry: loaded.gateway.registry)
-                        loaded.gateway.registry.register(built.provider)
-                        if let keys = built.keys { fileKeys[id] = keys }
-                        poolStrategies[id] = built.strategy
-                    }
-                case "routes":
-                    for (name, route) in try field.mapping() { routes.append(try parser.route(name: name, route)) }
-                case "client_keys": clientKeys = try parser.clientKeys(field)
-                default: break
-                }
-            }
+            var fields: [String: Field] = [:]
+            for (name, field) in try Field(value: root, keys: [], parser: parser).mapping(allowed: sections) { fields[name] = field }
+            if let field = fields["listen"] { try parser.listen(field, into: &loaded.server) }
+            if let field = fields["panel"] { loaded.gateway.adminToken = try parser.panel(field) }
+            // Accounts first: they define the providers the rest names.
+            if let field = fields["accounts"] { fileKeys = try parser.accounts(field, into: &loaded.gateway.registry) }
+            if let field = fields["advanced"] { pools = try parser.advanced(field, into: &loaded) }
+            if let field = fields["models"] { menu = try parser.menu(field) }
+            if let field = fields["clients"] { clientKeys = try parser.clients(field) }
         }
 
-        // Key pools: the file's keys, else the environment's.
+        // Key pools: the file's accounts, else the environment's keys.
         let registry = loaded.gateway.registry
         for id in registry.providers.keys {
             let keys = fileKeys[id] ?? UpstreamKeys.load(for: id, in: registry, environment: environment)
-            if !keys.isEmpty { loaded.gateway.keyPools[id] = KeyPool(keys: keys, strategy: poolStrategies[id] ?? .order) }
+            if !keys.isEmpty {
+                loaded.gateway.keyPools[id] = KeyPool(keys: keys, strategy: pools[id] ?? .order, fromEnvironment: fileKeys[id] == nil)
+            }
         }
 
         // Command line overrides.
@@ -138,33 +134,41 @@ enum ConfigFile {
         if let seconds = overrides.connectTimeout { loaded.server.connectTimeout = .seconds(seconds) }
         if let seconds = overrides.keepalive { loaded.gateway.keepaliveInterval = .seconds(seconds) }
         if overrides.strict { loaded.gateway.strict = true }
-        if let model = overrides.model {
-            if routes.contains(where: { $0.name == "*" }) {
-                loaded.warnings.append("--model replaces the `*` route of the configuration file")
-            }
-            routes.removeAll { $0.name == "*" }
-            routes.append(Route(name: "*", targets: [RouteTarget(model: model)]))
-        }
         if let apiKey = overrides.apiKey {
-            clientKeys = (clientKeys ?? []) + [ClientKey(name: "command-line", secret: apiKey, routes: nil, passthrough: ["*"])]
+            clientKeys = (clientKeys ?? []) + [ClientKey(name: "command-line", secret: apiKey, models: ["*"])]
         } else if clientKeys == nil, let apiKey = environment("UNLADEN_API_KEY"), !apiKey.isEmpty {
-            clientKeys = [ClientKey(name: "UNLADEN_API_KEY", secret: apiKey, routes: nil, passthrough: ["*"])]
+            clientKeys = [ClientKey(name: "UNLADEN_API_KEY", secret: apiKey, models: ["*"])]
         }
         loaded.gateway.clientKeys = clientKeys ?? []
 
-        // Routes, checked against the final registry.
-        var seen: Set<String> = []
+        // The menu, checked against the final registry.
+        var routes = try parser.routes(menu, registry: registry)
+        if let model = overrides.model {
+            if routes.contains(where: { $0.name == "*" }) {
+                loaded.warnings.append("--model replaces the `*` entry of models")
+            }
+            routes.removeAll { $0.name == "*" }
+            let target = RouteTarget(model: Parser.expand(model))
+            do throws(ConfigError) {
+                try check(target, registry: registry)
+            } catch {
+                throw ConfigError(message: "--model: \(error.message)")
+            }
+            routes.append(Route(name: "*", targets: [target]))
+        }
         for route in routes {
-            guard seen.insert(route.name.lowercased()).inserted else {
-                throw ConfigError(message: "routes: `\(route.name)` is defined twice (names are case-insensitive)")
+            if route.name == "*" {
+                loaded.warnings.append("models: `*` serves every model name no other entry matches: such requests are answered by \(route.targets.map(\.model).joined(separator: ", "))")
+            } else if let (provider, _) = try? ProviderRegistry.parse(route.name), registry[provider] != nil {
+                loaded.warnings.append("models: `\(route.name)` takes the place of the provider/model reference of the same name")
             }
             for target in route.targets {
-                try check(target, of: route, registry: registry, fromCommandLine: route.name == "*" && overrides.model != nil)
-            }
-            if route.name == "*" {
-                loaded.warnings.append("route `*` serves every model name no other route matches: such requests are answered by \(route.targets.map(\.model).joined(separator: ", "))")
-            } else if let (provider, _) = try? ProviderRegistry.parse(route.name), registry[provider] != nil {
-                loaded.warnings.append("route `\(route.name)` takes the place of the passthrough reference of the same name")
+                guard let (provider, _) = try? ProviderRegistry.parse(target.model.replacing("$model", with: "model")),
+                      loaded.gateway.keyPools[provider] == nil,
+                      registry[provider]?.endpoints.contains(where: { $0.auth != .none }) == true
+                else { continue }
+                let variables = UpstreamKeys.variables(for: provider, in: registry).joined(separator: " or ")
+                loaded.warnings.append("models: `\(route.name)` goes to \(provider), which has no account (add one to accounts, or set \(variables))")
             }
         }
         loaded.gateway.routes = RouteTable(routes)
@@ -173,20 +177,19 @@ enum ConfigFile {
     }
 
     /// A target must name a known provider; without `$model`, a model it
-    /// can resolve.
-    static func check(_ target: RouteTarget, of route: Route, registry: ProviderRegistry, fromCommandLine: Bool) throws(ConfigError) {
-        let place = fromCommandLine ? "--model" : "routes.\(route.name)"
+    /// can resolve. The error is the message alone.
+    static func check(_ target: RouteTarget, registry: ProviderRegistry) throws(ConfigError) {
         let probe = target.model.replacing("$model", with: "model")
         do {
             let (provider, _) = try ProviderRegistry.parse(probe)
             guard registry[provider] != nil else {
-                throw ConfigError(message: "\(place): unknown provider `\(provider)` (providers: \(registry.providers.keys.sorted().joined(separator: ", ")))")
+                throw ConfigError(message: "unknown provider `\(provider)` (providers: \(registry.providers.keys.sorted().joined(separator: ", ")))")
             }
             if !target.model.contains("$model") { _ = try registry.resolve(target.model) }
         } catch let error as ConfigError {
             throw error
         } catch {
-            throw ConfigError(message: "\(place): cannot use `\(target.model)`: \(error) (expected provider/model)")
+            throw ConfigError(message: "cannot use `\(target.model)`: \(error) (expected a provider, provider/model, or @name)")
         }
     }
 }
@@ -396,80 +399,181 @@ extension ConfigFile {
             return value
         }
 
-        mutating func server(_ field: Field, into loaded: inout LoadedConfiguration) throws(ConfigError) {
+        // MARK: Gateway
+
+        func listen(_ field: Field, into server: inout ServerSettings) throws(ConfigError) {
+            let text = try field.string()
+            guard let colon = text.lastIndex(of: ":"), let port = Int(text[text.index(after: colon)...]),
+                  (1...65535).contains(port)
+            else { throw field.error("expected host:port, such as 127.0.0.1:4141 or [::1]:4141") }
+            var host = String(text[..<colon])
+            if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+            guard !host.isEmpty else { throw field.error("the host is missing (0.0.0.0 listens everywhere)") }
+            server.host = host
+            server.port = port
+        }
+
+        mutating func panel(_ field: Field) throws(ConfigError) -> String? {
+            var token: String?
+            for (_, setting) in try field.mapping(allowed: ["token"]) {
+                let value = try secret(setting)
+                guard value.count >= 16 else { throw setting.error("is too short: use at least 16 characters") }
+                token = value
+            }
+            return token
+        }
+
+        /// The key pools' orders, by provider.
+        func advanced(_ field: Field, into loaded: inout LoadedConfiguration) throws(ConfigError) -> [String: KeyPool.Strategy] {
+            var pools: [String: KeyPool.Strategy] = [:]
             for (name, value) in try field.mapping(
-                allowed: ["listen", "strict", "keepalive", "connect_timeout", "max_request_bytes", "head_timeout", "idle_timeout", "admin"],
+                allowed: ["strict", "keepalive", "connect_timeout", "max_request_bytes", "head_timeout", "idle_timeout", "pools"],
             ) {
                 switch name {
-                case "listen":
-                    let text = try value.string()
-                    guard let colon = text.lastIndex(of: ":"), let port = Int(text[text.index(after: colon)...]),
-                          (1...65535).contains(port)
-                    else { throw value.error("expected host:port, such as 127.0.0.1:4141 or [::1]:4141") }
-                    var host = String(text[..<colon])
-                    if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
-                    guard !host.isEmpty else { throw value.error("the host is missing (0.0.0.0 listens everywhere)") }
-                    loaded.server.host = host
-                    loaded.server.port = port
                 case "strict": loaded.gateway.strict = try value.bool()
                 case "keepalive": loaded.gateway.keepaliveInterval = try value.duration()
                 case "connect_timeout": loaded.server.connectTimeout = try value.duration()
                 case "max_request_bytes": loaded.gateway.maxRequestBytes = try value.byteCount()
                 case "head_timeout": loaded.gateway.headTimeout = try value.duration(allowingOff: true)
                 case "idle_timeout": loaded.gateway.idleTimeout = try value.duration(allowingOff: true)
-                case "admin":
-                    for (key, setting) in try value.mapping(allowed: ["token"]) where key == "token" {
-                        let token = try secret(setting)
-                        guard token.count >= 16 else { throw setting.error("is too short: use at least 16 characters") }
-                        loaded.gateway.adminToken = token
-                    }
-                default: break
-                }
-            }
-        }
-
-        struct BuiltProvider {
-            var provider: Provider
-            /// `nil`: the file gives none (the environment may).
-            var keys: [UpstreamKey]?
-            var strategy: KeyPool.Strategy
-        }
-
-        mutating func provider(id: String, _ field: Field, registry: ProviderRegistry) throws(ConfigError) -> BuiltProvider {
-            guard !id.isEmpty, !id.contains("/"), !id.contains("*") else { throw field.error("a provider id cannot be empty or contain / or *") }
-            var preset: String?
-            var endpoints: [(APIProtocol, String, Field)]?
-            var headers: [String: String] = [:]
-            var keys: [UpstreamKey]?
-            var strategy = KeyPool.Strategy.order
-            for (name, value) in try field.mapping(allowed: ["preset", "endpoints", "headers", "keys", "strategy"], reserved: ["models"]) {
-                switch name {
-                case "preset": preset = try value.string()
-                case "endpoints":
-                    var list: [(APIProtocol, String, Field)] = []
-                    for (name, url) in try value.mapping(allowed: Set(APIProtocol.allCases.map(\.rawValue))) {
-                        let address = try url.string()
-                        guard address.hasPrefix("http://") || address.hasPrefix("https://") else {
-                            throw url.error("expected an http:// or https:// URL")
+                case "pools":
+                    for (provider, pick) in try value.mapping() {
+                        guard loaded.gateway.registry[provider] != nil else {
+                            throw pick.error("unknown provider `\(provider)`")
                         }
-                        list.append((APIProtocol(rawValue: name)!, address, url))
+                        pools[provider] = try Self.pick(pick)
                     }
-                    guard !list.isEmpty else { throw value.error("lists no endpoint") }
-                    endpoints = list
-                case "headers":
-                    for (name, header) in try value.mapping() { headers[name.lowercased()] = try header.string() }
-                case "keys": keys = try self.keys(value)
-                case "strategy":
-                    let text = try value.string()
-                    if text == "weight" { throw value.error("`weight` is not supported yet") }
-                    guard let parsed = KeyPool.Strategy(rawValue: text) else { throw value.error("expected order or rotate") }
-                    strategy = parsed
                 default: break
                 }
             }
+            return pools
+        }
 
+        /// The order within one tier. Only `order` and `rotate` exist yet;
+        /// the others are the names later versions give their orders.
+        static let laterPicks: Set<String> = ["weight", "fastest", "cheapest", "least_used", "quota"]
+
+        static func pick(_ field: Field) throws(ConfigError) -> KeyPool.Strategy {
+            let text = try field.string()
+            if laterPicks.contains(text) { throw field.error("`\(text)` is not supported yet (expected order or rotate)") }
+            guard let strategy = KeyPool.Strategy(rawValue: text) else { throw field.error("expected order or rotate") }
+            return strategy
+        }
+
+        // MARK: Accounts
+
+        struct Account {
+            var name: String
+            var provider: String
+            /// Where the provider is named, for errors.
+            var providerField: Field
+            var key: String?
+            var enabled: Bool
+        }
+
+        /// What an account gives of its own provider.
+        struct ProviderParts {
+            var preset: String?
+            var endpoints: [(APIProtocol, String)]?
+            var headers: [String: String] = [:]
+            var given = false
+        }
+
+        /// Registers the providers accounts define; returns the keys of
+        /// every provider an account gives a key, in file order.
+        mutating func accounts(_ field: Field, into registry: inout ProviderRegistry) throws(ConfigError) -> [String: [UpstreamKey]] {
+            var accounts: [Account] = []
+            var definitions: [(String, Field, ProviderParts)] = []
+            for (name, value) in try field.mapping() {
+                guard !name.isEmpty, !name.hasPrefix("@"), !name.contains("/"), !name.contains("*") else {
+                    throw value.error("an account name cannot be empty, start with @, or contain / or *")
+                }
+                if value.isScalar {
+                    guard registry[name] != nil else {
+                        throw value.error("`\(name)` is not a provider: write { \"provider\": \"…\", \"key\": \"…\" }, or give the account its `endpoints`")
+                    }
+                    accounts.append(Account(name: name, provider: name, providerField: value, key: try secret(value), enabled: true))
+                    continue
+                }
+                var provider: (String, Field)?
+                var key: String?
+                var enabled = true
+                var parts = ProviderParts()
+                for (setting, item) in try value.mapping(
+                    allowed: ["provider", "key", "enabled", "preset", "endpoints", "headers"],
+                    reserved: ["weight", "protocols", "profiles"],
+                ) {
+                    switch setting {
+                    case "provider": provider = (try item.string(), item)
+                    case "key": key = try secret(item)
+                    case "enabled": enabled = try item.bool()
+                    case "preset":
+                        parts.preset = try item.string()
+                        parts.given = true
+                    case "endpoints":
+                        parts.endpoints = try endpoints(item)
+                        parts.given = true
+                    case "headers":
+                        for (header, text) in try item.mapping() { parts.headers[header.lowercased()] = try text.string() }
+                        parts.given = true
+                    default: break
+                    }
+                }
+                if parts.given {
+                    if let (id, item) = provider, id != name {
+                        throw item.error("an account with `preset`, `endpoints` or `headers` is the provider `\(name)` itself: leave `provider` out")
+                    }
+                    definitions.append((name, value, parts))
+                } else {
+                    guard key != nil else { throw value.error("`key` is missing") }
+                    if let (id, item) = provider, id != name, ProviderRegistry.builtIn[name] != nil {
+                        throw item.error("`\(name)` is the name of a provider, so `\(name)/…` would not reach `\(id)`: give this account another name")
+                    }
+                }
+                accounts.append(Account(
+                    name: name, provider: provider?.0 ?? name, providerField: provider?.1 ?? value, key: key, enabled: enabled,
+                ))
+            }
+
+            var keys: [String: [UpstreamKey]] = [:]
+            var owners: [String: String] = [:]
+            for account in accounts {
+                guard let key = account.key else { continue }
+                if let owner = owners.updateValue(account.name, forKey: account.provider + "\u{0}" + key) {
+                    throw account.providerField.error("account `\(account.name)` has the same key as `\(owner)`")
+                }
+                keys[account.provider, default: []] += account.enabled ? [UpstreamKey(name: account.name, secret: key)] : []
+            }
+            for (id, value, parts) in definitions {
+                let keyless = keys[id] == nil && UpstreamKeys.load(for: id, in: registry, environment: environment).isEmpty
+                registry.register(try provider(id: id, value, parts: parts, registry: registry, keyless: keyless))
+            }
+            for account in accounts where registry[account.provider] == nil {
+                throw account.providerField.error(
+                    "unknown provider `\(account.provider)` (presets: \(ProviderRegistry.builtIn.providers.keys.sorted().joined(separator: ", ")); or an account with `endpoints`)",
+                )
+            }
+            return keys
+        }
+
+        func endpoints(_ field: Field) throws(ConfigError) -> [(APIProtocol, String)] {
+            var list: [(APIProtocol, String)] = []
+            for (name, url) in try field.mapping(allowed: Set(APIProtocol.allCases.map(\.rawValue))) {
+                let address = try url.string()
+                guard address.hasPrefix("http://") || address.hasPrefix("https://") else {
+                    throw url.error("expected an http:// or https:// URL")
+                }
+                list.append((APIProtocol(rawValue: name)!, address))
+            }
+            guard !list.isEmpty else { throw field.error("lists no endpoint") }
+            return list
+        }
+
+        /// The provider an account defines: a preset under its own name, a
+        /// built-in provider changed, or one of its own endpoints.
+        func provider(id: String, _ field: Field, parts: ProviderParts, registry: ProviderRegistry, keyless: Bool) throws(ConfigError) -> Provider {
             var provider: Provider
-            if let preset {
+            if let preset = parts.preset {
                 guard let base = ProviderRegistry.builtIn[preset] else {
                     throw field.error("unknown preset `\(preset)` (presets: \(ProviderRegistry.builtIn.providers.keys.sorted().joined(separator: ", ")))")
                 }
@@ -479,17 +583,16 @@ extension ConfigFile {
             } else if let existing = registry[id] {
                 provider = existing
             } else {
-                guard endpoints != nil else {
-                    throw field.error("`\(id)` is not a preset: give its `endpoints`, or a `preset` to start from")
+                guard parts.endpoints != nil else {
+                    throw field.error("`\(id)` is not a provider: give its `endpoints`, or a `preset` to start from")
                 }
                 provider = Provider(id: id, endpoints: [])
             }
 
-            if let endpoints {
+            if let endpoints = parts.endpoints {
                 // The list is complete: a preset's endpoints for other
                 // protocols go, so its keys never reach the preset's host.
-                let keyless = keys?.isEmpty ?? UpstreamKeys.load(for: id, in: ProviderRegistry([provider]), environment: environment).isEmpty
-                provider.endpoints = endpoints.map { apiProtocol, url, _ in
+                provider.endpoints = endpoints.map { apiProtocol, url in
                     if var endpoint = provider.endpoints.first(where: { $0.apiProtocol == apiProtocol }) {
                         endpoint.baseURL = url
                         return endpoint
@@ -505,99 +608,103 @@ extension ConfigFile {
                 }
             }
             for index in provider.endpoints.indices {
-                provider.endpoints[index].headers.merge(headers) { _, new in new }
+                provider.endpoints[index].headers.merge(parts.headers) { _, new in new }
             }
-            return BuiltProvider(provider: provider, keys: keys, strategy: strategy)
+            return provider
         }
 
-        mutating func keys(_ field: Field) throws(ConfigError) -> [UpstreamKey] {
-            var keys: [UpstreamKey] = []
-            for item in try field.sequence() {
-                if item.isScalar {
-                    keys.append(UpstreamKey(secret: try secret(item)))
-                    continue
+        // MARK: Models
+
+        struct MenuEntry {
+            var name: String
+            /// As written: `provider`, `provider/model` or `@name`.
+            var target: String
+            var field: Field
+        }
+
+        func menu(_ field: Field) throws(ConfigError) -> [MenuEntry] {
+            var entries: [MenuEntry] = []
+            var seen: Set<String> = []
+            for (name, value) in try field.mapping() {
+                guard !name.isEmpty, !name.hasPrefix("@") else { throw value.error("a model name cannot be empty or start with @") }
+                guard seen.insert(name.lowercased()).inserted else {
+                    throw value.error("`\(name)` is defined twice (names are case-insensitive)")
                 }
-                var name: String?
+                switch value.value {
+                case .array:
+                    throw value.error("a list of targets to fall back through is not supported yet: give one target")
+                case .object:
+                    throw value.error("an entry with settings (`try`, `budget`, …) is not supported yet: give one target")
+                default:
+                    let target = try value.string().trimmingBlanks()
+                    guard !target.isEmpty else { throw value.error("is empty") }
+                    entries.append(MenuEntry(name: name, target: target, field: value))
+                }
+            }
+            return entries
+        }
+
+        /// `provider` alone is `provider/$model`.
+        static func expand(_ target: String) -> String {
+            target.contains("/") ? target : target + "/$model"
+        }
+
+        /// The menu as routes: references followed, targets checked.
+        func routes(_ entries: [MenuEntry], registry: ProviderRegistry) throws(ConfigError) -> [Route] {
+            var byName: [String: MenuEntry] = [:]
+            for entry in entries { byName[entry.name.lowercased()] = entry }
+            var routes: [Route] = []
+            for entry in entries {
+                var current = entry
+                var chain = [entry.name]
+                while current.target.hasPrefix("@") {
+                    let name = String(current.target.dropFirst())
+                    guard let next = byName[name.lowercased()] else {
+                        throw entry.field.error("`@\(name)` names no entry of models")
+                    }
+                    guard !next.name.contains("*") else {
+                        throw entry.field.error("`@\(name)` names a pattern: only an entry without * can be referred to")
+                    }
+                    guard !chain.contains(where: { $0.lowercased() == next.name.lowercased() }) else {
+                        throw entry.field.error("refers back to itself: \((chain + [next.name]).joined(separator: " → "))")
+                    }
+                    chain.append(next.name)
+                    current = next
+                }
+                let target = RouteTarget(model: Self.expand(current.target))
+                do throws(ConfigError) {
+                    try ConfigFile.check(target, registry: registry)
+                } catch {
+                    throw current.field.error(error.message)
+                }
+                routes.append(Route(name: entry.name, targets: [target]))
+            }
+            return routes
+        }
+
+        // MARK: Clients
+
+        mutating func clients(_ field: Field) throws(ConfigError) -> [ClientKey] {
+            var keys: [ClientKey] = []
+            var owners: [String: String] = [:]
+            for (name, item) in try field.mapping() {
+                guard !name.isEmpty else { throw item.error("a client name cannot be empty") }
                 var secretValue: String?
                 var enabled = true
-                for (key, value) in try item.mapping(allowed: ["name", "key", "enabled"], reserved: ["weight", "protocols"]) {
-                    switch key {
-                    case "name": name = try value.string()
+                var models: [String]?
+                for (setting, value) in try item.mapping(allowed: ["key", "models", "enabled"], reserved: ["limits", "overrides"]) {
+                    switch setting {
                     case "key": secretValue = try secret(value)
                     case "enabled": enabled = try value.bool()
+                    case "models": models = try value.stringList()
                     default: break
                     }
                 }
                 guard let secretValue else { throw item.error("`key` is missing") }
-                if let name, name.isEmpty { throw item.error("`name` is empty") }
-                if enabled { keys.append(UpstreamKey(name: name, secret: secretValue)) }
-            }
-            var names: Set<String> = [], secrets: Set<String> = []
-            for key in keys {
-                guard secrets.insert(key.secret).inserted else { throw field.error("the key `\(key.name)` is listed twice") }
-                guard names.insert(key.name).inserted else { throw field.error("two keys are named `\(key.name)`") }
-            }
-            return keys
-        }
-
-        func route(name: String, _ field: Field) throws(ConfigError) -> Route {
-            guard !name.isEmpty else { throw field.error("a route name cannot be empty") }
-            if field.isScalar { return Route(name: name, targets: [RouteTarget(model: try field.string())]) }
-            var targets: [RouteTarget] = []
-            for (key, value) in try field.mapping(
-                allowed: ["targets"],
-                reserved: ["attempt_budget", "head_timeout", "patience", "strict", "affinity", "when"],
-            ) where key == "targets" {
-                for item in try value.sequence() {
-                    if item.isScalar {
-                        targets.append(RouteTarget(model: try item.string()))
-                        continue
-                    }
-                    var model: String?
-                    for (key, value) in try item.mapping(allowed: ["model"], reserved: ["priority", "weight", "route", "enabled", "when"])
-                    where key == "model" {
-                        model = try value.string()
-                    }
-                    guard let model else { throw item.error("`model` is missing") }
-                    targets.append(RouteTarget(model: model))
+                if let owner = owners.updateValue(name, forKey: secretValue) {
+                    throw item.error("client `\(name)` has the key of `\(owner)`")
                 }
-                guard targets.count <= 1 else { throw value.error("routes with more than one target are not supported yet") }
-            }
-            guard !targets.isEmpty else { throw field.error("has no target") }
-            return Route(name: name, targets: targets)
-        }
-
-        mutating func clientKeys(_ field: Field) throws(ConfigError) -> [ClientKey] {
-            var keys: [ClientKey] = []
-            for item in try field.sequence() {
-                var name: String?
-                var secretValue: String?
-                var enabled = true
-                var routes: [String]?
-                var passthrough: [String] = []
-                for (key, value) in try item.mapping(allowed: ["name", "secret", "enabled", "routes", "passthrough"]) {
-                    switch key {
-                    case "name": name = try value.string()
-                    case "secret": secretValue = try secret(value)
-                    case "enabled": enabled = try value.bool()
-                    case "routes": routes = try value.stringList()
-                    case "passthrough":
-                        if let flag = value.value.boolValue {
-                            passthrough = flag ? ["*"] : []
-                        } else {
-                            passthrough = try value.stringList()
-                        }
-                    default: break
-                    }
-                }
-                guard let name, !name.isEmpty else { throw item.error("`name` is missing") }
-                guard let secretValue else { throw item.error("`secret` is missing") }
-                if enabled { keys.append(ClientKey(name: name, secret: secretValue, routes: routes, passthrough: passthrough)) }
-            }
-            var names: Set<String> = [], secrets: Set<String> = []
-            for key in keys {
-                guard names.insert(key.name).inserted else { throw field.error("two client keys are named `\(key.name)`") }
-                guard secrets.insert(key.secret).inserted else { throw field.error("client key `\(key.name)` has the secret of another") }
+                if enabled { keys.append(ClientKey(name: name, secret: secretValue, models: models)) }
             }
             return keys
         }

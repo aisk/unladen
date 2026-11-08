@@ -22,151 +22,221 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
     static let example = """
     // An example with every section.
     {
-      "server": {
-        "listen": "0.0.0.0:8080",
-        "strict": true,
-        "keepalive": "5s",
-        "connect_timeout": "3s",
-        "max_request_bytes": "1MiB",
-      },
-      "providers": {
-        "deepseek": { "keys": ["${DEEPSEEK_KEY}"] },
-        "anthropic": {
-          "strategy": "rotate",
-          "keys": [
-            { "name": "work", "key": "${ANTHROPIC_WORK}" },
-            { "name": "personal", "key": "${ANTHROPIC_PERSONAL}", "enabled": false },
-          ],
-        },
+      "listen": "0.0.0.0:8080",
+      "panel": { "token": "${PANEL}" },
+      "accounts": {
+        "deepseek": "${DEEPSEEK_KEY}",
+        "work": { "provider": "anthropic", "key": "${ANTHROPIC_WORK}" },
+        "personal": { "provider": "anthropic", "key": "${ANTHROPIC_PERSONAL}", "enabled": false },
+        "spare": { "provider": "anthropic", "key": "${ANTHROPIC_SPARE}" },
         "relay": {
           "preset": "openai",
           "endpoints": { "chat": "https://relay.example.com/v1" },
           "headers": { "X-Team": "infra" },
-          "keys": ["${RELAY_KEY}"],
+          "key": "${RELAY_KEY}",
         },
-        /* No keys: called without authentication. */
+        "relay-2": { "provider": "relay", "key": "${RELAY_KEY_2}" },
+        /* No key: called without authentication. */
         "local": { "endpoints": { "chat": "http://10.0.0.2:8000/v1" } },
       },
-      "routes": {
-        "claude-*": "anthropic/$model",
-        "sonnet": { "targets": [{ "model": "anthropic/claude-sonnet-4-5" }] },
-        "*": "deepseek/deepseek-chat",
+      "models": {
+        "claude-*": "anthropic",
+        "sonnet": "anthropic/claude-sonnet-4-5",
+        "cheap": "deepseek/deepseek-chat",
+        "fast": "@cheap",
+        "gpt-*": "relay",
+        "*": "@fast",
       },
-      "client_keys": [
-        { "name": "laptop", "secret": "${LAPTOP}", "routes": ["claude-*"], "passthrough": ["deepseek/*"] },
-        { "name": "ci", "secret": "${CI}", "passthrough": true },
-        { "name": "old", "secret": "${OLD}", "enabled": false },
-      ],
+      "clients": {
+        "laptop": { "key": "${LAPTOP}", "models": "*" },
+        "bob": { "key": "${BOB}", "models": ["claude-*", "deepseek/*"] },
+        "ci": { "key": "${CI}" },
+        "old": { "key": "${OLD}", "enabled": false },
+      },
+      "advanced": {
+        "strict": true,
+        "keepalive": "5s",
+        "connect_timeout": "3s",
+        "max_request_bytes": "1MiB",
+        "pools": { "anthropic": "rotate" },
+      },
     }
     """
 
     static let environment = [
-        "DEEPSEEK_KEY": "sk-d", "ANTHROPIC_WORK": "sk-w", "ANTHROPIC_PERSONAL": "sk-p", "RELAY_KEY": "sk-r",
-        "LAPTOP": "c-1", "CI": "c-2", "OLD": "c-3",
+        "PANEL": "panel-token-0123456789",
+        "DEEPSEEK_KEY": "sk-d", "ANTHROPIC_WORK": "sk-w", "ANTHROPIC_PERSONAL": "sk-p", "ANTHROPIC_SPARE": "sk-s",
+        "RELAY_KEY": "sk-r", "RELAY_KEY_2": "sk-r2", "LAPTOP": "c-1", "BOB": "c-2", "CI": "c-3", "OLD": "c-4",
     ]
 
     @Test func fullExample() throws {
         let loaded = try parse(Self.example, environment: Self.environment)
         #expect(loaded.server == ServerSettings(host: "0.0.0.0", port: 8080, connectTimeout: .seconds(3)))
         let gateway = loaded.gateway
+        #expect(gateway.adminToken == "panel-token-0123456789")
         #expect(gateway.strict)
         #expect(gateway.keepaliveInterval == .seconds(5))
         #expect(gateway.maxRequestBytes == 1 << 20)
         #expect(!loaded.hasLiteralSecrets)
 
-        #expect(gateway.keyPools["deepseek"] == KeyPool(keys: [UpstreamKey(secret: "sk-d")]))
-        // A disabled key is left out of the pool.
-        #expect(gateway.keyPools["anthropic"] == KeyPool(keys: [UpstreamKey(name: "work", secret: "sk-w")], strategy: .rotate))
+        // Accounts are keys named after themselves, pooled by provider in
+        // file order; a disabled one is left out.
+        #expect(gateway.keyPools["deepseek"] == KeyPool(keys: [UpstreamKey(name: "deepseek", secret: "sk-d")]))
+        #expect(gateway.keyPools["anthropic"] == KeyPool(
+            keys: [UpstreamKey(name: "work", secret: "sk-w"), UpstreamKey(name: "spare", secret: "sk-s")], strategy: .rotate,
+        ))
 
-        // A preset-based relay keeps only the endpoints it lists, with the
-        // preset's profile and the extra header.
+        // An account with endpoints is a provider of its own, keeping only
+        // the endpoints it lists, with the preset's profile and the header;
+        // another account of it joins its pool.
         let relay = try #require(gateway.registry["relay"])
         #expect(relay.endpoints.map(\.apiProtocol) == [.chatCompletions])
         #expect(relay.endpoints[0].baseURL == "https://relay.example.com/v1")
         #expect(relay.endpoints[0].headers["x-team"] == "infra")
         #expect(relay.endpoints[0].auth == .bearer)
-        #expect(gateway.keyPools["relay"]?.keys.map(\.secret) == ["sk-r"])
-        // A custom provider without keys calls its endpoints unauthenticated.
+        #expect(gateway.keyPools["relay"]?.keys.map(\.name) == ["relay", "relay-2"])
+        // Without a key, its endpoints are called unauthenticated.
         #expect(gateway.registry["local"]?.endpoints.map(\.auth) == [.none])
+        #expect(gateway.keyPools["local"] == nil)
 
-        #expect(gateway.routes.named("claude-opus-4-1")?.name == "claude-*")
+        // A provider alone stands for provider/$model; @name takes the
+        // target of another entry.
+        #expect(gateway.routes.named("claude-opus-4-1")?.targets == [RouteTarget(model: "anthropic/$model")])
         #expect(gateway.routes.named("SONNET")?.targets == [RouteTarget(model: "anthropic/claude-sonnet-4-5")])
+        #expect(gateway.routes.named("fast")?.targets == [RouteTarget(model: "deepseek/deepseek-chat")])
         #expect(gateway.routes.catchAll?.targets == [RouteTarget(model: "deepseek/deepseek-chat")])
 
         #expect(gateway.clientKeys == [
-            ClientKey(name: "laptop", secret: "c-1", routes: ["claude-*"], passthrough: ["deepseek/*"]),
-            ClientKey(name: "ci", secret: "c-2", routes: nil, passthrough: ["*"]),
+            ClientKey(name: "laptop", secret: "c-1", models: ["*"]),
+            ClientKey(name: "bob", secret: "c-2", models: ["claude-*", "deepseek/*"]),
+            ClientKey(name: "ci", secret: "c-3", models: nil),
         ])
-        #expect(loaded.warnings.contains { $0.contains("route `*`") })
+        #expect(loaded.warnings.contains { $0.contains("`*` serves every model name") })
+    }
+
+    @Test func clientsAreHeldToTheirModels() throws {
+        let gateway = try parse(Self.example, environment: Self.environment).gateway
+        let planner = CandidatePlanner(configuration: gateway)
+        func allowed(_ client: String, _ model: String) -> Bool {
+            let key = gateway.clientKeys.first { $0.name == client }!
+            return (try? planner.references(for: model, access: .key(key))) != nil
+        }
+        // The whole menu, nothing outside it.
+        #expect(allowed("ci", "claude-sonnet-4-5") && allowed("ci", "fast") && allowed("ci", "anything"))
+        #expect(!allowed("ci", "openai/gpt-4o"))
+        // Globs over the names asked for, menu or provider/model alike.
+        #expect(allowed("bob", "claude-sonnet-4-5") && allowed("bob", "deepseek/deepseek-chat"))
+        #expect(!allowed("bob", "fast") && !allowed("bob", "anything") && !allowed("bob", "openai/gpt-4o"))
+        #expect(allowed("laptop", "openai/gpt-4o") && allowed("laptop", "anything"))
     }
 
     @Test func emptyFileUsesTheEnvironment() throws {
         let loaded = try parse("", environment: ["DEEPSEEK_API_KEY": "a, b", "UNLADEN_API_KEY": "client"])
         #expect(loaded.server == ServerSettings())
         #expect(loaded.gateway.keyPools["deepseek"]?.keys.map(\.secret) == ["a", "b"])
+        #expect(loaded.gateway.keyPools["deepseek"]?.fromEnvironment == true)
         #expect(loaded.gateway.routes.isEmpty)
         #expect(loaded.gateway.clientKeys.map(\.secret) == ["client"])
     }
 
-    @Test func fileKeysWinOverTheEnvironment() throws {
-        let loaded = try parse(#"{ "providers": { "deepseek": { "keys": ["from-file"] } } }"#, environment: ["DEEPSEEK_API_KEY": "from-env"])
+    @Test func accountsWinOverTheEnvironment() throws {
+        let loaded = try parse(#"{ "accounts": { "deepseek": "from-file" } }"#, environment: ["DEEPSEEK_API_KEY": "from-env"])
         #expect(loaded.gateway.keyPools["deepseek"]?.keys.map(\.secret) == ["from-file"])
+        #expect(loaded.gateway.keyPools["deepseek"]?.fromEnvironment == false)
         #expect(loaded.hasLiteralSecrets)
+    }
+
+    @Test func minimalFile() throws {
+        let loaded = try parse(#"{ "accounts": { "anthropic": "${K}" }, "models": { "claude-*": "anthropic" } }"#, environment: ["K": "sk"])
+        #expect(try CandidatePlanner(configuration: loaded.gateway).references(for: "claude-opus-4-1") == ["anthropic/claude-opus-4-1"])
+        #expect(loaded.warnings.isEmpty)
+    }
+
+    @Test func aModelOfAProviderWithoutAccountIsWarnedAbout() throws {
+        let loaded = try parse(#"{ "models": { "fast": "deepseek/deepseek-chat" } }"#)
+        #expect(loaded.warnings.contains { $0.contains("`fast` goes to deepseek, which has no account") })
     }
 
     @Test func commandLineOverridesTheFile() throws {
         let overrides = ConfigOverrides(host: "::1", port: 9000, model: "openai/gpt-4o", apiKey: "cli", strict: true, keepalive: 2)
-        let loaded = try parse(#"{ "routes": { "*": "deepseek/deepseek-chat" } }"#, overrides: overrides)
+        let loaded = try parse(#"{ "models": { "*": "deepseek/deepseek-chat" } }"#, overrides: overrides)
         #expect(loaded.server.host == "::1")
         #expect(loaded.server.port == 9000)
         #expect(loaded.gateway.routes.catchAll?.targets == [RouteTarget(model: "openai/gpt-4o")])
         #expect(loaded.gateway.strict)
         #expect(loaded.gateway.keepaliveInterval == .seconds(2))
-        #expect(loaded.gateway.clientKeys.map(\.secret) == ["cli"])
+        #expect(loaded.gateway.clientKeys == [ClientKey(name: "command-line", secret: "cli", models: ["*"])])
         #expect(loaded.warnings.contains { $0.contains("--model replaces") })
     }
 
     @Test func unknownFieldsAreRefusedWithTheirPlace() {
-        let error = parseError("{\n  \"server\": {\n    \"listen\": \"127.0.0.1:1\",\n    \"lisen\": \"x\"\n  }\n}")
-        #expect(error?.message.contains("server.lisen: unknown field") == true)
+        let error = parseError("{\n  \"advanced\": {\n    \"strict\": true,\n    \"stict\": true\n  }\n}")
+        #expect(error?.message.contains("advanced.stict: unknown field") == true)
         #expect(error?.location == "config.jsonc:4:14")
+        #expect(parseError(#"{ "routes": {} }"#)?.message.contains("unknown field") == true)
     }
 
     @Test func laterFeaturesAreNamedAsNotSupportedYet() {
-        #expect(parseError(#"{ "routes": { "a": { "targets": ["openai/gpt-4o"], "head_timeout": "5s" } } }"#)?.message.contains("not supported yet") == true)
-        #expect(parseError(#"{ "routes": { "a": { "targets": ["openai/gpt-4o", "deepseek/deepseek-chat"] } } }"#)?.message.contains("more than one target") == true)
-        #expect(parseError(#"{ "routes": { "a": { "targets": [{ "model": "openai/gpt-4o", "priority": 2 }] } } }"#)?.message.contains("not supported yet") == true)
-        #expect(parseError(#"{ "providers": { "openai": { "strategy": "weight" } } }"#)?.message.contains("not supported yet") == true)
-        #expect(parseError(#"{ "providers": { "openai": { "models": {} } } }"#)?.message.contains("not supported yet") == true)
+        for text in [
+            #"{ "models": { "a": ["openai/gpt-4o", "deepseek/deepseek-chat"] } }"#,
+            #"{ "models": { "a": { "try": ["openai/gpt-4o"], "budget": { "attempts": 2 } } } }"#,
+            #"{ "accounts": { "openai": { "key": "k", "weight": 2 } } }"#,
+            #"{ "accounts": { "r": { "endpoints": { "chat": "https://x" }, "profiles": {} } } }"#,
+            #"{ "clients": { "a": { "key": "k", "limits": {} } } }"#,
+            #"{ "advanced": { "pools": { "openai": "weight" } } }"#,
+            #"{ "advanced": { "pools": { "openai": "fastest" } } }"#,
+        ] {
+            #expect(parseError(text)?.message.contains("not supported yet") == true, "\(text)")
+        }
     }
 
     @Test func invalidValues() {
-        #expect(parseError(#"{ "providers": { "x": { "keys": ["${NOPE}"] } } }"#)?.message.contains("NOPE is not set") == true)
-        #expect(parseError(#"{ "routes": { "a": "nowhere/model" } }"#)?.message.contains("unknown provider `nowhere`") == true)
-        #expect(parseError(#"{ "routes": { "a": "gpt-4o" } }"#)?.message.contains("expected provider/model") == true)
-        #expect(parseError(#"{ "providers": { "relay": { "keys": ["k"] } } }"#)?.message.contains("not a preset") == true)
-        #expect(parseError(#"{ "providers": { "r": { "preset": "nope", "endpoints": { "chat": "https://x" } } } }"#)?.message.contains("unknown preset") == true)
-        #expect(parseError(#"{ "providers": { "r": { "endpoints": { "chat": "ftp://x" } } } }"#)?.message.contains("http://") == true)
-        #expect(parseError(#"{ "server": { "listen": "localhost" } }"#)?.message.contains("host:port") == true)
-        #expect(parseError(#"{ "server": { "keepalive": "soon" } }"#)?.message.contains("duration") == true)
-        #expect(parseError(#"{ "server": { "strict": "yes" } }"#)?.message.contains("true or false") == true)
-        #expect(parseError(#"{ "providers": { "openai": { "keys": ["a", "a"] } } }"#)?.message.contains("listed twice") == true)
-        #expect(parseError(#"{ "client_keys": [{ "name": "a", "secret": "s" }, { "name": "a", "secret": "t" }] }"#)?.message.contains("named `a`") == true)
-        #expect(parseError(#"{ "routes": { "A": "openai/gpt-4o", "a": "openai/gpt-4o" } }"#)?.message.contains("defined twice") == true)
-        #expect(parseError(#"{ "routes": [] }"#)?.message.contains("expected an object") == true)
+        #expect(parseError(#"{ "accounts": { "openai": "${NOPE}" } }"#)?.message.contains("NOPE is not set") == true)
+        #expect(parseError(#"{ "models": { "a": "nowhere/model" } }"#)?.message.contains("unknown provider `nowhere`") == true)
+        #expect(parseError(#"{ "models": { "a": "nowhere" } }"#)?.message.contains("unknown provider `nowhere`") == true)
+        #expect(parseError(#"{ "accounts": { "work": "k" } }"#)?.message.contains("not a provider") == true)
+        #expect(parseError(#"{ "accounts": { "work": { "provider": "nope", "key": "k" } } }"#)?.message.contains("unknown provider `nope`") == true)
+        #expect(parseError(#"{ "accounts": { "work": { "provider": "openai" } } }"#)?.message.contains("`key` is missing") == true)
+        // An account named after a provider is that provider's.
+        #expect(parseError(#"{ "accounts": { "openai": { "provider": "deepseek", "key": "k" } } }"#)?.message.contains("another name") == true)
+        #expect(parseError(#"{ "accounts": { "r": { "provider": "openai", "endpoints": { "chat": "https://x" } } } }"#)?.message.contains("leave `provider` out") == true)
+        #expect(parseError(#"{ "accounts": { "r": { "preset": "nope", "endpoints": { "chat": "https://x" } } } }"#)?.message.contains("unknown preset") == true)
+        #expect(parseError(#"{ "accounts": { "r": { "endpoints": { "chat": "ftp://x" } } } }"#)?.message.contains("http://") == true)
+        #expect(parseError(#"{ "accounts": { "a/b": "k" } }"#)?.message.contains("cannot be empty") == true)
+        #expect(parseError(#"{ "accounts": { "openai": "k", "o2": { "provider": "openai", "key": "k" } } }"#)?.message.contains("same key as `openai`") == true)
+        #expect(parseError(#"{ "listen": "localhost" }"#)?.message.contains("host:port") == true)
+        #expect(parseError(#"{ "panel": { "token": "short" } }"#)?.message.contains("too short") == true)
+        #expect(parseError(#"{ "advanced": { "keepalive": "soon" } }"#)?.message.contains("duration") == true)
+        #expect(parseError(#"{ "advanced": { "strict": "yes" } }"#)?.message.contains("true or false") == true)
+        #expect(parseError(#"{ "advanced": { "pools": { "nope": "rotate" } } }"#)?.message.contains("unknown provider") == true)
+        #expect(parseError(#"{ "advanced": { "pools": { "openai": "random" } } }"#)?.message.contains("expected order or rotate") == true)
+        #expect(parseError(#"{ "clients": { "a": { "key": "s" }, "b": { "key": "s" } } }"#)?.message.contains("has the key of `a`") == true)
+        #expect(parseError(#"{ "clients": { "a": {} } }"#)?.message.contains("`key` is missing") == true)
+        #expect(parseError(#"{ "models": { "A": "openai/gpt-4o", "a": "openai/gpt-4o" } }"#)?.message.contains("defined twice") == true)
+        #expect(parseError(#"{ "models": [] }"#)?.message.contains("expected an object") == true)
+        // References.
+        #expect(parseError(#"{ "models": { "a": "@b" } }"#)?.message.contains("names no entry") == true)
+        #expect(parseError(#"{ "models": { "a": "@b", "b": "@a" } }"#)?.message.contains("refers back to itself: a → b → a") == true)
+        #expect(parseError(#"{ "models": { "a": "@gpt-*", "gpt-*": "openai" } }"#)?.message.contains("names a pattern") == true)
         // Syntax errors carry their place.
-        let syntax = parseError("{\n  \"server\": [\n")
+        let syntax = parseError("{\n  \"advanced\": [\n")
         #expect(syntax?.message.contains("not valid JSON") == true)
         #expect(syntax?.location == "config.jsonc:3:1")
-        #expect(parseError(#"{ "server": {}, "server": {} }"#)?.message.contains("`server` is defined twice") == true)
+        #expect(parseError(#"{ "models": {}, "models": {} }"#)?.message.contains("`models` is defined twice") == true)
         #expect(parseError("{ /* open").map { $0.message.contains("not closed") } == true)
+    }
+
+    @Test func errorsInsideAnEntryPointAtIt() {
+        let error = parseError("{\n  \"models\": {\n    \"a\": \"nowhere/x\"\n  }\n}")
+        #expect(error?.message == "models.a: unknown provider `nowhere` (providers: \(ProviderRegistry.builtIn.providers.keys.sorted().joined(separator: ", ")))")
+        #expect(error?.location == "config.jsonc:3:10")
     }
 
     @Test func commentsAndNumbers() throws {
         let loaded = try parse("""
         // Only comments and numbers here.
         {
-          "server": { "keepalive": 5, "max_request_bytes": 1024, "head_timeout": false, "idle_timeout": "off" }, // trailing
+          "advanced": { "keepalive": 5, "max_request_bytes": 1024, "head_timeout": false, "idle_timeout": "off" }, // trailing
         }
         """)
         #expect(loaded.gateway.keepaliveInterval == .seconds(5))
@@ -236,9 +306,9 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         #expect(upstream.requests.first?.json["model"] == "claude-opus-4-1")
     }
 
-    @Test func clientKeysAreHeldToTheirRoutesAndPassthrough() async throws {
+    @Test func clientKeysAreHeldToTheirModels() async throws {
         let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
-        let laptop = ClientKey(name: "laptop", secret: "c-1", routes: ["fast"], passthrough: ["deepseek/*"])
+        let laptop = ClientKey(name: "laptop", secret: "c-1", models: ["fast", "deepseek/*"])
         let gateway = makeGateway(upstream, routes: Self.routes, clientKeys: [laptop])
         try await makeApp(gateway).test(.router) { client in
             let auth: HTTPFields = [.authorization: "Bearer c-1"]
@@ -267,7 +337,7 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
             var response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
             #expect(response.headers[Gateway.modelHeader] == "deepseek/deepseek-chat")
 
-            let loaded = try ConfigFile.parse(#"{ "routes": { "*": "together/llama-3.3-70b" } }"#) { $0 == "TOGETHER_API_KEY" ? "t" : nil }
+            let loaded = try ConfigFile.parse(#"{ "models": { "*": "together/llama-3.3-70b" } }"#) { $0 == "TOGETHER_API_KEY" ? "t" : nil }
             gateway.replace(loaded.gateway)
             response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
             #expect(response.headers[Gateway.modelHeader] == "together/llama-3.3-70b")

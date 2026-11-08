@@ -1,5 +1,5 @@
 // The control panel's backend: the configuration file read and saved as a
-// document, reloads (the panel's and SIGHUP's), and the status of key pools.
+// document, reloads (the panel's and SIGHUP's), and the status of accounts.
 // See docs/server-config-design.md ("控制面板").
 
 #if canImport(FoundationEssentials)
@@ -66,7 +66,7 @@ final class ConfigManager: Sendable {
         gateway.replace(loaded.gateway)
         logger.info("configuration reloaded from \(loaded.path ?? "flags and environment")")
         if loaded.server != server {
-            logger.warning("server.listen and server.connect_timeout take effect after a restart")
+            logger.warning("listen and advanced.connect_timeout take effect after a restart")
         }
         for warning in loaded.warnings { logger.warning("\(warning)") }
         for line in Summary.lines(loaded.gateway) { logger.info("\(line)") }
@@ -98,7 +98,7 @@ final class ConfigManager: Sendable {
                 let text = ConfigDocument.header + (try ConfigDocument.text(from: document, secrets: current.secrets))
                 let loaded = try ConfigFile.parse(text, file: path, overrides: overrides, environment: environment)
                 guard loaded.gateway.adminToken != nil else {
-                    throw ConfigError(message: "server.admin.token is needed: without it the panel would lock itself out")
+                    throw ConfigError(message: "panel.token is needed: without it the panel would lock itself out")
                 }
                 try Self.write(text, to: path)
                 logger.info("configuration saved from the control panel")
@@ -150,8 +150,8 @@ final class ConfigManager: Sendable {
 // MARK: - Status
 
 enum AdminStatus {
-    /// Key pools with their cooldowns, routes and client keys, as the
-    /// panel shows them; no secret is included.
+    /// Accounts with their state, what else is cooling down, the menu and
+    /// the clients in force, as the panel shows them; no secret is included.
     static func json(gateway: Gateway, path: String?) -> JSONValue {
         let configuration = gateway.configuration
         let health = gateway.health.snapshot()
@@ -161,50 +161,52 @@ enum AdminStatus {
             return .number(JSONNumber(seconds))
         }
 
-        var providers: [JSONValue] = []
+        var accounts: [JSONValue] = []
+        var cooling: [JSONValue] = []
         for id in configuration.registry.providers.keys.sorted() {
             guard let provider = configuration.registry[id] else { continue }
-            let pool = configuration.keyPools[id]
-            let keys: [JSONValue] = (pool?.keys ?? []).map { key in
-                let scope = HealthScope.key(provider: id, keyName: key.name)
-                let state = health.disabled.contains(scope) ? "disabled" : (health.isCooling(scope) ? "cooling" : "ready")
-                return ["name": .string(key.name), "state": .string(state), "cooling_seconds": remaining(scope)]
+            if let pool = configuration.keyPools[id] {
+                for key in pool.keys {
+                    let scope = HealthScope.key(provider: id, keyName: key.name)
+                    let state = health.disabled.contains(scope) ? "disabled" : (health.isCooling(scope) ? "cooling" : "ready")
+                    accounts.append([
+                        "name": .string(key.name),
+                        "provider": .string(id),
+                        "source": pool.fromEnvironment ? "environment" : "file",
+                        "pool": .string(pool.strategy.rawValue),
+                        "state": .string(state),
+                        "cooling_seconds": remaining(scope),
+                    ])
+                }
             }
-            let endpoints: [JSONValue] = provider.endpoints.map { endpoint in
+            for endpoint in provider.endpoints {
                 let scope = HealthScope.endpoint("\(id) \(endpoint.apiProtocol.rawValue) \(endpoint.baseURL)")
-                return ["protocol": .string(endpoint.apiProtocol.rawValue), "base_url": .string("\(endpoint.baseURL)"), "cooling_seconds": remaining(scope)]
+                guard health.isCooling(scope) else { continue }
+                cooling.append([
+                    "provider": .string(id),
+                    "what": .string("\(endpoint.apiProtocol.rawValue) endpoint unreachable"),
+                    "cooling_seconds": remaining(scope),
+                ])
             }
-            var models: [JSONValue] = []
             for (scope, _) in health.cooldowns {
                 guard case .model(let endpoint, let model) = scope, endpoint.hasPrefix(id + " ") else { continue }
-                models.append(["model": .string(model), "endpoint": .string(String(endpoint.dropFirst(id.count + 1))), "cooling_seconds": remaining(scope)])
+                cooling.append(["provider": .string(id), "what": .string("\(model) failing"), "cooling_seconds": remaining(scope)])
             }
-            let configured = pool != nil || ProviderRegistry.builtIn[id] != provider
-            providers.append([
-                "id": .string(id),
-                "configured": .bool(configured),
-                "strategy": pool.map { .string($0.strategy.rawValue) } ?? .null,
-                "keys": .array(keys),
-                "endpoints": .array(endpoints),
-                "cooling_models": .array(models),
-            ])
         }
-        let routes: [JSONValue] = configuration.routes.all.map { route in
+        let models: [JSONValue] = configuration.routes.all.map { route in
             ["name": .string(route.name), "targets": .array(route.targets.map { .string($0.model) })]
         }
         let clients: [JSONValue] = configuration.clientKeys.map { key in
-            [
-                "name": .string(key.name),
-                "routes": key.routes.map { .array($0.map(JSONValue.string)) } ?? .null,
-                "passthrough": .array(key.passthrough.map(JSONValue.string)),
-            ]
+            ["name": .string(key.name), "models": key.models.map { .array($0.map(JSONValue.string)) } ?? .null]
         }
         return [
             "config_path": path.map(JSONValue.string) ?? .null,
-            "providers": .array(providers),
+            "accounts": .array(accounts),
+            "cooling": .array(cooling),
+            "models": .array(models),
+            "clients": .array(clients),
             "presets": .array(ProviderRegistry.builtIn.providers.keys.sorted().map(JSONValue.string)),
-            "routes": .array(routes),
-            "client_keys": .array(clients),
+            "providers": .array(configuration.registry.providers.keys.sorted().map(JSONValue.string)),
         ]
     }
 }
@@ -212,7 +214,7 @@ enum AdminStatus {
 // MARK: - Routes
 
 /// `/admin` (the panel) and `/admin/api/*`, open only with
-/// `server.admin.token` set; 404 otherwise, as though they did not exist.
+/// `panel.token` set; 404 otherwise, as though they did not exist.
 func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigManager) {
     let gateway = manager.gateway
 

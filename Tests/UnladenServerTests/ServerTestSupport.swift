@@ -141,7 +141,7 @@ func makeGateway(
 ) -> Gateway {
     var configuration = GatewayConfiguration()
     configuration.routes = RouteTable(routes + (model.map { [Route(name: "*", targets: [RouteTarget(model: $0)])] } ?? []))
-    configuration.clientKeys = clientKeys + (apiKey.map { [ClientKey(name: "test", secret: $0, routes: nil, passthrough: ["*"])] } ?? [])
+    configuration.clientKeys = clientKeys + (apiKey.map { [ClientKey(name: "test", secret: $0, models: ["*"])] } ?? [])
     configuration.strict = strict
     configuration.keepaliveInterval = keepalive
     configuration.keyPools = upstreamKeyPools(keys ?? Dictionary(

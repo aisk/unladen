@@ -259,7 +259,7 @@ struct CandidatePlanner: Sendable {
         let name = clientModel.hasPrefix("models/") ? String(clientModel.dropFirst(7)) : clientModel
         let routes = configuration.routes
         if let route = routes.named(name) {
-            guard access.mayUse(route) else { throw Self.notAllowed(clientModel) }
+            guard access.mayUse(name) else { throw Self.notAllowed(clientModel) }
             return route.targets.map { $0.reference(for: name) }
         }
         if let (provider, _) = try? ProviderRegistry.parse(name), configuration.registry[provider] != nil {
@@ -272,7 +272,7 @@ struct CandidatePlanner: Sendable {
             return [name]
         }
         if let route = routes.catchAll {
-            guard access.mayUse(route) else { throw Self.notAllowed(clientModel) }
+            guard access.mayUse(name) else { throw Self.notAllowed(clientModel) }
             return route.targets.map { $0.reference(for: name) }
         }
         throw PlanningError(status: 404, message: "model `\(clientModel)` is not served by this gateway")
