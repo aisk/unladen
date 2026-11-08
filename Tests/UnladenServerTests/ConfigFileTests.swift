@@ -130,6 +130,12 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         #expect(allowed("laptop", "openai/gpt-4o") && allowed("laptop", "anything"))
     }
 
+    @Test func aKeylessAccountOnAPresetCallsItsEndpointsUnauthenticated() throws {
+        let loaded = try parse(#"{ "accounts": { "lan": { "preset": "openai", "endpoints": { "chat": "http://10.0.0.2:8000/v1" } } } }"#)
+        #expect(loaded.gateway.registry["lan"]?.endpoints.map(\.auth) == [.none])
+        #expect(loaded.warnings.isEmpty)
+    }
+
     @Test func disabledClientsStillRequireAKey() throws {
         let loaded = try parse(#"{ "clients": { "old": { "key": "k", "enabled": false } } }"#, environment: ["UNLADEN_API_KEY": "env"])
         #expect(loaded.gateway.clientKeys.isEmpty)
@@ -369,5 +375,12 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         let health = gateway.health.snapshot()
         #expect(health.isCooling(a))
         #expect(!health.isCooling(b))
+
+        // `a` is removed, then added back: it starts afresh.
+        configuration.keyPools = ["deepseek": KeyPool(keys: [UpstreamKey(name: "b", secret: "s3")])]
+        gateway.replace(configuration)
+        configuration.keyPools = ["deepseek": KeyPool(keys: [UpstreamKey(name: "b", secret: "s3"), UpstreamKey(name: "a", secret: "s1")])]
+        gateway.replace(configuration)
+        #expect(!gateway.health.snapshot().isCooling(a))
     }
 }

@@ -597,6 +597,7 @@ extension ConfigFile {
                 provider.endpoints = endpoints.map { apiProtocol, url in
                     if var endpoint = provider.endpoints.first(where: { $0.apiProtocol == apiProtocol }) {
                         endpoint.baseURL = url
+                        if keyless { endpoint.auth = .none }
                         return endpoint
                     }
                     let auth: EndpointAuth

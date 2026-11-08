@@ -39,14 +39,14 @@ struct Gateway: Sendable {
 
     /// Installs `configuration` for the requests that start from now on.
     /// Health stays with each key's name, except for keys whose secret
-    /// changed: they start afresh. Keys disabled after repeated 401s get
-    /// another chance.
+    /// changed, which start afresh, and keys that are gone, which are
+    /// forgotten. Keys disabled after repeated 401s get another chance.
     func replace(_ configuration: GatewayConfiguration) {
         let old = store.replace(configuration)
         var changed: Set<HealthScope> = []
         for (provider, pool) in old.keyPools {
             let now = configuration.keyPools[provider]?.keys ?? []
-            for key in pool.keys where now.contains(where: { $0.name == key.name && $0.secret != key.secret }) {
+            for key in pool.keys where !now.contains(where: { $0.name == key.name && $0.secret == key.secret }) {
                 changed.insert(.key(provider: provider, keyName: key.name))
             }
         }
