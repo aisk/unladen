@@ -29,6 +29,16 @@ struct Candidate: Sendable, Hashable {
 struct HealthKey: Hashable, Sendable {
     var reference: String
     var keyName: String
+
+    /// An upstream key: its provider and name.
+    struct Key: Hashable, Sendable {
+        var provider: String
+        var keyName: String
+    }
+
+    var key: Key {
+        Key(provider: String(reference.prefix { $0 != "/" }), keyName: keyName)
+    }
 }
 
 /// What a strategy may look at besides the candidates.
@@ -127,6 +137,11 @@ final class HealthStore: Sendable {
 
     func recordSuccess(_ key: HealthKey) {
         _ = cooldowns.withLockedValue { $0.removeValue(forKey: key) }
+    }
+
+    /// Drops the cooldowns of the keys `matching` selects.
+    func forget(_ matching: (HealthKey) -> Bool) {
+        cooldowns.withLockedValue { cooldowns in cooldowns = cooldowns.filter { !matching($0.key) } }
     }
 
     /// The cooldown for an upstream status, honouring a `Retry-After` in

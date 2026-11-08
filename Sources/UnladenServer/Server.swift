@@ -34,9 +34,10 @@ func buildRouter(gateway: Gateway) -> Router<GatewayRequestContext> {
     }
 
     router.get("/v1/models") { request, _ in
-        switch authenticate(request, gateway: gateway, as: .chatCompletions) {
-        case .denied(let response): response
-        case .allowed(let access): modelList(gateway.configuration, access: access)
+        let configuration = gateway.configuration
+        switch authenticate(request, configuration: configuration, as: .chatCompletions) {
+        case .denied(let response): return response
+        case .allowed(let access): return modelList(configuration, access: access)
         }
     }
 
@@ -50,7 +51,7 @@ func buildRouter(gateway: Gateway) -> Router<GatewayRequestContext> {
         try await serve(.anthropicMessages, request: request, context: context, gateway: gateway)
     }
     router.post("/v1/messages/count_tokens") { request, _ in
-        if case .denied(let response) = authenticate(request, gateway: gateway, as: .anthropicMessages) { return response }
+        if case .denied(let response) = authenticate(request, configuration: gateway.configuration, as: .anthropicMessages) { return response }
         return Gateway.errorResponse(.anthropicMessages, status: 501, message: "count_tokens is not supported by this gateway")
     }
     for prefix in ["/v1beta/models/**", "/v1/models/**"] {
@@ -73,18 +74,19 @@ private func serve(
     gateway: Gateway,
     geminiPath: (model: String, stream: Bool)? = nil,
 ) async throws -> Response {
+    let configuration = gateway.configuration
     let access: ClientAccess
-    switch authenticate(request, gateway: gateway, as: clientProtocol) {
+    switch authenticate(request, configuration: configuration, as: clientProtocol) {
     case .denied(let response): return response
     case .allowed(let allowed): access = allowed
     }
     var request = request
     let body: [UInt8]
     do {
-        let buffer = try await request.collectBody(upTo: gateway.configuration.maxRequestBytes)
+        let buffer = try await request.collectBody(upTo: configuration.maxRequestBytes)
         body = Array(buffer.readableBytesView)
     } catch {
-        return Gateway.errorResponse(clientProtocol, status: 413, message: "request body larger than \(gateway.configuration.maxRequestBytes) bytes")
+        return Gateway.errorResponse(clientProtocol, status: 413, message: "request body larger than \(configuration.maxRequestBytes) bytes")
     }
     let monitor = await DisconnectMonitor.install(on: context.channel)
     let logger = context.logger
@@ -94,6 +96,7 @@ private func serve(
         geminiPath: geminiPath,
         headers: request.headers,
         access: access,
+        configuration: configuration,
         monitor: monitor,
         log: RequestLog { logger.info("\($0)") },
     )
@@ -107,8 +110,8 @@ enum Authentication {
 
 /// Who the request comes from: any client when no client keys are
 /// configured, else the key it presents.
-private func authenticate(_ request: Request, gateway: Gateway, as clientProtocol: WireProtocol) -> Authentication {
-    let configured = gateway.configuration.clientKeys
+private func authenticate(_ request: Request, configuration: GatewayConfiguration, as clientProtocol: WireProtocol) -> Authentication {
+    let configured = configuration.clientKeys
     guard !configured.isEmpty else { return .allowed(.open) }
     let presented = presentedKeys(request, acceptingQueryKey: clientProtocol == .gemini)
     // Every configured key is compared, so the time taken does not tell

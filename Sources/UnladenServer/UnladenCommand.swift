@@ -3,6 +3,7 @@
 
 import ArgumentParser
 import AsyncHTTPClient
+import Dispatch
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Musl)
@@ -11,6 +12,7 @@ import Musl
 import Darwin
 #endif
 import Hummingbird
+import Logging
 import NIOCore
 import UnladenAsyncHTTPClient
 @_spi(Wire) import UnladenCore
@@ -98,13 +100,16 @@ struct ConfigOptions: ParsableArguments {
         if let keepalive, keepalive <= 0 { throw ValidationError("--keepalive must be positive") }
     }
 
-    func load() throws -> LoadedConfiguration {
-        let overrides = ConfigOverrides(
+    var overrides: ConfigOverrides {
+        ConfigOverrides(
             host: host, port: port, model: model, apiKey: apiKey.flatMap { $0.isEmpty ? nil : $0 }, strict: strict,
             connectTimeout: connectTimeout, keepalive: keepalive,
         )
+    }
+
+    func load() throws -> LoadedConfiguration {
         // A ConfigError prints as itself, without the usage text.
-        return try ConfigLoader.load(path: config, overrides: overrides)
+        try ConfigLoader.load(path: config, overrides: overrides)
     }
 }
 
@@ -161,6 +166,15 @@ struct Serve: AsyncParsableCommand {
         app.logger.info("configuration: \(loaded.path ?? "none (flags and environment only)")")
         for warning in loaded.warnings { app.logger.warning("\(warning)") }
         for line in Summary.lines(loaded.gateway) { app.logger.info("\(line)") }
+
+        // SIGHUP: read the configuration again and install it.
+        let reloader = Reloader(path: loaded.path ?? options.config, overrides: options.overrides, server: server, gateway: gateway, logger: app.logger)
+        signal(SIGHUP, SIG_IGN)
+        let hangup = DispatchSource.makeSignalSource(signal: SIGHUP, queue: .global())
+        hangup.setEventHandler { reloader.reload() }
+        hangup.resume()
+        defer { hangup.cancel() }
+
         do {
             try await app.runService()
         } catch {
@@ -168,6 +182,35 @@ struct Serve: AsyncParsableCommand {
             throw error
         }
         try await client.shutdown()
+    }
+}
+
+/// Reloads the configuration on request (SIGHUP; later, the control
+/// panel). A configuration that fails to load leaves the current one in
+/// force.
+struct Reloader: Sendable {
+    var path: String?
+    var overrides: ConfigOverrides
+    /// What the listener and the HTTP client were started with.
+    var server: ServerSettings
+    var gateway: Gateway
+    var logger: Logger
+
+    func reload() {
+        let loaded: LoadedConfiguration
+        do {
+            loaded = try ConfigLoader.load(path: path, overrides: overrides)
+        } catch {
+            logger.error("configuration not reloaded, the current one stays: \(error)")
+            return
+        }
+        gateway.replace(loaded.gateway)
+        logger.info("configuration reloaded from \(loaded.path ?? "flags and environment")")
+        if loaded.server != server {
+            logger.warning("server.listen and server.connect_timeout take effect after a restart")
+        }
+        for warning in loaded.warnings { logger.warning("\(warning)") }
+        for line in Summary.lines(loaded.gateway) { logger.info("\(line)") }
     }
 }
 

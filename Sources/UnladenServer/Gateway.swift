@@ -15,17 +15,38 @@ struct RequestLog: Sendable {
 
 /// The protocol-translating core, shared by the four ingress routes.
 struct Gateway: Sendable {
-    var configuration: GatewayConfiguration
+    let store: ConfigurationStore
     var transport: any HTTPTransport
     var strategy: any RoutingStrategy = KeyPoolOrdering()
     var health = HealthStore()
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
-        self.configuration = configuration
+        self.store = ConfigurationStore(configuration)
         self.transport = transport
     }
 
-    var planner: CandidatePlanner { CandidatePlanner(configuration: configuration) }
+    /// The current configuration. A request reads it once, at its start,
+    /// and keeps that snapshot to its end; setting it (a reload) affects
+    /// the requests that start afterwards.
+    var configuration: GatewayConfiguration {
+        get { store.current }
+        nonmutating set { replace(newValue) }
+    }
+
+    /// Installs `configuration` for the requests that start from now on.
+    /// Health stays with each key's name, except for keys whose secret
+    /// changed: they start afresh.
+    func replace(_ configuration: GatewayConfiguration) {
+        let old = store.replace(configuration)
+        var changed: Set<HealthKey.Key> = []
+        for (provider, pool) in old.keyPools {
+            let now = configuration.keyPools[provider]?.keys ?? []
+            for key in pool.keys where now.contains(where: { $0.name == key.name && $0.secret != key.secret }) {
+                changed.insert(HealthKey.Key(provider: provider, keyName: key.name))
+            }
+        }
+        if !changed.isEmpty { health.forget { changed.contains($0.key) } }
+    }
 
     // MARK: Handling
 
@@ -40,9 +61,11 @@ struct Gateway: Sendable {
         geminiPath: (model: String, stream: Bool)? = nil,
         headers: HTTPFields,
         access: ClientAccess = .open,
+        configuration snapshot: GatewayConfiguration? = nil,
         monitor: DisconnectMonitor,
         log: RequestLog,
     ) async -> Response {
+        let configuration = snapshot ?? self.configuration
         let start = ContinuousClock.now
         var line = LogLine(clientProtocol: clientProtocol, start: start)
         func fail(_ status: Int, _ message: String, detail: String? = nil, warnings: [WireWarning] = []) -> Response {
@@ -67,7 +90,8 @@ struct Gateway: Sendable {
 
         let candidates: [Candidate]
         do {
-            candidates = try planner.candidates(for: request.model, clientProtocol: clientProtocol, access: access)
+            candidates = try CandidatePlanner(configuration: configuration)
+                .candidates(for: request.model, clientProtocol: clientProtocol, access: access)
         } catch {
             return fail(error.status, error.message, detail: error.detail, warnings: decoded.warnings)
         }
@@ -80,6 +104,7 @@ struct Gateway: Sendable {
             outcome = try await monitor.run {
                 try await self.attempt(
                     request, decodeWarnings: decoded.warnings, candidates: ordered, stream: stream, clientHeaders: headers,
+                    strict: configuration.strict,
                 )
             }
         } catch {
@@ -228,6 +253,7 @@ struct Gateway: Sendable {
         candidates: [Candidate],
         stream: Bool,
         clientHeaders: HTTPFields,
+        strict: Bool,
     ) async throws -> AttemptOutcome {
         var last: AttemptFailure?
         var strictWarnings: [WireWarning]?
@@ -242,7 +268,7 @@ struct Gateway: Sendable {
                 continue
             }
             let requestWarnings = WireWarning.merged(decoded: decodeWarnings, encoded: prepared.warnings)
-            if configuration.strict {
+            if strict {
                 let lossy = requestWarnings.filter(\.isEscalatedWhenStrict)
                 if !lossy.isEmpty {
                     strictWarnings = strictWarnings ?? lossy

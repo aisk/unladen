@@ -239,3 +239,38 @@ private func parseError(_ yaml: String, environment: [String: String] = [:]) -> 
         #expect(upstream.requests.count == 2)
     }
 }
+
+@Suite struct ReloadTests {
+    @Test func replacedConfigurationServesTheNextRequests() async throws {
+        let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
+        let gateway = makeGateway(upstream, model: "deepseek/deepseek-chat")
+        try await makeApp(gateway).test(.router) { client in
+            var response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+            #expect(response.headers[Gateway.modelHeader] == "deepseek/deepseek-chat")
+
+            let loaded = try ConfigFile.parse(#"routes: { "*": together/llama-3.3-70b }"#) { $0 == "TOGETHER_API_KEY" ? "t" : nil }
+            gateway.replace(loaded.gateway)
+            response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+            #expect(response.headers[Gateway.modelHeader] == "together/llama-3.3-70b")
+        }
+        #expect(upstream.requests.last?.header("authorization") == "Bearer t")
+    }
+
+    @Test func healthFollowsKeyNamesAndResetsWhenASecretChanges() {
+        let upstream = MockUpstream { _ in reply("{}") }
+        var configuration = GatewayConfiguration()
+        configuration.keyPools = ["deepseek": KeyPool(keys: [UpstreamKey(name: "a", secret: "s1"), UpstreamKey(name: "b", secret: "s2")])]
+        let gateway = Gateway(configuration: configuration, transport: upstream.transport)
+        let a = HealthKey(reference: "deepseek/deepseek-chat", keyName: "a")
+        let b = HealthKey(reference: "deepseek/deepseek-chat", keyName: "b")
+        gateway.health.recordFailure(a, cooldown: .seconds(60))
+        gateway.health.recordFailure(b, cooldown: .seconds(60))
+
+        // `a` keeps its secret and moves; `b` gets a new one.
+        configuration.keyPools = ["deepseek": KeyPool(keys: [UpstreamKey(name: "b", secret: "s3"), UpstreamKey(name: "a", secret: "s1")])]
+        gateway.replace(configuration)
+        let health = gateway.health.snapshot()
+        #expect(health.isCooling(a))
+        #expect(!health.isCooling(b))
+    }
+}

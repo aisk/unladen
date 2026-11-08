@@ -3,7 +3,29 @@
 // present. Built from the configuration file (ConfigFile.swift), command
 // line flags and environment variables; see docs/server-config-design.md.
 
+import NIOConcurrencyHelpers
 @_spi(Wire) import UnladenCore
+
+/// The configuration in force, replaced whole on a reload.
+final class ConfigurationStore: Sendable {
+    private let box: NIOLockedValueBox<GatewayConfiguration>
+
+    init(_ configuration: GatewayConfiguration) {
+        box = NIOLockedValueBox(configuration)
+    }
+
+    var current: GatewayConfiguration { box.withLockedValue { $0 } }
+
+    /// Installs `configuration`; returns the one it replaces.
+    @discardableResult
+    func replace(_ configuration: GatewayConfiguration) -> GatewayConfiguration {
+        box.withLockedValue { current in
+            let old = current
+            current = configuration
+            return old
+        }
+    }
+}
 
 /// Settings of one gateway instance, validated. Immutable once built.
 struct GatewayConfiguration: Sendable {
