@@ -68,3 +68,7 @@ Many of the replay tests use real API recordings taken from [pydantic-ai](https:
 ```sh
 swift test
 ```
+
+## License
+
+Unladen is released under the [MIT License](LICENSE). The recorded test data keeps the licenses of the projects it came from; see [THIRD_PARTY_NOTICES.md](Tests/UnladenReplayTests/Recordings/THIRD_PARTY_NOTICES.md).
