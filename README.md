@@ -6,7 +6,7 @@ Unladen is a Swift library for calling large language models from many providers
 
 You address a model as `"provider/model"`. Requests and replies, including streams, tool calls, reasoning and prompt caching, are translated to and from that provider's protocol. A conversation history can move from one provider to another; replay data the new provider can't verify, such as thinking signatures, is left out automatically.
 
-A protocol-translating gateway server (the `unladen` executable) is in progress and not ready for use yet.
+The `unladen` executable is a gateway built on the library: clients speak any of the four protocols to it, and it translates each request for the upstream that serves the model. It is early work; see [Gateway](#gateway).
 
 ## Installation
 
@@ -60,6 +60,36 @@ for call in reply.toolCalls {
 let answer = try await client.model("openai/gpt-5.2").generate(history, tools: [weather])
 print(answer.text)
 ```
+
+## Gateway
+
+```sh
+swift build -c release --product unladen --static-swift-stdlib
+.build/release/unladen --config config.jsonc
+```
+
+The configuration is JSON with comments and trailing commas, read from `--config` or `~/.config/unladen/config.jsonc`:
+
+```jsonc
+{
+  "server": {
+    "listen": "127.0.0.1:4141",
+    // Opens the control panel at /admin.
+    "admin": { "token": "${UNLADEN_ADMIN_TOKEN}" },
+  },
+  "providers": {
+    // Several keys: the next one is tried when one fails.
+    "deepseek": { "keys": ["${DEEPSEEK_KEY_1}", "${DEEPSEEK_KEY_2}"] },
+  },
+  "routes": {
+    "claude-*": "anthropic/$model",
+    "*": "deepseek/deepseek-chat",
+  },
+  "client_keys": [{ "name": "laptop", "secret": "${UNLADEN_KEY_LAPTOP}", "passthrough": true }],
+}
+```
+
+`unladen check-config` checks a configuration without serving it. The gateway reloads its configuration on `SIGHUP` and when it is saved from the control panel. The design, including what later versions will add, is in [docs/server-config-design.md](docs/server-config-design.md) (Chinese).
 
 ## Tests
 
