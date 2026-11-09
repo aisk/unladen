@@ -70,10 +70,12 @@ private func temporaryDirectory() -> String {
         #expect(keys.allSatisfy { $0.signIn == .chatgpt && $0.secret.isEmpty })
     }
 
-    @Test func aChatGPTAccountHoldsNoKey() {
-        for text in [#"{"accounts": {"chatgpt": "sk-1"}}"#, #"{"accounts": {"me": {"provider": "chatgpt", "key": "sk-1"}}}"#] {
-            #expect(throws: ConfigError.self) { try ConfigFile.parse(text, file: "c.jsonc") { _ in nil } }
-        }
+    @Test func aChatGPTAccountMayHoldAKeyInstead() throws {
+        let text = #"{"accounts": {"chatgpt": "sk-1", "me": {"provider": "chatgpt"}, "team": {"provider": "chatgpt", "key": "sk-2"}}}"#
+        let keys = try #require(try ConfigFile.parse(text, file: "c.jsonc") { _ in nil }.gateway.keyPools["chatgpt"]?.keys)
+        #expect(keys.map(\.name) == ["chatgpt", "me", "team"])
+        #expect(keys.map(\.signIn) == [nil, .chatgpt, nil])
+        #expect(keys.map(\.secret) == ["sk-1", "", "sk-2"])
     }
 
     @Test func theSignInProviderIsNotRedefined() {
@@ -86,9 +88,9 @@ private func temporaryDirectory() -> String {
         }
     }
 
-    @Test func theEnvironmentGivesNoSignInKeys() throws {
+    @Test func theEnvironmentGivesAKey() throws {
         let loaded = try ConfigFile.parse("{}", file: "c.jsonc") { $0 == "UNLADEN_CHATGPT_API_KEY" ? "sk-1" : nil }
-        #expect(loaded.gateway.keyPools["chatgpt"] == nil)
+        #expect(loaded.gateway.keyPools["chatgpt"]?.keys.map(\.signIn) == [nil])
     }
 
     @Test func candidatesOfASignedInAccountCarryNoKey() throws {

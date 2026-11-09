@@ -307,18 +307,12 @@ final class SignIns: Sendable {
 
     /// Finishes sign-in `id` with the address the browser was sent back
     /// to, and keeps the account's tokens.
-    /// `exists`: whether the account is still configured (a reload may
-    /// have removed it meanwhile).
     func finish(
         id: String, callback: String, transport: any HTTPTransport,
-        exists: (_ provider: String, _ account: String) -> Bool = { _, _ in true },
     ) async throws(SignInError) -> (provider: String, account: String, credentials: SignInCredentials) {
         guard let pending = state.withLockedValue({ $0.pending[id] }),
               LocalDay.nowMilliseconds() - pending.started < Self.pendingLimit
         else { throw SignInError(message: "this sign-in has expired: start it again") }
-        guard exists(pending.provider, pending.account) else {
-            throw SignInError(message: "\(Self.key(pending.provider, pending.account)) is no longer in the configuration")
-        }
         let query = ChatGPTSignIn.query(of: callback)
         if let error = query["error"] {
             throw SignInError(message: "OpenAI refused the sign-in: \(query["error_description"] ?? error)")

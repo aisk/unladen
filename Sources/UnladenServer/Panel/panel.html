@@ -325,14 +325,11 @@
                     <input class="form-control mono" x-model="draft.name" @input="draftChanged()" placeholder="work">
                     <div class="form-hint">Shown in logs and the overview.</div>
                   </div>
-                  <div class="col-md-4" x-show="!signsIn(draft.provider)">
+                  <div class="col-md-4">
                     <label class="form-label">Key</label>
                     <input class="form-control mono" x-model="draft.key" placeholder="sk-… or ${ENV_VAR}" autocomplete="off">
                     <div class="form-hint" x-show="!draft.provider">May stay empty for an address without authentication.</div>
-                  </div>
-                  <div class="col-md-4" x-show="signsIn(draft.provider)">
-                    <label class="form-label">Key</label>
-                    <div class="form-hint">None: after saving, sign in from the Overview. For your own use only: a ChatGPT plan is personal.</div>
+                    <div class="form-hint" x-show="signsIn(draft.provider)">Or leave it empty and sign in instead. For your own use only: the plan is personal.</div>
                   </div>
                   <template x-if="!draft.provider">
                     <div class="col-12">
@@ -373,7 +370,8 @@
                 </div>
               </div>
               <div class="card-footer d-flex gap-2">
-                <button class="btn btn-primary" @click="addAccount()" :disabled="!!draftProblem()">Add</button>
+                <button class="btn btn-primary" x-show="signsIn(draft.provider) && !draft.key.trim()" @click="startSignIn(draft.provider, draft.name.trim(), true)" :disabled="!!draftProblem()">Sign in and add</button>
+                <button class="btn btn-primary" x-show="!(signsIn(draft.provider) && !draft.key.trim())" @click="addAccount()" :disabled="!!draftProblem()">Add</button>
                 <button class="btn btn-ghost-secondary" @click="adding = false">Cancel</button>
                 <span class="text-secondary align-self-center" x-text="draftProblem()"></span>
               </div>
@@ -393,7 +391,11 @@
                       </td>
                       <td>
                         <template x-if="signsIn(accountProvider(a)) && !a.key">
-                          <span class="text-secondary">signs in (Overview)</span>
+                          <div class="d-flex align-items-center gap-2">
+                            <span class="badge" :class="signInOf(a)?.state === 'signed in' ? 'bg-green-lt' : 'bg-secondary-lt'" x-text="signInOf(a)?.state || 'not saved yet'"></span>
+                            <span class="text-secondary small" x-text="signInOf(a)?.user || ''"></span>
+                            <button class="btn btn-sm" @click="startSignIn(accountProvider(a), a.name.trim())" x-text="signInOf(a)?.state === 'signed in' ? 'Sign in again' : 'Sign in'"></button>
+                          </div>
                         </template>
                         <template x-if="isHidden(a.key)">
                           <div class="d-flex align-items-center gap-2">
@@ -630,7 +632,7 @@
           <div class="card-body">
             <ol class="ps-3">
               <li class="mb-2">Open <a :href="signing.url" target="_blank" rel="noopener noreferrer">the sign-in page</a> and sign in to ChatGPT.</li>
-              <li class="mb-2">The browser then goes to a <code>127.0.0.1:1455</code> address that may not load. Copy that whole address from the address bar and paste it here:</li>
+              <li class="mb-2">The browser then goes to a <code>127.0.0.1:1455</code> address, which does not load unless the browser runs on the gateway's machine: OpenAI sends it back only to a loopback address. Copy that whole address from the address bar and paste it here:</li>
             </ol>
             <input class="form-control mono" x-model="signing.callback" placeholder="http://127.0.0.1:1455/auth/callback?code=…" autocomplete="off" @keydown.enter="signing.callback.trim() && finishSignIn()">
             <div class="text-danger mt-2" x-text="signing.error"></div>

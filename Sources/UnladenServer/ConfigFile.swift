@@ -121,9 +121,7 @@ enum ConfigFile {
         // Key pools: the file's accounts, else the environment's keys.
         let registry = loaded.gateway.registry
         for id in registry.providers.keys {
-            // Accounts that sign in come from the file only.
-            let fromEnvironment = SignInKind.of(provider: id) == nil ? UpstreamKeys.load(for: id, in: registry, environment: environment) : []
-            let keys = fileKeys[id] ?? fromEnvironment
+            let keys = fileKeys[id] ?? UpstreamKeys.load(for: id, in: registry, environment: environment)
             if !keys.isEmpty {
                 loaded.gateway.keyPools[id] = KeyPool(keys: keys, strategy: pools[id] ?? .order, fromEnvironment: fileKeys[id] == nil)
             }
@@ -485,9 +483,6 @@ extension ConfigFile {
                     throw value.error("an account name cannot be empty, start with @, or contain / or *")
                 }
                 if value.isScalar {
-                    if SignInKind.of(provider: name) != nil {
-                        throw value.error("`\(name)` accounts sign in instead of holding a key: write `\"\(name)\": {}` and sign in from the control panel")
-                    }
                     guard registry[name] != nil else {
                         throw value.error("`\(name)` is not a provider: write { \"provider\": \"…\", \"key\": \"…\" }, or give the account its `endpoints`")
                     }
@@ -528,10 +523,8 @@ extension ConfigFile {
                         throw item.error("an account with `preset`, `endpoints` or `headers` is the provider `\(name)` itself: leave `provider` out")
                     }
                     definitions.append((name, value, parts))
-                } else if SignInKind.of(provider: provider?.0 ?? name) != nil {
-                    if key != nil {
-                        throw value.error("`\(provider?.0 ?? name)` accounts sign in instead of holding a key: leave `key` out and sign in from the control panel")
-                    }
+                } else if SignInKind.of(provider: provider?.0 ?? name) != nil, key == nil {
+                    // Signs in instead of holding a key.
                     if let (id, item) = provider, id != name, ProviderRegistry.builtIn[name] != nil {
                         throw item.error("`\(name)` is the name of a provider, so `\(name)/…` would not reach `\(id)`: give this account another name")
                     }
@@ -549,7 +542,7 @@ extension ConfigFile {
             var keys: [String: [UpstreamKey]] = [:]
             var owners: [String: String] = [:]
             for account in accounts {
-                if let kind = SignInKind.of(provider: account.provider) {
+                if account.key == nil, let kind = SignInKind.of(provider: account.provider) {
                     keys[account.provider, default: []] += account.enabled ? [UpstreamKey(signingIn: account.name, kind)] : []
                     continue
                 }

@@ -267,9 +267,15 @@ function panel() {
     },
 
     signsIn(provider) { return SIGN_IN.includes(provider); },
-    async startSignIn(provider, account) {
+    // The sign-in state of an account of the file, once saved.
+    signInOf(a) {
+      const name = a.name.trim(), provider = this.accountProvider(a).trim();
+      return (this.status?.accounts || []).find(s => s.provider === provider && s.name === name)?.sign_in || null;
+    },
+    // `adding`: the account is the add form's, added (and saved) once signed in.
+    async startSignIn(provider, account, adding = false) {
       const result = await this.api('POST', 'sign-in/start', { provider, account });
-      if (result.status === 200) this.signing = { provider, account, id: result.json.id, url: result.json.url, callback: '', error: '', busy: false };
+      if (result.status === 200) this.signing = { provider, account, adding, id: result.json.id, url: result.json.url, callback: '', error: '', busy: false };
       else if (result.status !== 401) this.say('danger', 'Cannot sign in', result.json.error || 'HTTP ' + result.status);
     },
     async finishSignIn() {
@@ -281,6 +287,12 @@ function panel() {
         if (result.status === 200) {
           this.signing = null;
           this.say('success', 'Signed in ' + s.provider + '/' + s.account, result.json.user + (result.json.plan ? ' (' + result.json.plan + ')' : ''));
+          if (s.adding) {
+            // Saved at once unless other changes are pending, which the user saves.
+            const clean = !this.dirty();
+            this.addAccount();
+            if (clean) await this.save();
+          }
           await this.refreshStatus();
         } else if (result.status !== 401) {
           s.error = result.json.error || 'HTTP ' + result.status;

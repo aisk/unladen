@@ -297,6 +297,11 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
                 uri: "/admin/api/sign-in/start", method: .post, headers: headers, body: body(["provider": "deepseek", "account": "deepseek"]),
             )
             #expect(keyed.status == .badRequest)
+            // An account not saved yet may sign in: the panel adds it after.
+            let unsaved = try await client.execute(
+                uri: "/admin/api/sign-in/start", method: .post, headers: headers, body: body(["provider": "chatgpt", "account": "new"]),
+            )
+            #expect(unsaved.status == .ok)
 
             let started = try await client.execute(
                 uri: "/admin/api/sign-in/start", method: .post, headers: headers, body: body(["provider": "chatgpt", "account": "chatgpt"]),

@@ -414,10 +414,13 @@ private func addSignInRoutes(to router: Router<GatewayRequestContext>, gateway: 
         guard let body = try? await request.collectBody(upTo: 64 << 10) else { return nil }
         return try? JSONValue(parsing: Array(body.readableBytesView))
     }
-    /// The account named in `json`, when it is one that signs in.
+    /// The account named in `json`, of a provider whose accounts sign
+    /// in. It need not be in the configuration yet: the panel signs an
+    /// account in while adding it, before it is saved.
     @Sendable func account(_ json: JSONValue?) -> (provider: String, account: String)? {
         guard let provider = json?["provider"]?.stringValue, let account = json?["account"]?.stringValue,
-              gateway.configuration.keyPools[provider]?.keys.contains(where: { $0.name == account && $0.signIn != nil }) == true
+              SignInKind.of(provider: provider) != nil,
+              !account.isEmpty, !account.hasPrefix("@"), !account.contains("/"), !account.contains("*")
         else { return nil }
         return (provider, account)
     }
@@ -425,7 +428,7 @@ private func addSignInRoutes(to router: Router<GatewayRequestContext>, gateway: 
     router.post("/admin/api/sign-in/start") { request, _ in
         if let denied = adminDenied(request, gateway: gateway) { return denied }
         guard let (provider, name) = account(await body(request)) else {
-            return adminError(400, "expected {\"provider\": \"…\", \"account\": \"…\"} naming an account that signs in")
+            return adminError(400, "expected {\"provider\": \"…\", \"account\": \"…\"} naming an account of a provider that signs in")
         }
         do throws(SignInError) {
             let started = try gateway.signIns.start(provider: provider, account: name)
@@ -442,9 +445,7 @@ private func addSignInRoutes(to router: Router<GatewayRequestContext>, gateway: 
             return adminError(400, "expected {\"id\": \"…\", \"callback\": \"…\"}")
         }
         do throws(SignInError) {
-            let (provider, name, credentials) = try await gateway.signIns.finish(id: id, callback: callback, transport: gateway.transport) { provider, name in
-                account(["provider": .string(provider), "account": .string(name)]) != nil
-            }
+            let (provider, name, credentials) = try await gateway.signIns.finish(id: id, callback: callback, transport: gateway.transport)
             let scope = HealthScope.key(provider: provider, keyName: name)
             gateway.health.forget { $0 == scope }
             return adminJSON(200, ["user": .string(credentials.user), "plan": credentials.plan.map(JSONValue.string) ?? .null])
