@@ -25,6 +25,8 @@ struct Gateway: Sendable {
     var activity = Activity()
     /// The tokens of accounts that sign in.
     var signIns = SignIns()
+    /// Providers' model lists, for `GET /v1/models`.
+    var models = ModelCatalog()
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
         self.store = ConfigurationStore(configuration)
@@ -54,6 +56,7 @@ struct Gateway: Sendable {
         }
         if !changed.isEmpty { health.forget { changed.contains($0) } }
         health.enableDisabledKeys()
+        models.forget()
     }
 
     // MARK: Handling

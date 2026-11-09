@@ -468,9 +468,38 @@ private func canonical(_ value: JSONValue) -> JSONValue {
             let response = try await client.executeRequest(uri: "/v1/models", method: .get, headers: [:], body: nil)
             #expect(response.status == .ok)
             let ids = json(response.body)["data"]?.arrayValue?.compactMap { $0["id"]?.stringValue }
-            // Exact routes, then the `*` route's model; patterns cannot be listed.
+            // Exact routes, then the `*` route's model; the provider lists none.
             #expect(ids == ["sonnet", chatOnlyModel])
         }
+    }
+
+    @Test func modelListAsksProvidersForPatterns() async throws {
+        let upstream = MockUpstream { _ in
+            reply(#"{"data": [{"id": "claude-opus-4-1"}, {"id": "claude-sonnet-4-5"}, {"id": "other"}]}"#)
+        }
+        let routes = [
+            Route(name: "sonnet", targets: [RouteTarget(model: "anthropic/claude-sonnet-4-5")]),
+            Route(name: "claude-*", targets: [RouteTarget(model: "anthropic/$model")]),
+        ]
+        let gateway = makeGateway(upstream, routes: routes)
+        try await makeApp(gateway).test(.router) { client in
+            for _ in 0..<2 {
+                let response = try await client.executeRequest(uri: "/v1/models", method: .get, headers: [:], body: nil)
+                let ids = json(response.body)["data"]?.arrayValue?.compactMap { $0["id"]?.stringValue }
+                #expect(ids == ["sonnet", chatOnlyModel, "claude-opus-4-1", "claude-sonnet-4-5"])
+            }
+        }
+        // Asked once, with the account's key; the second list was kept.
+        #expect(upstream.requests.count == 1)
+        let hit = try #require(upstream.requests.first)
+        #expect(hit.request.method == .get && hit.path == "/v1/models?limit=1000")
+        #expect(hit.header("x-api-key") == "key-anthropic")
+    }
+
+    @Test func modelNamesOfEachListShape() {
+        #expect(UpstreamCall.modelNames(json(#"{"data": [{"id": "a"}]}"#)) == ["a"])
+        #expect(UpstreamCall.modelNames(json(#"{"models": [{"name": "models/gemini-3-pro"}]}"#)) == ["gemini-3-pro"])
+        #expect(UpstreamCall.modelNames(json(#"{"models": [{"slug": "gpt-6-sol"}, {"slug": "gpt-reserve", "visibility": "hide"}]}"#)) == ["gpt-6-sol"])
     }
 }
 

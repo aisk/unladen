@@ -39,7 +39,7 @@ func buildRouter(gateway: Gateway, manager: ConfigManager? = nil) -> Router<Gate
         let configuration = gateway.configuration
         switch authenticate(request, configuration: configuration, as: .chatCompletions) {
         case .denied(let response): return response
-        case .allowed(let access): return modelList(configuration, access: access)
+        case .allowed(let access): return modelList(await gateway.modelNames(configuration, access: access))
         }
     }
 
@@ -152,41 +152,3 @@ func constantTimeEqual(_ a: String, _ b: String) -> Bool {
     return difference == 0
 }
 
-/// The model names a client may ask for: exact menu names, then the `*`
-/// entry's model when it names one the client may name directly; readable by OpenAI clients (`object`,
-/// `data[].id`, `owned_by`) and Anthropic clients (`data[].type`,
-/// `display_name`, `has_more`).
-func modelList(_ configuration: GatewayConfiguration, access: ClientAccess = .open) -> Response {
-    var names: [String] = []
-    for route in configuration.routes.all {
-        if route.name == "*" {
-            for target in route.targets where !target.model.contains("$model") && access.mayPassThrough(target.model) {
-                names.append(target.model)
-            }
-        } else if !route.isPattern, access.mayUse(route.name) {
-            names.append(route.name)
-        }
-    }
-    var seen: Set<String> = []
-    let references = names.filter { seen.insert($0).inserted }
-    let data: [JSONValue] = references.map { reference in
-        let provider = reference.contains("/") ? reference.split(separator: "/", maxSplits: 1).first.map(String.init) ?? reference : "unladen"
-        return [
-            "id": .string(reference),
-            "object": "model",
-            "type": "model",
-            "display_name": .string(reference),
-            "owned_by": .string(provider),
-            "created": 0,
-            "created_at": "1970-01-01T00:00:00Z",
-        ]
-    }
-    let json: JSONValue = [
-        "object": "list",
-        "data": .array(data),
-        "has_more": false,
-        "first_id": references.first.map(JSONValue.string) ?? .null,
-        "last_id": references.last.map(JSONValue.string) ?? .null,
-    ]
-    return Response(status: .ok, headers: [.contentType: "application/json"], body: ResponseBody(byteBuffer: ByteBuffer(bytes: json.encoded())))
-}

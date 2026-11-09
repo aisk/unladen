@@ -242,6 +242,49 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
         return fields
     }
 
+    // MARK: Models
+
+    /// The models the endpoint lists (`GET …/models` in its protocol's
+    /// spelling), by the names requests give them. The target's model is
+    /// not used.
+    ///
+    /// Throws ``UpstreamError`` for a non-2xx reply, and the transport's
+    /// own errors otherwise.
+    public func listModels(maxBytes: Int = 4 << 20) async throws -> [String] {
+        let endpoint = target.endpoint
+        guard let base = BaseURL(endpoint.baseURL) else { throw UpstreamError.invalidBaseURL(endpoint.baseURL) }
+        let suffix = switch endpoint.apiProtocol {
+        case .chatCompletions, .responses: "/models"
+        case .anthropicMessages: "/v1/models?limit=1000"
+        case .gemini: "/v1beta/models?pageSize=1000"
+        }
+        var http = HTTPRequest(method: .get, scheme: base.scheme, authority: base.authority, path: base.path + suffix)
+        http.headerFields = headers(clientHeaders: [:], streams: false)
+        http.headerFields[.contentType] = nil
+        let response = try await transport.send(http, body: nil)
+        guard (200..<300).contains(response.status.code) else {
+            let body = try await Self.collect(response.body, upTo: maxErrorBodyBytes, truncate: true)
+            throw UpstreamError.http(UpstreamHTTPError(status: response.status, headerFields: response.response.headerFields, body: body))
+        }
+        let bytes = try await Self.collect(response.body, upTo: maxBytes, truncate: false)
+        return Self.modelNames((try? JSONValue(parsing: bytes)) ?? .null)
+    }
+
+    /// The names of a model list: OpenAI's and Anthropic's `data[].id`,
+    /// Gemini's `models[].name` (without `models/`), and ChatGPT sign-ins'
+    /// `models[].slug` (without those it hides).
+    package static func modelNames(_ list: JSONValue) -> [String] {
+        if let data = list["data"]?.arrayValue {
+            return data.compactMap { $0["id"]?.stringValue }
+        }
+        return (list["models"]?.arrayValue ?? []).compactMap { model in
+            if model["visibility"]?.stringValue == "hide" { return nil }
+            if let slug = model["slug"]?.stringValue { return slug }
+            guard let name = model["name"]?.stringValue else { return nil }
+            return name.hasPrefix("models/") ? String(name.dropFirst(7)) : name
+        }
+    }
+
     // MARK: Send
 
     /// Sends `request` and returns the reply in the shape asked for by

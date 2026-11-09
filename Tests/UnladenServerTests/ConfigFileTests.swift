@@ -348,7 +348,8 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
             response = try await client.executeRequest(uri: "/v1/models", method: .get, headers: auth, body: nil)
             #expect(json(response.body)["data"]?.arrayValue?.compactMap { $0["id"]?.stringValue } == ["fast"])
         }
-        #expect(upstream.requests.count == 2)
+        // The two allowed requests (the model list also asks providers for theirs).
+        #expect(upstream.requests.filter { $0.request.method == .post }.count == 2)
     }
 }
 
