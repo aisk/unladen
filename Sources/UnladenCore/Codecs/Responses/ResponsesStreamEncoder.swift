@@ -104,9 +104,7 @@ package struct ResponsesStreamEncoder: Sendable {
     private var item: Item?
     private var live: Live?
     private var errors: [WireStreamError] = []
-    /// Blocks (or whole events, `id == nil`) waiting for the live block.
-    private var waiting: [(id: String?, events: [WireEvent])] = []
-    private var streamedTools: Set<String> = []
+    private var blocks = BlockQueue()
     private var warned: Set<String> = []
 
     package init(defaults: ResponsesResponseDefaults) {
@@ -142,36 +140,17 @@ package struct ResponsesStreamEncoder: Sendable {
         case .finish(let finish):
             out += finishEvents(finish)
 
-        case .textStart(let block, _), .reasoningStart(let block, _), .refusalStart(let block, _),
-             .toolInputStart(let block, _):
-            if case .toolInputStart = event { streamedTools.insert(block) }
-            if live == nil, waiting.isEmpty {
-                write(event, into: &out)
-            } else {
-                waiting.append((block, [event]))
-            }
-
-        case .textDelta(let block, _), .textEnd(let block, _), .reasoningDelta(let block, _),
-             .reasoningSignatureDelta(let block, _), .reasoningEnd(let block, _), .refusalDelta(let block, _),
-             .refusalEnd(let block, _), .toolInputDelta(let block, _), .toolInputEnd(let block):
-            if live?.block == block {
+        case .textStart, .reasoningStart, .refusalStart, .toolInputStart, .textDelta, .textEnd, .reasoningDelta,
+             .reasoningSignatureDelta, .reasoningEnd, .refusalDelta, .refusalEnd, .toolInputDelta, .toolInputEnd,
+             .toolCall, .opaque:
+            switch blocks.route(event, live: live?.block) {
+            case .write:
                 write(event, into: &out)
                 if live == nil { drain(into: &out) }
-            } else if let slot = waiting.firstIndex(where: { $0.id == block }) {
-                waiting[slot].events.append(event)
-            } else {
+            case .orphan(let block):
                 warnOnce("orphan.\(block)", WireWarning(.malformedStream, "event for block \(block) that was never started"))
-            }
-
-        case .toolCall(let block, _):
-            // Already streamed through tool-input events, or delivered whole.
-            guard !streamedTools.contains(block) else { break }
-            fallthrough
-        case .opaque:
-            if live == nil, waiting.isEmpty {
-                write(event, into: &out)
-            } else {
-                waiting.append((nil, [event]))
+            case .wait, .skip:
+                break
             }
         }
         return out
@@ -205,17 +184,15 @@ package struct ResponsesStreamEncoder: Sendable {
     // MARK: Scheduling
 
     private mutating func drain(into out: inout [SSEElement]) {
-        while live == nil, !waiting.isEmpty {
-            let next = waiting.removeFirst()
-            for event in next.events { write(event, into: &out) }
+        while live == nil, let events = blocks.next() {
+            for event in events { write(event, into: &out) }
         }
     }
 
     private mutating func flushAll(into out: inout [SSEElement]) {
         closeLive(into: &out)
-        while !waiting.isEmpty {
-            let next = waiting.removeFirst()
-            for event in next.events { write(event, into: &out) }
+        while let events = blocks.next() {
+            for event in events { write(event, into: &out) }
             closeLive(into: &out)
         }
     }

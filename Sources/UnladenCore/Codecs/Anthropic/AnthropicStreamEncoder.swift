@@ -53,9 +53,7 @@ package struct AnthropicMessagesStreamEncoder: Sendable {
     private var errored = false
     private var nextIndex = 0
     private var live: Live?
-    /// Blocks (or whole events, `id == nil`) waiting for the live block.
-    private var waiting: [(id: String?, events: [WireEvent])] = []
-    private var streamedTools: Set<String> = []
+    private var blocks = BlockQueue()
     private var warned: Set<String> = []
 
     package init(defaults: AnthropicResponseDefaults) {
@@ -102,36 +100,17 @@ package struct AnthropicMessagesStreamEncoder: Sendable {
         case .finish(let finish):
             output += finishEvents(finish)
 
-        case .textStart(let block, _), .reasoningStart(let block, _), .refusalStart(let block, _),
-             .toolInputStart(let block, _):
-            if case .toolInputStart = event { streamedTools.insert(block) }
-            if live == nil, waiting.isEmpty {
-                write(event, into: &output)
-            } else {
-                waiting.append((block, [event]))
-            }
-
-        case .textDelta(let block, _), .textEnd(let block, _), .reasoningDelta(let block, _),
-             .reasoningSignatureDelta(let block, _), .reasoningEnd(let block, _), .refusalDelta(let block, _),
-             .refusalEnd(let block, _), .toolInputDelta(let block, _), .toolInputEnd(let block):
-            if live?.block == block {
+        case .textStart, .reasoningStart, .refusalStart, .toolInputStart, .textDelta, .textEnd, .reasoningDelta,
+             .reasoningSignatureDelta, .reasoningEnd, .refusalDelta, .refusalEnd, .toolInputDelta, .toolInputEnd,
+             .toolCall, .opaque:
+            switch blocks.route(event, live: live?.block) {
+            case .write:
                 write(event, into: &output)
                 if live == nil { drain(into: &output) }
-            } else if let slot = waiting.firstIndex(where: { $0.id == block }) {
-                waiting[slot].events.append(event)
-            } else {
+            case .orphan(let block):
                 warnOnce("orphan.\(block)", WireWarning(.malformedStream, "event for block \(block) that was never started"))
-            }
-
-        case .toolCall(let block, _):
-            // Already streamed through tool-input events, or delivered whole.
-            guard !streamedTools.contains(block) else { break }
-            fallthrough
-        case .opaque:
-            if live == nil, waiting.isEmpty {
-                write(event, into: &output)
-            } else {
-                waiting.append((nil, [event]))
+            case .wait, .skip:
+                break
             }
         }
         return output
@@ -147,18 +126,16 @@ package struct AnthropicMessagesStreamEncoder: Sendable {
 
     /// Writes waiting blocks until one is still open.
     private mutating func drain(into output: inout [SSEElement]) {
-        while live == nil, !waiting.isEmpty {
-            let next = waiting.removeFirst()
-            for event in next.events { write(event, into: &output) }
+        while live == nil, let events = blocks.next() {
+            for event in events { write(event, into: &output) }
         }
     }
 
     /// Closes the live block and writes every waiting one, closing each.
     private mutating func flushAll(into output: inout [SSEElement]) {
         closeLive(into: &output)
-        while !waiting.isEmpty {
-            let next = waiting.removeFirst()
-            for event in next.events { write(event, into: &output) }
+        while let events = blocks.next() {
+            for event in events { write(event, into: &output) }
             closeLive(into: &output)
         }
     }
