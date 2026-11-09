@@ -27,6 +27,8 @@ struct Gateway: Sendable {
     var signIns = SignIns()
     /// Providers' model lists, for `GET /v1/models`.
     var models = ModelCatalog()
+    /// Accounts' plan allowances, for the panel.
+    var quotas = QuotaReader()
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
         self.store = ConfigurationStore(configuration)
@@ -57,6 +59,7 @@ struct Gateway: Sendable {
         if !changed.isEmpty { health.forget { changed.contains($0) } }
         health.enableDisabledKeys()
         models.forget()
+        quotas.forget()
     }
 
     // MARK: Handling

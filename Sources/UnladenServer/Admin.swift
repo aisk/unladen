@@ -383,6 +383,14 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         return adminJSON(200, AdminActivity.usage(gateway.activity.usage(days: days), days: days))
     }
 
+    /// Accounts' plan allowances; `?refresh=1` reads them again.
+    router.get("/admin/api/quotas") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        let refresh = request.uri.queryParameters.get("refresh") == "1"
+        let quotas = await gateway.quotas.read(gateway: gateway, refresh: refresh)
+        return adminJSON(200, ["accounts": .array(quotas.map(\.json))])
+    }
+
     router.post("/admin/api/reload") { request, _ in
         if let denied = adminDenied(request, gateway: gateway) { return denied }
         return manager.reload() ? adminJSON(200, ["reloaded": true]) : adminError(422, "the file does not load; see the log")

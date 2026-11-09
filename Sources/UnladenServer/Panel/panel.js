@@ -61,6 +61,8 @@ function panel() {
     sessionRequests: [],
     expanded: {},
     usage: null,
+    quotas: null,
+    quotasBusy: false,
     usageDays: 1,
     usageBy: 'accounts',
     usageGroups: [
@@ -139,6 +141,26 @@ function panel() {
     async refreshUsage() {
       const result = await this.api('GET', 'usage?days=' + this.usageDays);
       if (result.status === 200) this.usage = result.json;
+      if (!this.quotasBusy) this.refreshQuotas(false);
+    },
+
+    async refreshQuotas(refresh) {
+      this.quotasBusy = true;
+      try {
+        const result = await this.api('GET', 'quotas' + (refresh ? '?refresh=1' : ''));
+        if (result.status === 200) this.quotas = result.json.accounts || [];
+      } finally {
+        this.quotasBusy = false;
+      }
+    },
+
+    quotaBarClass(used) { return used >= 90 ? 'bg-red' : used >= 70 ? 'bg-yellow' : 'bg-green'; },
+    resetsIn(t) {
+      if (!t) return '';
+      const m = Math.max(0, Math.round((t - Date.now()) / 60000));
+      if (m < 60) return 'resets in ' + m + 'm';
+      if (m < 2880) return 'resets in ' + Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+      return 'resets in ' + Math.floor(m / 1440) + 'd ' + Math.floor((m % 1440) / 60) + 'h';
     },
 
     usageTiles() {
@@ -172,8 +194,8 @@ function panel() {
       const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       return d.toDateString() === now.toDateString() ? time : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
     },
-    ago(t) {
-      const s = Math.max(0, Math.round(((this.activity?.now || Date.now()) - t) / 1000));
+    ago(t, now) {
+      const s = Math.max(0, Math.round(((now || this.activity?.now || Date.now()) - t) / 1000));
       if (s < 60) return s + 's ago';
       if (s < 3600) return Math.floor(s / 60) + 'm ago';
       if (s < 86400) return Math.floor(s / 3600) + 'h ago';

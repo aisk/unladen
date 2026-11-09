@@ -255,6 +255,47 @@
 
           <!-- Usage -->
           <div x-show="tab === 'usage'">
+            <template x-if="quotas && quotas.length">
+            <div class="mb-4">
+              <div class="d-flex mb-2 align-items-center">
+                <h3 class="mb-0 me-2">Plan allowances</h3>
+                <div class="text-secondary small me-auto">As the providers report them, read at most once a minute.</div>
+                <button class="btn btn-sm" :disabled="quotasBusy" @click="refreshQuotas(true)"><i class="ti ti-refresh me-1"></i>Refresh</button>
+              </div>
+              <div class="row row-cards">
+                <template x-for="q in quotas" :key="q.provider + ' ' + q.account">
+                  <div class="col-md-6 col-xl-4">
+                    <div class="card card-sm h-100"><div class="card-body">
+                      <div class="d-flex align-items-center mb-2">
+                        <span class="mono fw-bold" x-text="q.provider + '/' + q.account"></span>
+                        <span class="badge bg-blue-lt ms-2" x-show="q.plan" x-text="q.plan"></span>
+                        <span class="text-secondary small ms-auto" x-text="ago(q.read_at, Date.now())"></span>
+                      </div>
+                      <template x-for="(w, i) in q.windows" :key="i">
+                        <div class="mb-2">
+                          <div class="small text-secondary mt-2" x-show="w.group && w.group !== q.windows[i - 1]?.group" x-text="w.group"></div>
+                          <div class="d-flex small">
+                            <span :class="w.name.includes('-') && 'mono'" x-text="w.name"></span>
+                            <span class="ms-2 text-secondary" x-show="w.detail" x-text="w.detail"></span>
+                            <span class="ms-auto fw-bold" x-text="Math.round(w.used) + '% used'"></span>
+                          </div>
+                          <div class="progress progress-sm my-1">
+                            <div class="progress-bar" :class="quotaBarClass(w.used)" :style="'width: ' + Math.max(w.used, 1) + '%'"></div>
+                          </div>
+                          <div class="small text-secondary" x-show="w.resets_at" :title="w.resets_at && new Date(w.resets_at).toLocaleString()" x-text="resetsIn(w.resets_at)"></div>
+                        </div>
+                      </template>
+                      <div class="small text-danger" x-show="q.error && !q.see_at" x-text="q.error"></div>
+                      <div class="small text-secondary" x-show="q.see_at">
+                        <span x-text="q.error"></span>
+                        <a :href="q.see_at" target="_blank" rel="noreferrer">Open the usage page</a>
+                      </div>
+                    </div></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+            </template>
             <div class="d-flex mb-3 align-items-center flex-wrap gap-2">
               <div class="text-secondary me-auto">Tokens as the upstreams reported them, by local day.</div>
               <div class="btn-group">

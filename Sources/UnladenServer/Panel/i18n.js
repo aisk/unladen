@@ -103,6 +103,15 @@ const TRANSLATIONS = {
       'Program': '程序',
       'No request in this period.': '这段时间没有请求。',
       'No client key': '无客户端 key',
+      'Plan allowances': '套餐额度',
+      'As the providers report them, read at most once a minute.': '由提供方报告，每分钟最多读取一次。',
+      'Refresh': '刷新',
+      'Month': '每月',
+      'MCP calls · month': 'MCP 调用 · 每月',
+      'Allowance': '额度',
+      "OpenAI shows this plan's usage only on its own site.": 'OpenAI 只在自己的网站上显示这个套餐的用量。',
+      'Open the usage page': '打开用量页面',
+      'This key has no Coding Plan.': '这个 key 没有 Coding Plan。',
 
       // Accounts
       'The upstream accounts the gateway pays with. Accounts of one provider form a pool, tried in this order: the next is used only when the one before fails.':
@@ -214,6 +223,13 @@ const TRANSLATIONS = {
     // parts it captured ($1…), themselves translated when they can be.
     patterns: [
       [/^(\d+) days$/, '$1 天'],
+      [/^(\d+) hours$/, '$1 小时'],
+      [/^(\d+) months$/, '$1 个月'],
+      [/^(\d+) models$/, '$1 个模型'],
+      [/^(\S+) models$/, '$1 模型'],
+      [/^(\d+)% used$/, '已用 $1%'],
+      [/^resets in (.+)$/, '$1 后重置'],
+      [/^(\d+)([smhd]) ago$/, '$1$2 前'],
       [/^Requests of session (.+)$/, '会话 $1 的请求'],
       [/^(.+): (.+), retried in (\d+)s$/, '$1：$2，$3 秒后重试'],
       [/^Signed in (.+)$/, '$1 已登录'],
