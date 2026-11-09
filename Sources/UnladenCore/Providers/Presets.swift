@@ -241,109 +241,108 @@ public enum Presets {
         ],
     ))
 
+    // MARK: - Vendors' own APIs
+
+    /// One of a vendor's endpoints: the protocol's usual credentials, the
+    /// transforms every preset gets, and `profile` over them. Chat
+    /// endpoints send `max_tokens`, which these vendors document (OpenAI's
+    /// own Chat API is the one that wants `max_completion_tokens`).
+    static func endpoint(
+        _ system: String, _ apiProtocol: APIProtocol, _ address: String, _ profile: Profile = Profile(),
+        headers: [String: String] = [:], sessionHeader: String? = nil,
+    ) -> Endpoint {
+        var defaults = Profile(transforms: base)
+        if apiProtocol == .chatCompletions { defaults.maxTokensField = .maxTokens }
+        return Endpoint(
+            system: system, apiProtocol: apiProtocol, baseURL: address, auth: apiProtocol == .anthropicMessages ? .anthropic() : .bearer,
+            headers: headers, defaults: profile.merged(over: defaults), sessionHeader: sessionHeader,
+        )
+    }
+
+    /// A provider of `endpoints`, in order of preference.
+    static func vendor(
+        _ id: String, environment: [String] = [], servesWithoutKey: Bool = false, _ endpoints: [Endpoint], models: [ModelRule] = [],
+    ) -> Provider {
+        declaringProtocolGaps(Provider(
+            id: id, apiKeyEnvironmentVariables: environment, servesWithoutKey: servesWithoutKey, endpoints: endpoints, models: models,
+        ))
+    }
+
     /// Kimi's pay-as-you-go API (`moonshot`) and its China site's.
-    public static let moonshot = kimi(id: "moonshot", root: "https://api.moonshot.ai", environment: ["MOONSHOT_API_KEY"])
-    public static let moonshotChina = kimi(id: "moonshot-cn", root: "https://api.moonshot.cn")
+    public static let moonshot = kimi("moonshot", root: "https://api.moonshot.ai", anthropic: "https://api.moonshot.ai/anthropic",
+                                      environment: ["MOONSHOT_API_KEY"])
+    public static let moonshotChina = kimi("moonshot-cn", root: "https://api.moonshot.cn", anthropic: "https://api.moonshot.cn/anthropic")
 
     /// A Kimi Code membership's own endpoints, keyed at its console: the
     /// membership's key is not taken by the pay-as-you-go API.
-    public static let kimiCode = kimi(id: "kimi-code", root: "https://api.kimi.ai/coding")
-    public static let kimiCodeChina = kimi(id: "kimi-code-cn", root: "https://api.kimi.com/coding")
+    public static let kimiCode = kimi("kimi-code", root: "https://api.kimi.ai/coding", anthropic: "https://api.kimi.ai/coding")
+    public static let kimiCodeChina = kimi("kimi-code-cn", root: "https://api.kimi.com/coding", anthropic: "https://api.kimi.com/coding")
 
-    static func kimi(id: String, root: String, environment: [String] = []) -> Provider {
-        declaringProtocolGaps(Provider(
-            id: id,
-            apiKeyEnvironmentVariables: environment,
-            endpoints: [
-                // Kimi turns away other vendors' reasoning_details.
-                Endpoint(system: "moonshot", apiProtocol: .chatCompletions, baseURL: root + "/v1",
-                         defaults: Profile(maxTokensField: .maxTokens, transforms: base + [.stripForeignReasoning, .replayReasoningContent])),
-                Endpoint(system: "moonshot", apiProtocol: .anthropicMessages, baseURL: root + (root.hasSuffix("/coding") ? "" : "/anthropic"),
-                         auth: .anthropic(), defaults: Profile(acceptsUnsignedThinking: true, transforms: base)),
-            ],
-            models: [
-                ModelRule(.prefix("kimi-k2"), Profile(supportsReasoning: true, supportsTools: true, reasoningControl: .uncontrolled)),
-            ],
-        ))
+    static func kimi(_ id: String, root: String, anthropic: String, environment: [String] = []) -> Provider {
+        vendor(id, environment: environment, [
+            // Kimi turns away other vendors' reasoning_details.
+            endpoint("moonshot", .chatCompletions, root + "/v1", Profile(transforms: base + [.stripForeignReasoning, .replayReasoningContent])),
+            endpoint("moonshot", .anthropicMessages, anthropic, Profile(acceptsUnsignedThinking: true)),
+        ], models: [
+            ModelRule(.prefix("kimi-k2"), Profile(supportsReasoning: true, supportsTools: true, reasoningControl: .uncontrolled)),
+        ])
     }
 
     /// Z.ai's and Zhipu's (open.bigmodel.cn) pay-as-you-go APIs, and their
     /// GLM Coding Plans. A plan's key is told it has no balance at the
     /// pay-as-you-go Chat endpoint: the plan has one of its own, and serves
     /// the Responses API too. Both take Anthropic messages at one address.
-    public static let zai = glm(id: "zai", host: "https://api.z.ai", coding: false, environment: ["ZAI_API_KEY"])
-    public static let zaiCoding = glm(id: "zai-coding", host: "https://api.z.ai", coding: true)
-    public static let zhipu = glm(id: "zhipu", host: "https://open.bigmodel.cn", coding: false, environment: ["ZHIPUAI_API_KEY"])
-    public static let zhipuCoding = glm(id: "zhipu-coding", host: "https://open.bigmodel.cn", coding: true)
+    public static let zai = glm("zai", host: "https://api.z.ai", coding: false, environment: ["ZAI_API_KEY"])
+    public static let zaiCoding = glm("zai-coding", host: "https://api.z.ai", coding: true)
+    public static let zhipu = glm("zhipu", host: "https://open.bigmodel.cn", coding: false, environment: ["ZHIPUAI_API_KEY"])
+    public static let zhipuCoding = glm("zhipu-coding", host: "https://open.bigmodel.cn", coding: true)
 
-    static func glm(id: String, host: String, coding: Bool, environment: [String] = []) -> Provider {
-        var endpoints = [
-            Endpoint(system: "zhipu", apiProtocol: .chatCompletions, baseURL: host + (coding ? "/api/coding/paas/v4" : "/api/paas/v4"),
-                     defaults: Profile(maxTokensField: .maxTokens, transforms: base)),
-            Endpoint(system: "zhipu", apiProtocol: .anthropicMessages, baseURL: host + "/api/anthropic",
-                     auth: .anthropic(), defaults: Profile(acceptsUnsignedThinking: true, transforms: base)),
-        ]
-        if coding {
-            endpoints.insert(
-                Endpoint(system: "zhipu", apiProtocol: .responses, baseURL: host + "/api/v1", defaults: Profile(transforms: base)), at: 1,
-            )
-        }
-        return declaringProtocolGaps(Provider(
-            id: id, apiKeyEnvironmentVariables: environment, endpoints: endpoints,
-            models: [ModelRule(.prefix("glm-"), Profile(supportsReasoning: true, supportsTools: true, reasoningControl: .uncontrolled))],
-        ))
+    static func glm(_ id: String, host: String, coding: Bool, environment: [String] = []) -> Provider {
+        let chat = endpoint("zhipu", .chatCompletions, host + (coding ? "/api/coding/paas/v4" : "/api/paas/v4"))
+        let responses = endpoint("zhipu", .responses, host + "/api/v1")
+        let anthropic = endpoint("zhipu", .anthropicMessages, host + "/api/anthropic", Profile(acceptsUnsignedThinking: true))
+        return vendor(id, environment: environment, coding ? [chat, responses, anthropic] : [chat, anthropic], models: [
+            ModelRule(.prefix("glm-"), Profile(supportsReasoning: true, supportsTools: true, reasoningControl: .uncontrolled)),
+        ])
     }
 
     /// MiniMax, international and China. Its Chat API puts a model's
     /// thinking in the text between `<think>` tags, so Messages comes first.
-    public static let miniMax = miniMax(id: "minimax", host: "https://api.minimax.io", environment: ["MINIMAX_API_KEY"])
-    public static let miniMaxChina = miniMax(id: "minimax-cn", host: "https://api.minimaxi.com")
+    public static let miniMax = miniMax("minimax", host: "https://api.minimax.io", environment: ["MINIMAX_API_KEY"])
+    public static let miniMaxChina = miniMax("minimax-cn", host: "https://api.minimaxi.com")
 
-    static func miniMax(id: String, host: String, environment: [String] = []) -> Provider {
-        declaringProtocolGaps(Provider(
-            id: id,
-            apiKeyEnvironmentVariables: environment,
-            endpoints: [
-                Endpoint(system: "minimax", apiProtocol: .anthropicMessages, baseURL: host + "/anthropic",
-                         auth: .anthropic(), defaults: Profile(acceptsUnsignedThinking: true, transforms: base)),
-                Endpoint(system: "minimax", apiProtocol: .chatCompletions, baseURL: host + "/v1",
-                         defaults: Profile(maxTokensField: .maxTokens, transforms: base)),
-            ],
-        ))
+    static func miniMax(_ id: String, host: String, environment: [String] = []) -> Provider {
+        vendor(id, environment: environment, [
+            endpoint("minimax", .anthropicMessages, host + "/anthropic", Profile(acceptsUnsignedThinking: true)),
+            endpoint("minimax", .chatCompletions, host + "/v1"),
+        ])
     }
 
     /// StepFun's Step Plan, international and China: served at its own
     /// endpoints, its key refused at the pay-as-you-go ones.
-    public static let stepPlan = keyed(id: "step-plan", system: "stepfun", chat: "https://api.stepfun.ai/step_plan/v1",
-                                       anthropic: "https://api.stepfun.ai/step_plan")
-    public static let stepPlanChina = keyed(id: "step-plan-cn", system: "stepfun", chat: "https://api.stepfun.com/step_plan/v1",
-                                            anthropic: "https://api.stepfun.com/step_plan")
+    public static let stepPlan = vendor("step-plan", [
+        endpoint("stepfun", .chatCompletions, "https://api.stepfun.ai/step_plan/v1"),
+        endpoint("stepfun", .anthropicMessages, "https://api.stepfun.ai/step_plan"),
+    ])
+    public static let stepPlanChina = vendor("step-plan-cn", [
+        endpoint("stepfun", .chatCompletions, "https://api.stepfun.com/step_plan/v1"),
+        endpoint("stepfun", .anthropicMessages, "https://api.stepfun.com/step_plan"),
+    ])
 
     /// Volcengine Ark's Coding Plan, with a key of its own; pay as you go
     /// (`/api/v3`) bills apart. Its paths are versioned already.
-    public static let arkCoding = keyed(id: "ark-coding", system: "volcengine", chat: "https://ark.cn-beijing.volces.com/api/coding/v3",
-                                        responses: "https://ark.cn-beijing.volces.com/api/coding/v3",
-                                        anthropic: "https://ark.cn-beijing.volces.com/api/coding")
+    public static let arkCoding = vendor("ark-coding", [
+        endpoint("volcengine", .chatCompletions, "https://ark.cn-beijing.volces.com/api/coding/v3"),
+        endpoint("volcengine", .responses, "https://ark.cn-beijing.volces.com/api/coding/v3"),
+        endpoint("volcengine", .anthropicMessages, "https://ark.cn-beijing.volces.com/api/coding"),
+    ])
 
     /// Alibaba Cloud Bailian's Token Plan: its own `sk-sp-` keys, taken
     /// only at its own host.
-    public static let bailianTokenPlan = keyed(
-        id: "bailian-token-plan", system: "dashscope", chat: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-        anthropic: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
-    )
-
-    /// A plan sold with a key, at Chat, Anthropic and maybe Responses
-    /// endpoints of its own, with nothing vendor-specific known.
-    static func keyed(id: String, system: String, chat: String, responses: String? = nil, anthropic: String) -> Provider {
-        var endpoints = [
-            Endpoint(system: system, apiProtocol: .chatCompletions, baseURL: chat, defaults: Profile(transforms: base)),
-            Endpoint(system: system, apiProtocol: .anthropicMessages, baseURL: anthropic, auth: .anthropic(), defaults: Profile(transforms: base)),
-        ]
-        if let responses {
-            endpoints.insert(Endpoint(system: system, apiProtocol: .responses, baseURL: responses, defaults: Profile(transforms: base)), at: 1)
-        }
-        return declaringProtocolGaps(Provider(id: id, endpoints: endpoints))
-    }
+    public static let bailianTokenPlan = vendor("bailian-token-plan", [
+        endpoint("dashscope", .chatCompletions, "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
+        endpoint("dashscope", .anthropicMessages, "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"),
+    ])
 
     public static let openRouter = declaringProtocolGaps(Provider(
         id: "openrouter",
@@ -361,50 +360,31 @@ public enum Presets {
 
     /// OpenCode Zen, pay as you go with an OpenCode key. Its free models
     /// are for OpenCode alone, and are turned away from other clients.
-    public static let openCodeZen = openCode(id: "opencode-zen", root: "https://opencode.ai/inference")
+    public static let openCodeZen = openCode("opencode-zen", root: "https://opencode.ai/inference")
 
     /// OpenCode Go, a subscription to open coding models, for coding
     /// agents that name themselves and each conversation.
-    public static let openCodeGo = openCode(id: "opencode-go", root: "https://opencode.ai/inference/go")
+    public static let openCodeGo = openCode("opencode-go", root: "https://opencode.ai/inference/go")
 
     /// OpenCode's gateway: it routes and caches by the conversation named
     /// in `x-opencode-session`, and Go refuses a request without one.
-    static func openCode(id: String, root: String) -> Provider {
-        let headers = ["user-agent": "unladen"]
-        func endpoint(_ apiProtocol: APIProtocol, _ address: String, auth: EndpointAuth = .bearer) -> Endpoint {
-            Endpoint(system: "opencode", apiProtocol: apiProtocol, baseURL: address, auth: auth, headers: headers,
-                     defaults: Profile(transforms: base), sessionHeader: "x-opencode-session")
+    static func openCode(_ id: String, root: String) -> Provider {
+        func at(_ apiProtocol: APIProtocol, _ address: String) -> Endpoint {
+            endpoint("opencode", apiProtocol, address, headers: ["user-agent": "unladen"], sessionHeader: "x-opencode-session")
         }
-        return declaringProtocolGaps(Provider(
-            id: id,
-            endpoints: [
-                endpoint(.chatCompletions, root + "/openai/v1"),
-                endpoint(.responses, root + "/openai/v1"),
-                endpoint(.anthropicMessages, root + "/anthropic", auth: .anthropic()),
-            ],
-        ))
+        return vendor(id, [
+            at(.chatCompletions, root + "/openai/v1"), at(.responses, root + "/openai/v1"), at(.anthropicMessages, root + "/anthropic"),
+        ])
     }
 
     /// Kilo Code's gateway, OpenRouter's API: its free models (`…:free`,
     /// `kilo-auto/free`) answer anyone, a limited number of requests an
     /// hour from one address; a Kilo key reaches the rest.
-    public static let kilo = declaringProtocolGaps(Provider(
-        id: "kilo",
-        servesWithoutKey: true,
-        endpoints: [
-            Endpoint(system: "kilo", apiProtocol: .chatCompletions, baseURL: "https://api.kilo.ai/api/openrouter",
-                     defaults: Profile(transforms: base)),
-        ],
-    ))
+    public static let kilo = vendor("kilo", servesWithoutKey: true, [endpoint("kilo", .chatCompletions, "https://api.kilo.ai/api/openrouter")])
 
-    public static let groq = declaringProtocolGaps(Provider(
-        id: "groq",
-        apiKeyEnvironmentVariables: ["GROQ_API_KEY"],
-        endpoints: [
-            Endpoint(system: "groq", apiProtocol: .chatCompletions, baseURL: "https://api.groq.com/openai/v1",
-                     defaults: Profile(transforms: base + [.flattenTextParts])),
-        ],
-    ))
+    public static let groq = vendor("groq", environment: ["GROQ_API_KEY"], [
+        endpoint("groq", .chatCompletions, "https://api.groq.com/openai/v1", Profile(transforms: base + [.flattenTextParts])),
+    ])
 
     public static let mistral = declaringProtocolGaps(Provider(
         id: "mistral",
@@ -433,43 +413,30 @@ public enum Presets {
         ],
     ))
 
-    public static let together = declaringProtocolGaps(Provider(
-        id: "together",
-        apiKeyEnvironmentVariables: ["TOGETHER_API_KEY"],
-        endpoints: [
-            Endpoint(system: "together", apiProtocol: .chatCompletions, baseURL: "https://api.together.xyz/v1",
-                     defaults: Profile(transforms: base)),
-        ],
-    ))
+    public static let together = vendor("together", environment: ["TOGETHER_API_KEY"], [
+        endpoint("together", .chatCompletions, "https://api.together.xyz/v1"),
+    ])
 
     /// NVIDIA's hosted NIM models, free to try with a developer key.
-    public static let nvidia = chatOnly(id: "nvidia", system: "nvidia", "https://integrate.api.nvidia.com/v1", environment: ["NVIDIA_API_KEY"])
+    public static let nvidia = vendor("nvidia", environment: ["NVIDIA_API_KEY"], [
+        endpoint("nvidia", .chatCompletions, "https://integrate.api.nvidia.com/v1"),
+    ])
 
     /// ModelScope's API-Inference, with a ModelScope access token: a
     /// number of free calls a day.
-    public static let modelScope = declaringProtocolGaps(Provider(
-        id: "modelscope",
-        apiKeyEnvironmentVariables: ["MODELSCOPE_API_KEY"],
-        endpoints: [
-            Endpoint(system: "modelscope", apiProtocol: .chatCompletions, baseURL: "https://api-inference.modelscope.cn/v1",
-                     defaults: Profile(transforms: base)),
-            Endpoint(system: "modelscope", apiProtocol: .responses, baseURL: "https://api-inference.modelscope.cn/v1",
-                     defaults: Profile(transforms: base)),
-        ],
-    ))
+    public static let modelScope = vendor("modelscope", environment: ["MODELSCOPE_API_KEY"], [
+        endpoint("modelscope", .chatCompletions, "https://api-inference.modelscope.cn/v1"),
+        endpoint("modelscope", .responses, "https://api-inference.modelscope.cn/v1"),
+    ])
 
     /// SiliconFlow, China and international: separate accounts and keys,
     /// some models free.
-    public static let siliconFlow = chatOnly(id: "siliconflow", system: "siliconflow", "https://api.siliconflow.cn/v1",
-                                             environment: ["SILICONFLOW_API_KEY"])
-    public static let siliconFlowGlobal = chatOnly(id: "siliconflow-global", system: "siliconflow", "https://api.siliconflow.com/v1")
-
-    static func chatOnly(id: String, system: String, _ address: String, environment: [String] = []) -> Provider {
-        declaringProtocolGaps(Provider(
-            id: id, apiKeyEnvironmentVariables: environment,
-            endpoints: [Endpoint(system: system, apiProtocol: .chatCompletions, baseURL: address, defaults: Profile(transforms: base))],
-        ))
-    }
+    public static let siliconFlow = vendor("siliconflow", environment: ["SILICONFLOW_API_KEY"], [
+        endpoint("siliconflow", .chatCompletions, "https://api.siliconflow.cn/v1"),
+    ])
+    public static let siliconFlowGlobal = vendor("siliconflow-global", [
+        endpoint("siliconflow", .chatCompletions, "https://api.siliconflow.com/v1"),
+    ])
 
     public static let ollama = declaringProtocolGaps(Provider(
         id: "ollama",

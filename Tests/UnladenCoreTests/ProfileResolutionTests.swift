@@ -122,6 +122,11 @@ import Testing
         #expect(try ProviderRegistry.builtIn.resolve("zai-coding/glm-4.6").profile.reasoningControl == .uncontrolled)
         #expect(try url("opencode-go/kimi-k2.6", .anthropicMessages) == "https://opencode.ai/inference/go/anthropic")
         #expect(try url("opencode-zen/claude-sonnet-4-6", .responses) == "https://opencode.ai/inference/openai/v1")
+        // Vendors' Chat APIs take `max_tokens`; OpenAI's wants the new name.
+        for reference in ["step-plan/step-3", "ark-coding/doubao-seed", "nvidia/x", "siliconflow/x", "kilo/x"] {
+            #expect(try ProviderRegistry.builtIn.resolve(reference, preferring: .chatCompletions).profile.maxTokensField == .maxTokens)
+        }
+        #expect(try ProviderRegistry.builtIn.resolve("openai/gpt-4o", preferring: .chatCompletions).profile.maxTokensField == .maxCompletionTokens)
     }
 
     @Test func runtimeRegistrationIsAValue() throws {
