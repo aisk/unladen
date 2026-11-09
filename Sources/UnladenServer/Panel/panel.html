@@ -277,10 +277,10 @@
                           <div class="d-flex small">
                             <span :class="w.name.includes('-') && 'mono'" x-text="w.name"></span>
                             <span class="ms-2 text-secondary" x-show="w.detail" x-text="w.detail"></span>
-                            <span class="ms-auto fw-bold" x-text="Math.round(w.used) + '% used'"></span>
+                            <span class="ms-auto fw-bold" x-text="Math.round(100 - w.used) + '% left'"></span>
                           </div>
                           <div class="progress progress-sm my-1">
-                            <div class="progress-bar" :class="quotaBarClass(w.used)" :style="'width: ' + Math.max(w.used, 1) + '%'"></div>
+                            <div class="progress-bar" :class="quotaBarClass(w.used)" :style="'width: ' + (100 - w.used) + '%'"></div>
                           </div>
                           <div class="small text-secondary" x-show="w.resets_at" :title="w.resets_at && new Date(w.resets_at).toLocaleString()" x-text="resetsIn(w.resets_at)"></div>
                         </div>

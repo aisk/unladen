@@ -227,7 +227,7 @@ const TRANSLATIONS = {
       [/^(\d+) months$/, '$1 个月'],
       [/^(\d+) models$/, '$1 个模型'],
       [/^(\S+) models$/, '$1 模型'],
-      [/^(\d+)% used$/, '已用 $1%'],
+      [/^(\d+)% left$/, '剩余 $1%'],
       [/^resets in (.+)$/, '$1 后重置'],
       [/^(\d+)([smhd]) ago$/, '$1$2 前'],
       [/^Requests of session (.+)$/, '会话 $1 的请求'],
