@@ -64,7 +64,8 @@ final class ModelCatalog: Sendable {
                     apiKey = try? await gateway.signIns.token(provider: provider, account: key.name, transport: gateway.transport)
                     if apiKey == nil { continue }
                 }
-                let call = UpstreamCall(target: target, apiKey: apiKey, transport: gateway.transport)
+                let transport = gateway.upstreamTransport(signIn: key?.signIn, provider: provider, account: key?.name ?? "")
+                let call = UpstreamCall(target: target, apiKey: apiKey, transport: transport)
                 if let names = try? await Gateway.within(Self.timeout, { try await call.listModels() }), !names.isEmpty {
                     return names
                 }

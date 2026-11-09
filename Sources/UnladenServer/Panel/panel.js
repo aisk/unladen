@@ -8,8 +8,10 @@ const FAMILIES = {
   anthropic: ['claude-*'], openai: ['gpt-*', 'o3*', 'o4*'], gemini: ['gemini-*'], deepseek: ['deepseek-*'],
   xai: ['grok-*'], moonshot: ['kimi-*'], mistral: ['mistral-*', 'codestral-*'], chatgpt: ['gpt-*'],
 };
-// Providers whose accounts sign in instead of holding a key.
-const SIGN_IN = ['chatgpt'];
+// Providers whose accounts sign in instead of holding a key, and those of
+// them whose accounts never hold one.
+const SIGN_IN = ['chatgpt', 'antigravity'];
+const KEYLESS = ['antigravity'];
 let counter = 0;
 
 function panel() {
@@ -269,6 +271,8 @@ function panel() {
     },
 
     signsIn(provider) { return SIGN_IN.includes(provider); },
+    takesKeys(provider) { return !KEYLESS.includes(provider); },
+    antigravityRisk: 'Not supported by Google: Antigravity\'s sign-in is meant for Antigravity alone, and Google may suspend an account it sees used elsewhere. Use an account you can afford to lose. Use at your own risk.',
     // The sign-in state of an account of the file, once saved.
     signInOf(a) {
       const name = a.name.trim(), provider = this.accountProvider(a).trim();
@@ -277,7 +281,7 @@ function panel() {
     // `adding`: the account is the add form's, added (and saved) once signed in.
     async startSignIn(provider, account, adding = false) {
       const result = await this.api('POST', 'sign-in/start', { provider, account });
-      if (result.status === 200) this.signing = { provider, account, adding, id: result.json.id, url: result.json.url, callback: '', error: '', busy: false };
+      if (result.status === 200) this.signing = { provider, account, adding, id: result.json.id, url: result.json.url, redirect: result.json.redirect, callback: '', error: '', busy: false };
       else if (result.status !== 401) this.say('danger', 'Cannot sign in', result.json.error || 'HTTP ' + result.status);
     },
     async finishSignIn() {

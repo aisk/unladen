@@ -483,6 +483,9 @@ extension ConfigFile {
                     throw value.error("an account name cannot be empty, start with @, or contain / or *")
                 }
                 if value.isScalar {
+                    if let kind = SignInKind.of(provider: name), !kind.takesKeys {
+                        throw value.error("`\(name)` accounts sign in and hold no key: write `\"\(name)\": {}` and sign in from the control panel")
+                    }
                     guard registry[name] != nil else {
                         throw value.error("`\(name)` is not a provider: write { \"provider\": \"…\", \"key\": \"…\" }, or give the account its `endpoints`")
                     }
@@ -523,6 +526,8 @@ extension ConfigFile {
                         throw item.error("an account with `preset`, `endpoints` or `headers` is the provider `\(name)` itself: leave `provider` out")
                     }
                     definitions.append((name, value, parts))
+                } else if let kind = SignInKind.of(provider: provider?.0 ?? name), key != nil, !kind.takesKeys {
+                    throw value.error("`\(provider?.0 ?? name)` accounts sign in and hold no key: leave `key` out and sign in from the control panel")
                 } else if SignInKind.of(provider: provider?.0 ?? name) != nil, key == nil {
                     // Signs in instead of holding a key.
                     if let (id, item) = provider, id != name, ProviderRegistry.builtIn[name] != nil {

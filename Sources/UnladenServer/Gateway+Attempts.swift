@@ -124,7 +124,10 @@ extension Gateway {
                     continue
                 }
             }
-            let call = UpstreamCall(target: candidate.target, apiKey: apiKey, transport: transport)
+            let call = UpstreamCall(
+                target: candidate.target, apiKey: apiKey,
+                transport: upstreamTransport(signIn: candidate.signIn, provider: candidate.target.provider, account: candidate.keyName),
+            )
             let prepared: UpstreamRequest
             do {
                 prepared = try call.prepare(request, stream: stream, clientHeaders: clientHeaders)
@@ -220,6 +223,15 @@ extension Gateway {
         if let last { return .failure(last) }
         if let strictWarnings { return .failure(.strict(strictWarnings)) }
         return .failure(.gateway(status: 503, message: "no upstream available", candidate: nil))
+    }
+
+    /// The transport to an account's upstream: Code Assist's envelope for
+    /// an Antigravity account, the plain one otherwise.
+    func upstreamTransport(signIn: SignInKind?, provider: String, account: String) -> any HTTPTransport {
+        guard signIn == .antigravity else { return transport }
+        // Without a project Code Assist answers with an error, which is reported.
+        let project = signIns.credentials(provider: provider, account: account)?.project ?? ""
+        return CodeAssistTransport(base: transport, project: project)
     }
 
     /// Records an upstream error status against what it is about: the key

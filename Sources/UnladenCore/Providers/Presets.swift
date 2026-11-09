@@ -5,7 +5,7 @@
 /// rules or providers on a ``ProviderRegistry`` copy to extend or override.
 public enum Presets {
     public static var all: [Provider] {
-        [openAI, chatGPT, anthropic, gemini, deepSeek, moonshot, openRouter, groq, mistral, xAI, together, ollama]
+        [openAI, chatGPT, anthropic, gemini, antigravity, deepSeek, moonshot, openRouter, groq, mistral, xAI, together, ollama]
     }
 
     // MARK: - Shared profiles
@@ -189,6 +189,30 @@ public enum Presets {
                 effortLevels: ["low", "high"],
                 geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator,
             )),
+        ],
+    ))
+
+    /// An Antigravity subscription, signed in with Google, through Google's
+    /// Code Assist backend: Gemini's API inside an envelope of its own,
+    /// which the gateway adds and removes (UnladenServer's
+    /// `CodeAssistTransport`). Gemini, Claude and gpt-oss models, by
+    /// Antigravity's own ids. Not an API Google offers to other apps.
+    public static let antigravity = declaringProtocolGaps(Provider(
+        id: "antigravity",
+        endpoints: [
+            Endpoint(system: "antigravity", apiProtocol: .gemini, baseURL: "https://daily-cloudcode-pa.googleapis.com",
+                     auth: .bearer,
+                     defaults: Profile(
+                        supportsReasoning: true, supportsTools: true, supportsImages: true,
+                        reasoningControl: .budget, effortBudgets: Profile.standardEffortBudgets, streaming: .always,
+                        geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator, geminiSchemaKey: .parameters,
+                        transforms: base,
+                     )),
+        ],
+        models: [
+            ModelRule(.prefix("gemini-3"), Profile(reasoningControl: .thinkingLevel, effortLevels: ["minimal", "low", "medium", "high"])),
+            ModelRule(.prefix("gemini-pro-agent"), Profile(reasoningControl: .thinkingLevel, effortLevels: ["low", "high"])),
+            ModelRule(.prefix("gpt-oss"), Profile(supportsReasoning: false)),
         ],
     ))
 

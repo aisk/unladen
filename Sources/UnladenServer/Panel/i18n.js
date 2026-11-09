@@ -140,9 +140,12 @@ const TRANSLATIONS = {
       'Open': '打开',
       'the sign-in page': '登录页面',
       'and sign in to ChatGPT.': '，登录 ChatGPT。',
-      'The browser then goes to a': '之后浏览器会跳到一个',
-      "address, which does not load unless the browser runs on the gateway's machine: OpenAI sends it back only to a loopback address. Copy that whole address from the address bar and paste it here:":
-        '地址。除非浏览器就在网关这台机器上，这个页面打不开：OpenAI 只会跳回本机地址。把地址栏里的完整地址复制下来，粘贴到这里：',
+      'and sign in with the Google account.': '，用 Google 账号登录。',
+      'The browser then goes to an address starting with': '之后浏览器会跳到一个以',
+      ", which does not load unless the browser runs on the gateway's machine: the sign-in sends it back only to a loopback address. Copy that whole address from the address bar and paste it here:":
+        '开头的地址。除非浏览器就在网关这台机器上，这个页面打不开：登录只会跳回本机地址。把地址栏里的完整地址复制下来，粘贴到这里：',
+      "Not supported by Google: Antigravity's sign-in is meant for Antigravity alone, and Google may suspend an account it sees used elsewhere. Use an account you can afford to lose. Use at your own risk.":
+        '非 Google 官方支持：Antigravity 的登录只供 Antigravity 自己使用，Google 发现账号在别处使用时可能会封号。请使用丢了也无妨的账号，风险自负（use at your own risk）。',
       'Finish': '完成',
       'Cannot sign in': '无法登录',
 

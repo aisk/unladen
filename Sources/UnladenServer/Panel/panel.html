@@ -329,7 +329,10 @@
                     <input class="form-control mono" x-model="draft.name" @input="draftChanged()" placeholder="work">
                     <div class="form-hint">Shown in logs and the overview.</div>
                   </div>
-                  <div class="col-md-4">
+                  <div class="col-12" x-show="draft.provider === 'antigravity'">
+                    <div class="alert alert-warning mb-0" x-text="antigravityRisk"></div>
+                  </div>
+                  <div class="col-md-4" x-show="takesKeys(draft.provider)">
                     <label class="form-label">Key</label>
                     <input class="form-control mono" x-model="draft.key" placeholder="sk-… or ${ENV_VAR}" autocomplete="off">
                     <div class="form-hint" x-show="!draft.provider">May stay empty for an address without authentication.</div>
@@ -634,11 +637,12 @@
         <div class="card mt-5" style="max-width: 40rem; width: 100%">
           <div class="card-header"><h3 class="card-title">Sign in <span class="mono" x-text="signing.provider + '/' + signing.account"></span></h3></div>
           <div class="card-body">
+            <div class="alert alert-warning" x-show="signing.provider === 'antigravity'" x-text="antigravityRisk"></div>
             <ol class="ps-3">
-              <li class="mb-2">Open <a :href="signing.url" target="_blank" rel="noopener noreferrer">the sign-in page</a> and sign in to ChatGPT.</li>
-              <li class="mb-2">The browser then goes to a <code>127.0.0.1:1455</code> address, which does not load unless the browser runs on the gateway's machine: OpenAI sends it back only to a loopback address. Copy that whole address from the address bar and paste it here:</li>
+              <li class="mb-2">Open <a :href="signing.url" target="_blank" rel="noopener noreferrer">the sign-in page</a> <span x-text="signing.provider === 'antigravity' ? 'and sign in with the Google account.' : 'and sign in to ChatGPT.'"></span></li>
+              <li class="mb-2">The browser then goes to an address starting with <code x-text="signing.redirect"></code>, which does not load unless the browser runs on the gateway's machine: the sign-in sends it back only to a loopback address. Copy that whole address from the address bar and paste it here:</li>
             </ol>
-            <input class="form-control mono" x-model="signing.callback" placeholder="http://127.0.0.1:1455/auth/callback?code=…" autocomplete="off" @keydown.enter="signing.callback.trim() && finishSignIn()">
+            <input class="form-control mono" x-model="signing.callback" :placeholder="signing.redirect + '?code=…'" autocomplete="off" @keydown.enter="signing.callback.trim() && finishSignIn()">
             <div class="text-danger mt-2" x-text="signing.error"></div>
           </div>
           <div class="card-footer d-flex justify-content-end gap-2">

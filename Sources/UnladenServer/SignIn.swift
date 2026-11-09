@@ -1,10 +1,11 @@
 // Accounts that sign in instead of holding a key: a ChatGPT plan used
 // through OpenAI's API ("Sign in with ChatGPT", which OpenAI offers to apps
-// running on the user's own machine). The sign-in is OAuth with PKCE; the
-// browser may be on another computer, so it ends with the user pasting the
-// address the browser was sent back to. The tokens are kept in the state
-// directory, apart from the configuration file, and refreshed before they
-// expire; the refresh token changes with each refresh.
+// running on the user's own machine), and an Antigravity subscription used
+// through Google's Code Assist backend (Antigravity.swift; not something
+// Google offers to other apps). The sign-in is OAuth with PKCE; the browser
+// may be on another computer, so it ends with the user pasting the address
+// the browser was sent back to. The tokens are kept in the state directory,
+// apart from the configuration file, and refreshed before they expire.
 
 #if canImport(FoundationEssentials)
 import FoundationEssentials
@@ -24,13 +25,24 @@ import Darwin
 
 /// How a provider's accounts sign in.
 enum SignInKind: String, Sendable, Hashable {
-    /// OpenAI's Sign in with ChatGPT, for the `chatgpt` preset.
+    /// OpenAI's Sign in with ChatGPT, for the `chatgpt` preset; its
+    /// accounts may hold an API key instead.
     case chatgpt
+    /// Antigravity's Google sign-in, for the `antigravity` preset; its
+    /// accounts only sign in.
+    case antigravity
 
     /// The kind of `provider`'s accounts; `nil`: they hold keys.
     static func of(provider: String) -> SignInKind? {
-        provider == Presets.chatGPT.id ? .chatgpt : nil
+        switch provider {
+        case Presets.chatGPT.id: .chatgpt
+        case Presets.antigravity.id: .antigravity
+        default: nil
+        }
     }
+
+    /// Whether an account may hold a key instead of signing in.
+    var takesKeys: Bool { self == .chatgpt }
 }
 
 /// What can keep a signed-in account from being used.
@@ -53,7 +65,10 @@ struct SignInCredentials: Sendable, Hashable {
     var expires: Int64
     var user: String
     var plan: String?
-    /// Set when OpenAI refused the refresh token: sign in again.
+    /// The Google Cloud project Code Assist serves the account under
+    /// (Antigravity).
+    var project: String?
+    /// Set when the refresh token was refused: sign in again.
     var lapsed: String?
 
     var json: JSONValue {
@@ -62,6 +77,7 @@ struct SignInCredentials: Sendable, Hashable {
             "expires": .number(JSONNumber(expires)), "user": .string(user),
         ]
         if let plan { object["plan"] = .string(plan) }
+        if let project { object["project"] = .string(project) }
         if let lapsed { object["lapsed"] = .string(lapsed) }
         return .object(object)
     }
@@ -82,6 +98,7 @@ struct SignInCredentials: Sendable, Hashable {
         else { return nil }
         self.init(clientID: clientID, access: access, refresh: refresh, expires: Int64(expires), user: user,
                   plan: value["plan"]?.stringValue)
+        project = value["project"]?.stringValue
         lapsed = value["lapsed"]?.stringValue
     }
 }
@@ -101,8 +118,11 @@ final class SignIns: Sendable {
     let hostIDPath: String?
 
     private struct Pending {
+        var kind: SignInKind
         var provider: String
         var account: String
+        /// Where the browser is sent back to.
+        var redirect: String
         var verifier: String
         var state: String
         var nonce: String
@@ -259,7 +279,10 @@ final class SignIns: Sendable {
         do {
             let fresh: SignInCredentials
             do {
-                fresh = try await ChatGPTSignIn.refresh(current, transport: transport)
+                switch SignInKind.of(provider: provider) {
+                case .antigravity: fresh = try await AntigravitySignIn.refresh(current, transport: transport)
+                default: fresh = try await ChatGPTSignIn.refresh(current, transport: transport)
+                }
             } catch where !error.needsSignIn && current.expires > LocalDay.nowMilliseconds() + 10_000 && !rejected {
                 // A hiccup: the token in hand still does.
                 return current.access
@@ -283,26 +306,32 @@ final class SignIns: Sendable {
 
     // MARK: Signing in
 
-    /// Starts a sign-in: the address to open, and the id to finish it with.
-    func start(provider: String, account: String) throws(SignInError) -> (id: String, url: String) {
-        guard SignInKind.of(provider: provider) == .chatgpt else {
+    /// Starts a sign-in: the address to open, the id to finish it with, and
+    /// the address the browser will be sent back to.
+    func start(provider: String, account: String) throws(SignInError) -> (id: String, url: String, redirect: String) {
+        guard let kind = SignInKind.of(provider: provider) else {
             throw SignInError(message: "\(provider) accounts do not sign in")
         }
+        let redirect = switch kind {
+        case .chatgpt: ChatGPTSignIn.redirect
+        case .antigravity: AntigravitySignIn.redirect(port: Int.random(in: 49152...65535))
+        }
         let pending = Pending(
-            provider: provider, account: account, verifier: Base64URL.random(32), state: Base64URL.random(16),
-            nonce: Base64URL.random(16), started: LocalDay.nowMilliseconds(),
+            kind: kind, provider: provider, account: account, redirect: redirect, verifier: Base64URL.random(48),
+            state: Base64URL.random(24), nonce: Base64URL.random(16), started: LocalDay.nowMilliseconds(),
         )
         let id = Base64URL.random(12)
-        let url = ChatGPTSignIn.authorizeURL(
-            state: pending.state, nonce: pending.nonce, challenge: Base64URL.encode(SHA256.hash(Array(pending.verifier.utf8))),
-            hostID: try hostID(),
-        )
+        let challenge = Base64URL.encode(SHA256.hash(Array(pending.verifier.utf8)))
+        let url = switch kind {
+        case .chatgpt: ChatGPTSignIn.authorizeURL(state: pending.state, nonce: pending.nonce, challenge: challenge, hostID: try hostID())
+        case .antigravity: AntigravitySignIn.authorizeURL(redirect: redirect, state: pending.state, challenge: challenge)
+        }
         state.withLockedValue { state in
             let now = pending.started
             state.pending = state.pending.filter { now - $0.value.started < Self.pendingLimit }
             state.pending[id] = pending
         }
-        return (id, url)
+        return (id, url, redirect)
     }
 
     /// Finishes sign-in `id` with the address the browser was sent back
@@ -315,7 +344,7 @@ final class SignIns: Sendable {
         else { throw SignInError(message: "this sign-in has expired: start it again") }
         let query = ChatGPTSignIn.query(of: callback)
         if let error = query["error"] {
-            throw SignInError(message: "OpenAI refused the sign-in: \(query["error_description"] ?? error)")
+            throw SignInError(message: "the sign-in was refused: \(query["error_description"] ?? error)")
         }
         guard let code = query["code"], !code.isEmpty else {
             throw SignInError(message: "the address has no `code`: paste the whole address the browser ended on")
@@ -323,12 +352,20 @@ final class SignIns: Sendable {
         guard query["state"] == pending.state else {
             throw SignInError(message: "the address belongs to another sign-in: paste the one this sign-in ended on")
         }
-        guard let clientID = query["client_id"], !clientID.isEmpty else {
-            throw SignInError(message: "the address has no `client_id`: OpenAI did not finish registering the gateway; start again")
+        let credentials: SignInCredentials
+        switch pending.kind {
+        case .chatgpt:
+            guard let clientID = query["client_id"], !clientID.isEmpty else {
+                throw SignInError(message: "the address has no `client_id`: OpenAI did not finish registering the gateway; start again")
+            }
+            credentials = try await ChatGPTSignIn.exchange(
+                code: code, clientID: clientID, verifier: pending.verifier, nonce: pending.nonce, transport: transport,
+            )
+        case .antigravity:
+            credentials = try await AntigravitySignIn.exchange(
+                code: code, verifier: pending.verifier, redirect: pending.redirect, transport: transport,
+            )
         }
-        let credentials = try await ChatGPTSignIn.exchange(
-            code: code, clientID: clientID, verifier: pending.verifier, nonce: pending.nonce, transport: transport,
-        )
         _ = state.withLockedValue { $0.pending.removeValue(forKey: id) }
         try keep(credentials, provider: pending.provider, account: pending.account)
         return (pending.provider, pending.account, credentials)
@@ -375,8 +412,6 @@ enum ChatGPTSignIn {
     static let agentName = "unladen"
     /// Lets the token be sent to api.openai.com itself.
     static let directScope = "chatgpt.tokens.use.direct"
-    /// The longest a token request may take.
-    static let timeout: Duration = .seconds(30)
     static let scopes = "openid profile email offline_access resource.invoke " + directScope
     /// Where the browser is sent back to, as OpenAI's own apps are: on the
     /// browser's computer, where nothing answers; the user pastes the
@@ -463,7 +498,20 @@ enum ChatGPTSignIn {
     }
 
     private static func post(_ form: [(String, String)], transport: any HTTPTransport) async throws(SignInError) -> JSONValue {
-        var request = HTTPRequest(method: .post, scheme: "https", authority: tokenAuthority, path: tokenPath)
+        try await OAuthForm.post(form, authority: tokenAuthority, path: tokenPath, who: "OpenAI", dead: deadRefresh, transport: transport)
+    }
+}
+
+/// A form posted to an OAuth token endpoint, and its JSON reply.
+enum OAuthForm {
+    /// The longest a token request may take.
+    static let timeout: Duration = .seconds(30)
+
+    /// `dead`: error codes that mean the account must sign in again.
+    static func post(
+        _ form: [(String, String)], authority: String, path: String, who: String, dead: Set<String>, transport: any HTTPTransport,
+    ) async throws(SignInError) -> JSONValue {
+        var request = HTTPRequest(method: .post, scheme: "https", authority: authority, path: path)
         request.headerFields[.contentType] = "application/x-www-form-urlencoded"
         request.headerFields[.accept] = "application/json"
         let status: Int
@@ -475,17 +523,17 @@ enum ChatGPTSignIn {
                 return (response.status.code, try await response.body.collect(upTo: 1 << 20))
             }
         } catch is Gateway.HeadTimeout {
-            throw SignInError(message: "OpenAI's sign-in did not answer within \(timeout)")
+            throw SignInError(message: "\(who)'s sign-in did not answer within \(timeout)")
         } catch {
-            throw SignInError(message: "cannot reach OpenAI's sign-in: \(error)")
+            throw SignInError(message: "cannot reach \(who)'s sign-in: \(error)")
         }
         let reply = (try? JSONValue(parsing: bytes)) ?? .null
         guard status == 200 else {
             let code = reply["error"]?.stringValue ?? reply["error"]?["code"]?.stringValue ?? reply["code"]?.stringValue ?? ""
             let message = reply["error_description"]?.stringValue ?? reply["error"]?["message"]?.stringValue ?? "HTTP \(status)"
             throw SignInError(
-                message: "OpenAI refused the token request (\(code.isEmpty ? "\(status)" : code)): \(message)",
-                needsSignIn: deadRefresh.contains(code),
+                message: "\(who) refused the token request (\(code.isEmpty ? "\(status)" : code)): \(message)",
+                needsSignIn: dead.contains(code),
             )
         }
         return reply

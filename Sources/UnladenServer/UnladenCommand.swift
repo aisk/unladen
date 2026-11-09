@@ -203,11 +203,11 @@ struct Serve: AsyncParsableCommand {
 struct SignIn: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "sign-in",
-        abstract: "Sign an account in (a `chatgpt` account), keeping its tokens in the state directory.",
+        abstract: "Sign an account in (of provider `chatgpt` or `antigravity`), keeping its tokens in the state directory.",
         discussion: """
         Prints an address to open in a browser, on any computer. After \
-        signing in there, the browser is sent to a 127.0.0.1 address that \
-        may not load: copy that address and paste it here. A running \
+        signing in there, the browser is sent to a loopback address that \
+        does not load: copy that address and paste it here. A running \
         gateway picks the sign-in up on its next reload (SIGHUP, or the \
         control panel's Reload); the control panel can also sign accounts \
         in itself.
@@ -224,15 +224,18 @@ struct SignIn: AsyncParsableCommand {
         guard let (provider, key) = loaded.gateway.keyPools.lazy.compactMap({ provider, pool in
             pool.keys.first { $0.name == account }.map { (provider, $0) }
         }).first, key.signIn != nil else {
-            throw ValidationError("`\(account)` is not an enabled account that signs in (an account of provider `chatgpt`)")
+            throw ValidationError("`\(account)` is not an enabled account that signs in (an account of provider `chatgpt` or `antigravity` without a key)")
         }
         guard let directory = UsageLog.defaultDirectory(environment: { ProcessInfo.processInfo.environment[$0] }) else {
             throw ValidationError("no state directory: set HOME or XDG_STATE_HOME")
         }
         let signIns = SignIns(directory: directory)
+        if key.signIn == .antigravity {
+            print("Warning: Google does not offer Antigravity's sign-in to other apps, and may suspend an account it sees used outside Antigravity. Use one you can afford to lose, at your own risk.\n")
+        }
         let started = try signIns.start(provider: provider, account: account)
         print("Open this address in a browser and sign in:\n\n\(started.url)\n")
-        print("Then paste the address the browser ends on (http://127.0.0.1:1455/auth/callback?…):")
+        print("Then paste the address the browser ends on (\(started.redirect)?…):")
         guard let callback = readLine(strippingNewline: true), !callback.isEmpty else {
             throw ValidationError("no address given")
         }

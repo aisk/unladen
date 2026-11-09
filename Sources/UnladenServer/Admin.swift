@@ -432,7 +432,7 @@ private func addSignInRoutes(to router: Router<GatewayRequestContext>, gateway: 
         }
         do throws(SignInError) {
             let started = try gateway.signIns.start(provider: provider, account: name)
-            return adminJSON(200, ["id": .string(started.id), "url": .string(started.url)])
+            return adminJSON(200, ["id": .string(started.id), "url": .string(started.url), "redirect": .string(started.redirect)])
         } catch {
             return adminError(422, error.message)
         }
