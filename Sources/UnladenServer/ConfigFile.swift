@@ -159,6 +159,7 @@ enum ConfigFile {
             for target in route.targets {
                 guard let (provider, _) = try? ProviderRegistry.parse(target.probe),
                       loaded.gateway.keyPools[provider] == nil,
+                      registry[provider]?.servesWithoutKey == false,
                       registry[provider]?.endpoints.contains(where: { $0.auth != .none }) == true
                 else { continue }
                 let variables = UpstreamKeys.variables(for: provider, in: registry).joined(separator: " or ")

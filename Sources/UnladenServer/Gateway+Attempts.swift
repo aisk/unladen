@@ -87,6 +87,7 @@ extension Gateway {
         candidates: [Candidate],
         stream: Bool,
         clientHeaders: HTTPFields,
+        session: String? = nil,
         strict: Bool = false,
         headTimeout: Duration? = nil,
         log: RequestLog = .silent,
@@ -124,10 +125,14 @@ extension Gateway {
                     continue
                 }
             }
-            let call = UpstreamCall(
-                target: candidate.target, apiKey: apiKey,
-                transport: upstreamTransport(signIn: candidate.signIn, provider: candidate.target.provider, account: candidate.keyName),
-            )
+            let call = {
+                var call = UpstreamCall(
+                    target: candidate.target, apiKey: apiKey,
+                    transport: upstreamTransport(signIn: candidate.signIn, provider: candidate.target.provider, account: candidate.keyName),
+                )
+                call.session = session
+                return call
+            }()
             let prepared: UpstreamRequest
             do {
                 prepared = try call.prepare(request, stream: stream, clientHeaders: clientHeaders)

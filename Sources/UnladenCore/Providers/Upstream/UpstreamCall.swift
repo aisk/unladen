@@ -93,6 +93,9 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
     public var target: ResolvedModel
     public var apiKey: String?
     public var transport: any HTTPTransport
+    /// The conversation the request belongs to, sent in the endpoint's
+    /// ``Endpoint/sessionHeader`` when it has one.
+    public var session: String?
     /// Bytes kept of a non-2xx body.
     public var maxErrorBodyBytes = 1 << 20
     /// Largest complete (non-streaming) reply accepted.
@@ -222,6 +225,9 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
         }
         for (name, values) in forwarded {
             fields[name] = values.joined(separator: ", ")
+        }
+        if let session, let name = endpoint.sessionHeader.flatMap({ HTTPField.Name($0) }), fields[name] == nil {
+            fields[name] = session
         }
         fields[.contentType] = "application/json"
         fields[.accept] = streams ? "text/event-stream" : "application/json"

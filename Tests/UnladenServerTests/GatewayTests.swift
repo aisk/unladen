@@ -611,3 +611,54 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         }
     }
 }
+
+@Suite struct FreeAndSessionTests {
+    @Test func kiloAnswersWithoutAnAccount() async throws {
+        let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
+        let gateway = makeGateway(upstream, model: "kilo/kilo-auto/free", keys: [:])
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "anything"))
+            #expect(response.status == .ok)
+        }
+        let hit = try #require(upstream.requests.first)
+        #expect(hit.request.authority == "api.kilo.ai")
+        #expect(hit.path == "/api/openrouter/chat/completions")
+        #expect(hit.header("authorization") == nil)
+    }
+
+    @Test func openCodeIsToldTheConversation() async throws {
+        let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
+        let gateway = makeGateway(upstream, model: "opencode-go/glm-5")
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post(
+                "/v1/chat/completions", ClientRequest.chat(model: "anything"),
+                headers: [HTTPField.Name("x-claude-code-session-id")!: "abc-123"],
+            )
+            #expect(response.status == .ok)
+        }
+        let hit = try #require(upstream.requests.first)
+        #expect(hit.path == "/inference/go/openai/v1/chat/completions")
+        #expect(hit.header("x-opencode-session") == "abc-123")
+        #expect(hit.header("user-agent") == "unladen")
+        #expect(hit.header("authorization") == "Bearer key-opencode-go")
+    }
+
+    @Test func aConversationWithoutAHeaderIsNamedByItsOpening() async throws {
+        let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
+        let gateway = makeGateway(upstream, model: "opencode-zen/glm-5")
+        try await makeApp(gateway).test(.router) { client in
+            for _ in 0..<2 { _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "anything")) }
+        }
+        let sessions = upstream.requests.map { $0.header("x-opencode-session") }
+        #expect(sessions.count == 2)
+        #expect(sessions[0] != nil && sessions[0] == sessions[1])
+    }
+
+    @Test func otherProvidersGetNoSessionHeader() async throws {
+        let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
+        try await makeApp(makeGateway(upstream)).test(.router) { client in
+            _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "openai/gpt-4o"))
+        }
+        #expect(try #require(upstream.requests.first).header("x-opencode-session") == nil)
+    }
+}

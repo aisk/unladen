@@ -88,7 +88,8 @@ import Testing
         #expect(ids == [
             "openai", "chatgpt", "anthropic", "gemini", "antigravity", "deepseek", "moonshot", "moonshot-cn", "kimi-code", "kimi-code-cn",
             "zai", "zai-coding", "zhipu", "zhipu-coding", "minimax", "minimax-cn", "step-plan", "step-plan-cn", "ark-coding",
-            "bailian-token-plan", "openrouter", "groq", "mistral", "xai", "together", "ollama",
+            "bailian-token-plan", "openrouter", "opencode-zen", "opencode-go", "kilo", "groq", "mistral", "xai", "together", "nvidia",
+            "modelscope", "siliconflow", "siliconflow-global", "ollama",
         ])
         for provider in Presets.all {
             #expect(!provider.endpoints.isEmpty)
@@ -119,6 +120,8 @@ import Testing
         #expect(try url("minimax-cn/MiniMax-M2", .responses) == "https://api.minimaxi.com/anthropic")
         #expect(try url("ark-coding/ark-code-latest", .responses) == "https://ark.cn-beijing.volces.com/api/coding/v3")
         #expect(try ProviderRegistry.builtIn.resolve("zai-coding/glm-4.6").profile.reasoningControl == .uncontrolled)
+        #expect(try url("opencode-go/kimi-k2.6", .anthropicMessages) == "https://opencode.ai/inference/go/anthropic")
+        #expect(try url("opencode-zen/claude-sonnet-4-6", .responses) == "https://opencode.ai/inference/openai/v1")
     }
 
     @Test func runtimeRegistrationIsAValue() throws {

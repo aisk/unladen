@@ -81,6 +81,10 @@ public struct Endpoint: Hashable, Sendable {
     /// Endpoint-level Profile defaults; a matching model rule's Profile is
     /// merged over it (see ``Provider``).
     public var defaults: Profile
+    /// A header the upstream reads a conversation's id from, for its
+    /// routing and prompt caching: the caller's session id
+    /// (``UpstreamCall/session``) goes in it.
+    public var sessionHeader: String?
 
     public init(
         system: String,
@@ -91,6 +95,7 @@ public struct Endpoint: Hashable, Sendable {
         forwardedHeaders: Set<String> = [],
         trustedOrigins: Set<String>? = nil,
         defaults: Profile = Profile(),
+        sessionHeader: String? = nil,
     ) {
         self.system = system
         self.apiProtocol = apiProtocol
@@ -100,5 +105,6 @@ public struct Endpoint: Hashable, Sendable {
         self.forwardedHeaders = forwardedHeaders
         self.trustedOrigins = trustedOrigins ?? [system]
         self.defaults = defaults
+        self.sessionHeader = sessionHeader
     }
 }

@@ -24,12 +24,19 @@ public struct Provider: Hashable, Sendable {
     /// order of preference (e.g. `ANTHROPIC_API_KEY`). Consulted by the
     /// library when no key was configured explicitly.
     public var apiKeyEnvironmentVariables: [String]
+    /// Some models are served to callers with no key (a relay's free
+    /// models): without one, requests go with no credentials.
+    public var servesWithoutKey: Bool
 
-    public init(id: String, apiKeyEnvironmentVariables: [String] = [], endpoints: [Endpoint], models: [ModelRule] = []) {
+    public init(
+        id: String, apiKeyEnvironmentVariables: [String] = [], servesWithoutKey: Bool = false, endpoints: [Endpoint],
+        models: [ModelRule] = [],
+    ) {
         self.id = id
         self.endpoints = endpoints
         self.models = models
         self.apiKeyEnvironmentVariables = apiKeyEnvironmentVariables
+        self.servesWithoutKey = servesWithoutKey
     }
 
     /// The rule that applies to `model` (see the type's documentation).

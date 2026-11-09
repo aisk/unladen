@@ -83,9 +83,10 @@ struct Gateway: Sendable {
         let parsed = Result { () throws(WireDecodingError) in
             try ClientCodec.parseRequest(clientProtocol, body: body, geminiPath: geminiPath)
         }
+        let origin = RequestOrigin(headers: headers, request: try? parsed.get().value, access: access)
         let tracker = activity.begin(RequestRecord(
             started: LocalDay.nowMilliseconds(),
-            origin: RequestOrigin(headers: headers, request: try? parsed.get().value, access: access),
+            origin: origin,
             clientProtocol: clientProtocol.displayName, model: (try? parsed.get().value.model) ?? geminiPath?.model ?? "?",
             stream: (try? parsed.get().value.stream) == true || geminiPath?.stream == true,
         ), log: log)
@@ -126,7 +127,7 @@ struct Gateway: Sendable {
             do {
                 let outcome = try await monitor.run {
                     try await self.attempt(
-                        request, decodeWarnings: decoded.warnings, candidates: ordered, stream: stream, clientHeaders: headers,
+                        request, decodeWarnings: decoded.warnings, candidates: ordered, stream: stream, clientHeaders: headers, session: origin.session,
                         strict: configuration.strict, headTimeout: configuration.headTimeout, log: log, tracker: tracker,
                     )
                 }

@@ -301,6 +301,10 @@ struct CandidatePlanner: Sendable {
             }
             let pool = configuration.keyPools[target.provider]
             let keys = pool?.keys ?? []
+            if keys.isEmpty, configuration.registry[target.provider]?.servesWithoutKey == true {
+                candidates.append(Candidate(reference: reference, target: target, apiKey: nil, keyName: ""))
+                continue
+            }
             if keys.isEmpty { missingKeys.append(target.provider) }
             for key in keys {
                 candidates.append(Candidate(

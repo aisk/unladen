@@ -8,7 +8,8 @@ public enum Presets {
         [
             openAI, chatGPT, anthropic, gemini, antigravity, deepSeek, moonshot, moonshotChina, kimiCode, kimiCodeChina,
             zai, zaiCoding, zhipu, zhipuCoding, miniMax, miniMaxChina, stepPlan, stepPlanChina, arkCoding, bailianTokenPlan,
-            openRouter, groq, mistral, xAI, together, ollama,
+            openRouter, openCodeZen, openCodeGo, kilo, groq, mistral, xAI, together, nvidia, modelScope, siliconFlow,
+            siliconFlowGlobal, ollama,
         ]
     }
 
@@ -358,6 +359,44 @@ public enum Presets {
         models: claudeRules(prefix: "anthropic/", forcing: .anthropicMessages) + openAIRules(prefix: "openai/"),
     ))
 
+    /// OpenCode Zen, pay as you go with an OpenCode key. Its free models
+    /// are for OpenCode alone, and are turned away from other clients.
+    public static let openCodeZen = openCode(id: "opencode-zen", root: "https://opencode.ai/inference")
+
+    /// OpenCode Go, a subscription to open coding models, for coding
+    /// agents that name themselves and each conversation.
+    public static let openCodeGo = openCode(id: "opencode-go", root: "https://opencode.ai/inference/go")
+
+    /// OpenCode's gateway: it routes and caches by the conversation named
+    /// in `x-opencode-session`, and Go refuses a request without one.
+    static func openCode(id: String, root: String) -> Provider {
+        let headers = ["user-agent": "unladen"]
+        func endpoint(_ apiProtocol: APIProtocol, _ address: String, auth: EndpointAuth = .bearer) -> Endpoint {
+            Endpoint(system: "opencode", apiProtocol: apiProtocol, baseURL: address, auth: auth, headers: headers,
+                     defaults: Profile(transforms: base), sessionHeader: "x-opencode-session")
+        }
+        return declaringProtocolGaps(Provider(
+            id: id,
+            endpoints: [
+                endpoint(.chatCompletions, root + "/openai/v1"),
+                endpoint(.responses, root + "/openai/v1"),
+                endpoint(.anthropicMessages, root + "/anthropic", auth: .anthropic()),
+            ],
+        ))
+    }
+
+    /// Kilo Code's gateway, OpenRouter's API: its free models (`…:free`,
+    /// `kilo-auto/free`) answer anyone, a limited number of requests an
+    /// hour from one address; a Kilo key reaches the rest.
+    public static let kilo = declaringProtocolGaps(Provider(
+        id: "kilo",
+        servesWithoutKey: true,
+        endpoints: [
+            Endpoint(system: "kilo", apiProtocol: .chatCompletions, baseURL: "https://api.kilo.ai/api/openrouter",
+                     defaults: Profile(transforms: base)),
+        ],
+    ))
+
     public static let groq = declaringProtocolGaps(Provider(
         id: "groq",
         apiKeyEnvironmentVariables: ["GROQ_API_KEY"],
@@ -402,6 +441,35 @@ public enum Presets {
                      defaults: Profile(transforms: base)),
         ],
     ))
+
+    /// NVIDIA's hosted NIM models, free to try with a developer key.
+    public static let nvidia = chatOnly(id: "nvidia", system: "nvidia", "https://integrate.api.nvidia.com/v1", environment: ["NVIDIA_API_KEY"])
+
+    /// ModelScope's API-Inference, with a ModelScope access token: a
+    /// number of free calls a day.
+    public static let modelScope = declaringProtocolGaps(Provider(
+        id: "modelscope",
+        apiKeyEnvironmentVariables: ["MODELSCOPE_API_KEY"],
+        endpoints: [
+            Endpoint(system: "modelscope", apiProtocol: .chatCompletions, baseURL: "https://api-inference.modelscope.cn/v1",
+                     defaults: Profile(transforms: base)),
+            Endpoint(system: "modelscope", apiProtocol: .responses, baseURL: "https://api-inference.modelscope.cn/v1",
+                     defaults: Profile(transforms: base)),
+        ],
+    ))
+
+    /// SiliconFlow, China and international: separate accounts and keys,
+    /// some models free.
+    public static let siliconFlow = chatOnly(id: "siliconflow", system: "siliconflow", "https://api.siliconflow.cn/v1",
+                                             environment: ["SILICONFLOW_API_KEY"])
+    public static let siliconFlowGlobal = chatOnly(id: "siliconflow-global", system: "siliconflow", "https://api.siliconflow.com/v1")
+
+    static func chatOnly(id: String, system: String, _ address: String, environment: [String] = []) -> Provider {
+        declaringProtocolGaps(Provider(
+            id: id, apiKeyEnvironmentVariables: environment,
+            endpoints: [Endpoint(system: system, apiProtocol: .chatCompletions, baseURL: address, defaults: Profile(transforms: base))],
+        ))
+    }
 
     public static let ollama = declaringProtocolGaps(Provider(
         id: "ollama",
