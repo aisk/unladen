@@ -174,7 +174,7 @@ public struct LanguageModel: Sendable {
         guard case .response(let wire) = reply.body else {
             throw UnladenError.invalidResponse("expected a complete reply")
         }
-        let replyWarnings = reply.warnings.dropFirst(call.request.warnings.count).map(WireConversion.warning)
+        let replyWarnings = reply.replyWarnings.map(WireConversion.warning)
         return WireConversion.response(wire, system: target.endpoint.system, warnings: call.warnings + replyWarnings)
     }
 

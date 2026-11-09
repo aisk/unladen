@@ -472,26 +472,11 @@ enum WireConversion {
     /// `body` with the options for `protocol` and then `system` deep-merged
     /// into its top level (see ``ProviderOptions``).
     static func merge(_ options: ProviderOptions, into body: JSONValue, protocol: APIProtocol, system: String) -> JSONValue {
-        var body = body
+        guard var object = body.objectValue else { return body }
         var keys = [`protocol`.rawValue]
         if system != `protocol`.rawValue { keys.append(system) }
         for key in keys {
-            if let patch = options[key] { body = deepMerge(body, .object(patch)) }
-        }
-        return body
-    }
-
-    /// `patch` over `base`: objects merge key by key, `null` removes a key,
-    /// anything else replaces.
-    static func deepMerge(_ base: JSONValue?, _ patch: JSONValue) -> JSONValue {
-        guard case .object(let patchObject) = patch else { return patch }
-        var object = base?.objectValue ?? [:]
-        for (key, value) in patchObject {
-            if value.isNull {
-                object.removeValue(forKey: key)
-            } else {
-                object[key] = deepMerge(object[key], value)
-            }
+            if let patch = options[key] { object = WirePatch.merge(patch, over: object) }
         }
         return .object(object)
     }

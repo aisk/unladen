@@ -70,10 +70,14 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
     /// The upstream's response head (request id, rate-limit headers…).
     public var head: HTTPResponse
     public var body: Body
-    /// Request-side warnings (transforms, encoding) plus, for a complete
-    /// reply, decoding warnings. Stream decoding warnings are on the
-    /// stream's iterator.
-    public var warnings: [WireWarning]
+    /// Request-side warnings: transforms and encoding.
+    public var requestWarnings: [WireWarning]
+    /// For a complete reply, decoding warnings. Stream decoding warnings
+    /// are on the stream's iterator.
+    public var replyWarnings: [WireWarning] = []
+
+    /// Both, request-side first.
+    public var warnings: [WireWarning] { requestWarnings + replyWarnings }
 }
 
 /// One call to one upstream model, shared by the library and the gateway.
@@ -315,22 +319,21 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
             let body = try await Self.collect(response.body, upTo: maxErrorBodyBytes, truncate: true)
             throw UpstreamError.http(UpstreamHTTPError(status: response.status, headerFields: response.response.headerFields, body: body))
         }
-        var warnings = prepared.warnings
         let mapper = CustomToolReplyMapper(names: prepared.customTools)
+        func reply(_ body: UpstreamReply.Body, _ warnings: [WireWarning] = []) -> UpstreamReply {
+            UpstreamReply(head: response.response, body: body, requestWarnings: prepared.warnings, replyWarnings: warnings)
+        }
 
         if prepared.streams {
             let events = UpstreamEventStream(body: response.body, decoder: AnyWireStreamDecoder(for: wire, origin: origin), mapper: mapper)
-            if stream {
-                return UpstreamReply(head: response.response, body: .events(events), warnings: warnings)
-            }
+            if stream { return reply(.events(events)) }
             var accumulator = WireResponseAccumulator()
             var iterator = events.makeAsyncIterator()
             while let event = try await iterator.next() {
                 accumulator.add(event)
             }
-            warnings += iterator.warnings + accumulator.warnings
             if let error = accumulator.errors.first { throw UpstreamError.stream(error) }
-            return UpstreamReply(head: response.response, body: .response(accumulator.response), warnings: warnings)
+            return reply(.response(accumulator.response), iterator.warnings + accumulator.warnings)
         }
 
         let bytes = try await Self.collect(response.body, upTo: maxResponseBytes, truncate: false)
@@ -345,13 +348,13 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
         } catch {
             throw UpstreamError.decoding(error, body: bytes)
         }
-        warnings += decoded.warnings
-        let reply = mapper.map(decoded.value)
+        var warnings = decoded.warnings
+        let decodedReply = mapper.map(decoded.value)
         if stream {
-            let events = WireEvents.of(reply, protocolName: wire.rawValue, warnings: &warnings)
-            return UpstreamReply(head: response.response, body: .events(UpstreamEventStream(replaying: events)), warnings: warnings)
+            let events = WireEvents.of(decodedReply, protocolName: wire.rawValue, warnings: &warnings)
+            return reply(.events(UpstreamEventStream(replaying: events)), warnings)
         }
-        return UpstreamReply(head: response.response, body: .response(reply), warnings: warnings)
+        return reply(.response(decodedReply), warnings)
     }
 
     static func collect(_ body: HTTPResponseBody, upTo limit: Int, truncate: Bool) async throws -> [UInt8] {

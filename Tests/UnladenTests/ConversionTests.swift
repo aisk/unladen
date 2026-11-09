@@ -105,8 +105,10 @@ import Testing
         }
     }
 
-    @Test func deepMerge() {
-        let merged = WireConversion.deepMerge(["a": ["b": 1, "c": 2], "d": [1]], ["a": ["c": nil, "e": 3], "d": [2], "f": ["g": nil]])
+    @Test func providerOptionsMergeDeeply() {
+        var options = ProviderOptions()
+        options["chat"] = ["a": ["c": nil, "e": 3], "d": [2], "f": ["g": nil]]
+        let merged = WireConversion.merge(options, into: ["a": ["b": 1, "c": 2], "d": [1]], protocol: .chatCompletions, system: "x")
         #expect(merged == ["a": ["b": 1, "e": 3], "d": [2], "f": [:]])
     }
 }
