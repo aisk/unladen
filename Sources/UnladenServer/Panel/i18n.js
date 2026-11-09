@@ -107,6 +107,7 @@ const TRANSLATIONS = {
       'As the providers report them, read at most once a minute.': '由提供方报告，每分钟最多读取一次。',
       'Refresh': '刷新',
       'Month': '每月',
+      'Day': '每天',
       'MCP calls · month': 'MCP 调用 · 每月',
       'Allowance': '额度',
       "OpenAI shows this plan's usage only on its own site.": 'OpenAI 只在自己的网站上显示这个套餐的用量。',
@@ -224,6 +225,7 @@ const TRANSLATIONS = {
     patterns: [
       [/^(\d+) days$/, '$1 天'],
       [/^(\d+) hours$/, '$1 小时'],
+      [/^(\d+) minutes$/, '$1 分钟'],
       [/^(\d+) months$/, '$1 个月'],
       [/^(\d+) models$/, '$1 个模型'],
       [/^(\S+) models$/, '$1 模型'],

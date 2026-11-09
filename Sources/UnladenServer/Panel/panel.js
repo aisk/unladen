@@ -7,6 +7,10 @@ const ADVANCED = ['strict', 'keepalive', 'connect_timeout', 'head_timeout', 'idl
 const FAMILIES = {
   anthropic: ['claude-*'], openai: ['gpt-*', 'o3*', 'o4*'], gemini: ['gemini-*'], deepseek: ['deepseek-*'],
   xai: ['grok-*'], moonshot: ['kimi-*'], mistral: ['mistral-*', 'codestral-*'], chatgpt: ['gpt-*'],
+  'moonshot-cn': ['kimi-*'], 'kimi-code': ['kimi-*'], 'kimi-code-cn': ['kimi-*'],
+  zai: ['glm-*'], 'zai-coding': ['glm-*'], zhipu: ['glm-*'], 'zhipu-coding': ['glm-*'],
+  minimax: ['MiniMax-*'], 'minimax-cn': ['MiniMax-*'], 'step-plan': ['step-*'], 'step-plan-cn': ['step-*'],
+  'ark-coding': ['ark-*', 'doubao-*'], 'bailian-token-plan': ['qwen*'],
 };
 // Providers whose accounts sign in instead of holding a key, and those of
 // them whose accounts never hold one.

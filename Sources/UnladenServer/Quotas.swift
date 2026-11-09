@@ -1,7 +1,8 @@
 // What accounts' plans have left in each of their windows (five hours, a
 // week, a month), as the providers report it: Antigravity through Code
 // Assist, GLM Coding Plan keys of Zhipu (open.bigmodel.cn) and Z.ai through
-// their monitor API. A ChatGPT plan used through OpenAI's API reports none:
+// their monitor API, Kimi Code and MiniMax plan keys through their usage
+// queries. A ChatGPT plan used through OpenAI's API reports none:
 // OpenAI shows it only on chatgpt.com. Read when the panel asks, at most
 // once a minute per account.
 
@@ -124,8 +125,15 @@ final class QuotaReader: Sendable {
         /// A Zhipu or Z.ai key; `coding`: its endpoints are the Coding
         /// Plan's, so a key without a plan is worth saying so.
         case glm(host: String, coding: Bool)
+        /// A Kimi Code membership's key, at its `/coding/v1` address.
+        case kimiCode(base: String)
+        /// A MiniMax key: a plan's is told its windows, a pay-as-you-go
+        /// one is not, and shows nothing.
+        case miniMax(host: String)
 
         static let glmHosts: Set<String> = ["open.bigmodel.cn", "api.z.ai"]
+        static let kimiHosts: Set<String> = ["api.kimi.com", "api.kimi.ai"]
+        static let miniMaxHosts: Set<String> = ["api.minimax.io", "api.minimaxi.com", "api.minimax.cn"]
 
         static func of(provider: Provider, key: UpstreamKey) -> Reader? {
             switch key.signIn {
@@ -135,8 +143,15 @@ final class QuotaReader: Sendable {
             }
             guard !key.secret.isEmpty else { return nil }
             let bases = provider.endpoints.map(\.baseURL)
-            guard let host = bases.lazy.map(QuotaReader.host(of:)).first(where: glmHosts.contains) else { return nil }
-            return .glm(host: host, coding: bases.contains { $0.contains("/coding") || $0.contains("/anthropic") })
+            for base in bases {
+                let host = QuotaReader.host(of: base)
+                if glmHosts.contains(host) { return .glm(host: host, coding: bases.contains { $0.contains("/coding") }) }
+                if kimiHosts.contains(host), let root = QuotaReader.prefix(of: base, through: "/coding") {
+                    return .kimiCode(base: root + "/v1")
+                }
+                if miniMaxHosts.contains(host) { return .miniMax(host: host) }
+            }
+            return nil
         }
 
         func read(provider: String, key: UpstreamKey, gateway: Gateway) async -> AccountQuota {
@@ -167,9 +182,77 @@ final class QuotaReader: Sendable {
                     quota.error = "\(error)"
                 }
                 if quota.windows.isEmpty, !coding { quota.error = nil }
+            case .kimiCode(let base):
+                do {
+                    let (status, reply) = try await QuotaReader.get(base + "/usages", bearer: key.secret, transport: gateway.transport)
+                    quota.windows = try KimiCodeQuota.parse(reply, status: status)
+                } catch {
+                    quota.error = "\(error)"
+                }
+            case .miniMax(let host):
+                do {
+                    let (status, reply) = try await QuotaReader.get(
+                        "https://\(host)/v1/token_plan/remains", bearer: key.secret, transport: gateway.transport,
+                    )
+                    quota.windows = try MiniMaxQuota.parse(reply, status: status)
+                } catch {}
             }
             return quota
         }
+    }
+
+    /// `GET` of an `https://` address, with `bearer` as the key or, when
+    /// `nil`, `key` bare: the reply's status and its JSON.
+    static func get(_ address: String, bearer: String? = nil, key: String? = nil, transport: any HTTPTransport) async throws -> (Int, JSONValue) {
+        let host = host(of: address)
+        let path = address.split(separator: "://", maxSplits: 1).last.flatMap { rest in
+            rest.firstIndex(of: "/").map { String(rest[$0...]) }
+        } ?? "/"
+        var request = HTTPRequest(method: .get, scheme: "https", authority: host, path: path)
+        request.headerFields[.authorization] = bearer.map { "Bearer " + $0 } ?? key
+        request.headerFields[.accept] = "application/json"
+        let sent = request
+        let (status, bytes) = try await Gateway.within(timeout) {
+            let response = try await transport.send(sent, body: nil)
+            return (response.status.code, try await response.body.collect(upTo: 1 << 20))
+        }
+        return (status, (try? JSONValue(parsing: bytes)) ?? .null)
+    }
+
+    /// `address` up to and including the first `part` in it.
+    static func prefix(of address: String, through part: String) -> String? {
+        var index = address.startIndex
+        while index < address.endIndex {
+            if address[index...].hasPrefix(part) { return String(address[..<address.index(index, offsetBy: part.count)]) }
+            index = address.index(after: index)
+        }
+        return nil
+    }
+
+    /// A window's name by its length in minutes: "5 hours", "7 days",
+    /// "Month".
+    static func name(minutes: Int) -> String {
+        switch minutes {
+        case 28 * 1440...31 * 1440: "Month"
+        case 1440: "Day"
+        case let m where m > 1440 && m % 1440 == 0: "\(m / 1440) days"
+        case let m where m >= 60 && m % 60 == 0: "\(m / 60) hours"
+        case let m where m > 0: "\(m) minutes"
+        default: "Allowance"
+        }
+    }
+
+    /// A number given as a number or as text.
+    static func number(_ value: JSONValue?) -> Double? {
+        if let n = value?.numberValue { return n.double }
+        return value?.stringValue.flatMap { Double($0.filter { $0 != " " }) }
+    }
+
+    /// A time given as RFC 3339 text or as Unix seconds or milliseconds.
+    static func milliseconds(_ value: JSONValue?) -> Int64? {
+        if let text = value?.stringValue { return milliseconds(rfc3339: text) }
+        guard let n = value?.numberValue?.double, n > 0 else { return nil }
+        return Int64(n > 1e11 ? n : n * 1000)
     }
 
     /// The host of an address: `https://api.z.ai/api/v1` → `api.z.ai`.
@@ -270,15 +353,7 @@ enum GLMQuota {
     /// `GET /api/monitor/usage/quota/limit`, with the bare key as the
     /// authorization: the plan's level and its windows.
     static func read(host: String, key: String, transport: any HTTPTransport) async throws -> (plan: String?, windows: [QuotaWindow]) {
-        var request = HTTPRequest(method: .get, scheme: "https", authority: host, path: "/api/monitor/usage/quota/limit")
-        request.headerFields[.authorization] = key
-        request.headerFields[.accept] = "application/json"
-        let request2 = request
-        let (status, bytes) = try await Gateway.within(QuotaReader.timeout) {
-            let response = try await transport.send(request2, body: nil)
-            return (response.status.code, try await response.body.collect(upTo: 1 << 20))
-        }
-        let reply = (try? JSONValue(parsing: bytes)) ?? .null
+        let (status, reply) = try await QuotaReader.get("https://\(host)/api/monitor/usage/quota/limit", key: key, transport: transport)
         return try parse(reply, status: status)
     }
 
@@ -322,5 +397,120 @@ enum GLMQuota {
         }
         let plan = data["level"]?.stringValue.map { $0.prefix(1).uppercased() + $0.dropFirst() }
         return (plan, windows)
+    }
+}
+
+// MARK: - Kimi Code
+
+enum KimiCodeQuota {
+    /// Reads `/coding/v1/usages`:
+    ///
+    ///     {"usage": {"limit": "100", "used": "12", "resetTime": "2026-09-30T05:24:18.44Z"},
+    ///      "limits": [{"window": {"duration": 300, "timeUnit": "TIME_UNIT_MINUTE"},
+    ///                  "detail": {"limit": "100", "remaining": "88", "resetTime": "…"}}],
+    ///      "usages": {"limit_5h": {"used_ratio": 0.43, "reset_time": "…"}, "limit_7d": {…}, "limit_month_total": {…}}}
+    ///
+    /// `usage` is the week, each of `limits` a shorter window, numbers as
+    /// text or numbers, used or remaining. A plan on a monthly allowance
+    /// tells shares in `usages` (camelCase too); a window told both ways is
+    /// taken from there. `limit_month_code` is the month only when
+    /// `limit_month_total` is not given.
+    static func parse(_ reply: JSONValue, status: Int) throws -> [QuotaWindow] {
+        guard status == 200 else {
+            throw QuotaReader.Failure(description: reply["error"]?["message"]?.stringValue ?? reply["message"]?.stringValue ?? "HTTP \(status)")
+        }
+        var windows: [(minutes: Int, window: QuotaWindow)] = []
+        func counted(_ detail: JSONValue?, minutes: Int) {
+            guard let detail, let limit = QuotaReader.number(detail["limit"]), limit > 0 else { return }
+            guard let used = QuotaReader.number(detail["used"]) ?? QuotaReader.number(detail["remaining"]).map({ limit - $0 }) else { return }
+            let reset = ["resetTime", "resetAt", "reset_at", "reset_time"].lazy.compactMap { QuotaReader.milliseconds(detail[$0]) }.first
+            windows.append((minutes, QuotaWindow(name: QuotaReader.name(minutes: minutes), used: min(max(used / limit * 100, 0), 100), resetsAt: reset)))
+        }
+        for limit in reply["limits"]?.arrayValue ?? [] {
+            let window = limit["window"]
+            let n = Int(QuotaReader.number(window?["duration"]) ?? 0)
+            let unit = window?["timeUnit"]?.stringValue ?? ""
+            let minutes = unit.contains("MINUTE") ? n : unit.contains("HOUR") ? n * 60 : unit.contains("DAY") ? n * 1440
+                : unit.contains("WEEK") ? n * 7 * 1440 : unit.contains("MONTH") ? n * 30 * 1440 : 0
+            counted(limit["detail"] ?? window, minutes: minutes)
+        }
+        counted(reply["usage"], minutes: 7 * 1440)
+
+        let usages = reply["usages"]
+        var shares: [(minutes: Int, window: QuotaWindow)] = []
+        for (key, camel, minutes) in [
+            ("limit_5h", "limit5h", 300), ("limit_7d", "limit7d", 7 * 1440),
+            ("limit_month_total", "limitMonthTotal", 30 * 1440), ("limit_month_code", "limitMonthCode", 30 * 1440),
+        ] {
+            guard let share = usages?[key] ?? usages?[camel], !shares.contains(where: { $0.minutes == minutes }),
+                  let ratio = QuotaReader.number(share["used_ratio"]) ?? QuotaReader.number(share["usedRatio"]), ratio.isFinite
+            else { continue }
+            let reset = ["reset_time", "resetTime", "reset_at", "resetAt"].lazy.compactMap { QuotaReader.milliseconds(share[$0]) }.first
+            shares.append((minutes, QuotaWindow(name: QuotaReader.name(minutes: minutes), used: min(max(ratio * 100, 0), 100), resetsAt: reset)))
+        }
+        if !shares.isEmpty {
+            windows.removeAll { window in shares.contains { $0.minutes == window.minutes } }
+            windows += shares
+        }
+        guard !windows.isEmpty else { throw QuotaReader.Failure(description: "no usage in the reply") }
+        // Shortest first; one of no known length last.
+        return windows.enumerated().sorted { a, b in
+            let (x, y) = (a.element.minutes == 0 ? Int.max : a.element.minutes, b.element.minutes == 0 ? Int.max : b.element.minutes)
+            return x != y ? x < y : a.offset < b.offset
+        }.map(\.element.window)
+    }
+}
+
+// MARK: - MiniMax
+
+enum MiniMaxQuota {
+    /// Reads `/v1/token_plan/remains`:
+    ///
+    ///     {"model_remains": [{"model_name": "general", "start_time": …, "end_time": …,
+    ///        "current_interval_remaining_percent": 88, "current_interval_status": 1,
+    ///        "weekly_start_time": …, "weekly_end_time": …, "current_weekly_remaining_percent": 95, …}],
+    ///      "base_resp": {"status_code": 0, "status_msg": "success"}}
+    ///
+    /// Each bucket has a short window and a week; status 2 is used up, 3
+    /// unlimited (or not in the plan). Buckets other than `general` (video,
+    /// speech…) are counted in items: `…_total_count` and `…_usage_count`,
+    /// the latter seen holding either what is used or what remains, taken
+    /// as whichever the percentage agrees with.
+    static func parse(_ reply: JSONValue, status: Int) throws -> [QuotaWindow] {
+        guard status == 200, let base = reply["base_resp"] else { throw QuotaReader.Failure(description: "HTTP \(status)") }
+        guard base["status_code"]?.numberValue?.int ?? 0 == 0 else {
+            throw QuotaReader.Failure(description: base["status_msg"]?.stringValue ?? "refused")
+        }
+        func milliseconds(_ value: JSONValue?) -> Int64? {
+            guard let n = value?.numberValue?.double, n > 0 else { return nil }
+            return Int64(n < 1e12 ? n * 1000 : n)
+        }
+        var windows: [QuotaWindow] = []
+        for bucket in reply["model_remains"]?.arrayValue ?? [] {
+            let model = bucket["model_name"]?.stringValue?.filter { $0 != " " } ?? ""
+            guard !model.isEmpty else { continue }
+            for (prefix, weekly) in [("current_interval", false), ("current_weekly", true)] {
+                let state = bucket[prefix + "_status"]?.numberValue?.int ?? 0
+                let left = QuotaReader.number(bucket[prefix + "_remaining_percent"])
+                if state == 3 || left == nil && state != 2 { continue }
+                let start = milliseconds(bucket[weekly ? "weekly_start_time" : "start_time"])
+                let end = milliseconds(bucket[weekly ? "weekly_end_time" : "end_time"])
+                var window = QuotaWindow(
+                    name: weekly ? "7 days" : start.flatMap { s in end.map { QuotaReader.name(minutes: Int(($0 - s) / 60000)) } } ?? "Allowance",
+                    used: state == 2 ? 100 : min(max(100 - (left ?? 0), 0), 100), resetsAt: end,
+                )
+                if model.lowercased() != "general" { window.group = model.prefix(1).uppercased() + model.dropFirst() }
+                if let total = QuotaReader.number(bucket[prefix + "_total_count"]), total > 0,
+                   let count = QuotaReader.number(bucket[prefix + "_usage_count"]), count >= 0, count <= total, let left {
+                    let asUsed = abs((total - count) / total * 100 - left), asLeft = abs(count / total * 100 - left)
+                    if min(asUsed, asLeft) <= 1 {
+                        let used = state == 2 ? total : asUsed < asLeft ? count : total - count
+                        window.detail = "\(Int(used)) / \(Int(total))"
+                    }
+                }
+                windows.append(window)
+            }
+        }
+        return windows
     }
 }

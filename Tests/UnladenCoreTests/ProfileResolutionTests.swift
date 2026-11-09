@@ -85,7 +85,11 @@ import Testing
 
     @Test func presetsAreWellFormed() throws {
         let ids = Set(Presets.all.map(\.id))
-        #expect(ids == ["openai", "chatgpt", "anthropic", "gemini", "antigravity", "deepseek", "moonshot", "openrouter", "groq", "mistral", "xai", "together", "ollama"])
+        #expect(ids == [
+            "openai", "chatgpt", "anthropic", "gemini", "antigravity", "deepseek", "moonshot", "moonshot-cn", "kimi-code", "kimi-code-cn",
+            "zai", "zai-coding", "zhipu", "zhipu-coding", "minimax", "minimax-cn", "step-plan", "step-plan-cn", "ark-coding",
+            "bailian-token-plan", "openrouter", "groq", "mistral", "xai", "together", "ollama",
+        ])
         for provider in Presets.all {
             #expect(!provider.endpoints.isEmpty)
             for endpoint in provider.endpoints {
@@ -97,6 +101,24 @@ import Testing
         #expect(try ProviderRegistry.builtIn.resolve("moonshot/kimi-k2-thinking").profile.reasoningControl == .uncontrolled)
         #expect(try ProviderRegistry.builtIn.resolve("deepseek/deepseek-chat", preferring: .anthropicMessages).endpoint.trustedOrigins
             == ["deepseek", "anthropic"])
+    }
+
+    @Test func plansHaveEndpointsOfTheirOwn() throws {
+        func url(_ reference: String, _ api: APIProtocol) throws -> String {
+            try ProviderRegistry.builtIn.resolve(reference, preferring: api).endpoint.baseURL
+        }
+        #expect(try url("zai-coding/glm-4.6", .chatCompletions) == "https://api.z.ai/api/coding/paas/v4")
+        #expect(try url("zai-coding/glm-4.6", .responses) == "https://api.z.ai/api/v1")
+        #expect(try url("zai/glm-4.6", .chatCompletions) == "https://api.z.ai/api/paas/v4")
+        // Pay as you go has no Responses endpoint: the first one serves.
+        #expect(try url("zai/glm-4.6", .responses) == "https://api.z.ai/api/paas/v4")
+        #expect(try url("zhipu-coding/glm-4.6", .anthropicMessages) == "https://open.bigmodel.cn/api/anthropic")
+        #expect(try url("kimi-code/kimi-for-coding", .chatCompletions) == "https://api.kimi.ai/coding/v1")
+        #expect(try url("kimi-code-cn/kimi-for-coding", .anthropicMessages) == "https://api.kimi.com/coding")
+        #expect(try url("moonshot-cn/kimi-k2", .anthropicMessages) == "https://api.moonshot.cn/anthropic")
+        #expect(try url("minimax-cn/MiniMax-M2", .responses) == "https://api.minimaxi.com/anthropic")
+        #expect(try url("ark-coding/ark-code-latest", .responses) == "https://ark.cn-beijing.volces.com/api/coding/v3")
+        #expect(try ProviderRegistry.builtIn.resolve("zai-coding/glm-4.6").profile.reasoningControl == .uncontrolled)
     }
 
     @Test func runtimeRegistrationIsAValue() throws {

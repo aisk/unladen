@@ -110,3 +110,79 @@ import Testing
         #expect(windows.map(\.name) == ["claude-opus-5-5-high", "gemini-3.1-flash-lite", "gpt-oss-120b-medium"])
     }
 }
+
+@Suite struct KimiCodeQuotaTests {
+    @Test func countedWindowsThenTheWeek() throws {
+        let reply = try JSONValue(parsing: Array("""
+            {"usage": {"limit": "100", "used": "12", "resetTime": "2026-11-16T14:32:43Z"},
+             "limits": [{"window": {"duration": 300, "timeUnit": "TIME_UNIT_MINUTE"},
+                         "detail": {"limit": 100, "remaining": "88", "resetTime": "2026-11-09T19:32:43Z"}}]}
+            """.utf8))
+        let windows = try KimiCodeQuota.parse(reply, status: 200)
+        #expect(windows.map(\.name) == ["5 hours", "7 days"])
+        #expect(windows.map(\.used) == [12, 12])
+        #expect(windows[1].resetsAt == 1_794_839_563_000)
+    }
+
+    @Test func sharesStandForTheWindowsTheyTell() throws {
+        let reply = try JSONValue(parsing: Array("""
+            {"usage": {"limit": "100", "used": "12"},
+             "usages": {"limit_5h": {"used_ratio": 0.5, "reset_time": 1794247200},
+                        "limitMonthTotal": {"usedRatio": "0.25"}, "limit_month_code": {"used_ratio": 0.9}}}
+            """.utf8))
+        let windows = try KimiCodeQuota.parse(reply, status: 200)
+        #expect(windows.map(\.name) == ["5 hours", "7 days", "Month"])
+        #expect(windows.map(\.used) == [50, 12, 25])
+        #expect(windows[0].resetsAt == 1_794_247_200_000)
+    }
+
+    @Test func readsAtTheCodingAddress() async throws {
+        let text = #"{"accounts": {"kimi-code": "kk"}}"#
+        let loaded = try ConfigFile.parse(text, file: "c.jsonc") { _ in nil }
+        let upstream = MockUpstream { request in
+            #expect(request.request.authority == "api.kimi.ai")
+            #expect(request.request.path == "/coding/v1/usages")
+            #expect(request.request.headerFields[.authorization] == "Bearer kk")
+            return reply(#"{"usage": {"limit": 10, "used": 1}}"#)
+        }
+        let gateway = Gateway(configuration: loaded.gateway, transport: upstream.transport)
+        let quotas = await gateway.quotas.read(gateway: gateway, refresh: false)
+        #expect(quotas.map(\.provider) == ["kimi-code"])
+        #expect(quotas.first?.windows.map(\.name) == ["7 days"])
+    }
+}
+
+@Suite struct MiniMaxQuotaTests {
+    @Test func theGeneralBucketAndACountedOne() throws {
+        let reply = try JSONValue(parsing: Array("""
+            {"model_remains": [
+              {"model_name": "general", "start_time": 1794229200000, "end_time": 1794247200000,
+               "current_interval_remaining_percent": 88, "current_interval_status": 1,
+               "weekly_start_time": 1794229200, "weekly_end_time": 1794834000, "current_weekly_remaining_percent": 95, "current_weekly_status": 1},
+              {"model_name": "video", "start_time": 1794229200000, "end_time": 1794315600000,
+               "current_interval_remaining_percent": 20, "current_interval_status": 1,
+               "current_interval_total_count": 5, "current_interval_usage_count": 1, "current_weekly_status": 3},
+              {"model_name": "speech", "current_interval_status": 3, "current_weekly_status": 3}],
+             "base_resp": {"status_code": 0, "status_msg": "success"}}
+            """.utf8))
+        let windows = try MiniMaxQuota.parse(reply, status: 200)
+        #expect(windows.map(\.name) == ["5 hours", "7 days", "Day"])
+        #expect(windows.map(\.group) == [nil, nil, "Video"])
+        #expect(windows.map(\.used) == [12, 5, 80])
+        #expect(windows[1].resetsAt == 1_794_834_000_000)
+        // 1 of 5 left, so 4 used.
+        #expect(windows[2].detail == "4 / 5")
+    }
+
+    @Test func aPayAsYouGoKeyShowsNothing() async throws {
+        let text = #"{"accounts": {"minimax": "mk"}}"#
+        let loaded = try ConfigFile.parse(text, file: "c.jsonc") { _ in nil }
+        let upstream = MockUpstream { request in
+            #expect(request.request.authority == "api.minimax.io")
+            #expect(request.request.path == "/v1/token_plan/remains")
+            return reply(#"{"base_resp": {"status_code": 1004, "status_msg": "no token plan"}}"#)
+        }
+        let gateway = Gateway(configuration: loaded.gateway, transport: upstream.transport)
+        #expect(await gateway.quotas.read(gateway: gateway, refresh: false).isEmpty)
+    }
+}
