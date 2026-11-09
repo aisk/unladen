@@ -128,14 +128,11 @@ extension Gateway {
                     continue
                 }
             }
-            let call = {
-                var call = UpstreamCall(
-                    target: candidate.target, apiKey: apiKey,
-                    transport: upstreamTransport(signIn: candidate.signIn, provider: candidate.target.provider, account: candidate.keyName),
-                )
-                call.session = session
-                return call
-            }()
+            let call = UpstreamCall(
+                target: candidate.target, apiKey: apiKey,
+                transport: upstreamTransport(signIn: candidate.signIn, provider: candidate.target.provider, account: candidate.keyName),
+                session: session,
+            )
             let prepared: UpstreamRequest
             do {
                 prepared = try call.prepare(request, stream: stream, clientHeaders: clientHeaders)

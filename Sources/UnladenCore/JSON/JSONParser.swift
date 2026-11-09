@@ -49,8 +49,9 @@ public struct JSONParseError: Error, Hashable, Sendable, CustomStringConvertible
 public enum JSONParser {
     /// What to do when an object contains the same key twice.
     public enum DuplicateKeyPolicy: Hashable, Sendable {
-        /// Keep the position of the first occurrence and the value of the
-        /// last. This matches JavaScript's `JSON.parse` and Python's `json`,
+        /// Keep the key where it first occurs in the object, with the value
+        /// of its last occurrence (whose start is the offset recorded for
+        /// it). This matches JavaScript's `JSON.parse` and Python's `json`,
         /// i.e. what most upstream providers will see, so the gateway forwards
         /// the same meaning the client most likely intended.
         case lastValueWins

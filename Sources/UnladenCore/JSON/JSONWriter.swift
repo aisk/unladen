@@ -67,14 +67,18 @@ extension JSONValue {
                 case 0x0D: output.append(UInt8(ascii: "r"))
                 case 0x09: output.append(UInt8(ascii: "t"))
                 default:
-                    let hex: [UInt8] = Array("0123456789abcdef".utf8)
                     output.append(contentsOf: "u00".utf8)
-                    output.append(hex[Int(byte >> 4)])
-                    output.append(hex[Int(byte & 0x0F)])
+                    output.append(hexDigit(byte >> 4))
+                    output.append(hexDigit(byte & 0x0F))
                 }
             }
             output.append(contentsOf: UnsafeBufferPointer(rebasing: utf8[runStart..<utf8.count]))
         }
         output.append(UInt8(ascii: "\""))
     }
+}
+
+/// The lowercase hex digit of `nibble` (0…15).
+private func hexDigit(_ nibble: UInt8) -> UInt8 {
+    nibble < 10 ? UInt8(ascii: "0") + nibble : UInt8(ascii: "a") + nibble - 10
 }

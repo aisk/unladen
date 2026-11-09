@@ -10,9 +10,6 @@
 /// This is the one place an endpoint's trust set is applied:
 /// everything Gemini-bound asks ``accepts(origin:sameProtocol:trusted:)``.
 enum GeminiReplay {
-    /// The system id Gemini decoders stamp on signatures by default.
-    static let system: WireSystemID = "gemini"
-
     /// - Data with an origin is accepted iff the origin is trusted.
     /// - Data without one came from a client request; it is accepted only
     ///   when that request was Gemini too (the client is replaying what a

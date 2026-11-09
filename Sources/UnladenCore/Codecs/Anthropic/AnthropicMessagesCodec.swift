@@ -577,7 +577,7 @@ private struct AnthropicTurns {
             // results first in their user turn.
             output = output.compactMap { turn in
                 var turn = turn
-                turn.blocks.removeAll { $0.plainText?.allSatisfy(\.isWhitespace) == true }
+                turn.blocks.removeAll(where: \.isBlankText)
                 return turn.blocks.isEmpty ? nil : turn
             }
             var merged: [Turn] = []

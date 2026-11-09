@@ -604,6 +604,9 @@ extension GeminiCodec {
         if let format = request.responseFormat {
             switch format.kind {
             case .jsonObject, .jsonSchema:
+                // A schema's `name` only labels it, and Gemini always keeps
+                // to the schema it is given, as `strict` asks: neither needs
+                // a field of its own.
                 config["responseMimeType"] = "application/json"
                 if let schema = format.schema {
                     let key = include && format.sourceKey == "responseSchema" ? "responseSchema" : "responseJsonSchema"

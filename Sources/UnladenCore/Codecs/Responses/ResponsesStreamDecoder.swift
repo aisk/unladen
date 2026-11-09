@@ -140,7 +140,8 @@
                 events.append(.reasoningDelta(id: block, delta: delta))
             }
         case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
-            if let block = items[index]?.blocks["call"]?.id, case .string(let delta)? = object["delta"], !delta.isEmpty {
+            if let block = items[index]?.blocks["call"]?.id, case .string(let delta)? = object["delta"] {
+                guard !delta.isEmpty else { break }
                 items[index]?.call?.arguments += delta
                 events.append(.toolInputDelta(id: block, delta: delta))
             } else {
@@ -304,7 +305,6 @@
                let block = state.blocks["call"]?.id
             {
                 if call.arguments.isEmpty { call.arguments = state.call?.arguments ?? "" }
-                state.open = []
                 events.append(.toolInputEnd(id: block))
                 events.append(.toolCall(id: block, call: call))
             } else {

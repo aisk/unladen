@@ -254,6 +254,9 @@ struct AnthropicBlock {
     /// The text when the block is a text block that a bare string can stand
     /// for (no bag would be lost).
     var plainText: String?
+    /// A text block with nothing but whitespace, which Anthropic refuses
+    /// whatever else the block carries.
+    var isBlankText = false
 }
 
 enum AnthropicEncode {
@@ -297,7 +300,8 @@ enum AnthropicEncode {
         return .array(blocks.map(\.json))
     }
 
-    /// Encodes parts that may appear inside a `tool_result` or `system`.
+    /// Encodes parts as content blocks: those of a turn, a `tool_result` or
+    /// `system`.
     static func blocks(
         _ parts: [WirePart],
         context: Context,
@@ -334,7 +338,9 @@ enum AnthropicEncode {
             writeCacheControl(text.cacheControl, to: &object, allowed: true, path: path, reason: "", warnings: &warnings)
             applyPatch(text.patch, to: &object, target: .anthropicMessages)
             let plain = (text.extra.isEmpty || !include) && text.cacheControl == nil && !hasPatch(text.patch, for: .anthropicMessages)
-            return AnthropicBlock(json: .object(object), plainText: plain ? text.text : nil)
+            return AnthropicBlock(
+                json: .object(object), plainText: plain ? text.text : nil, isBlankText: text.text.allSatisfy(\.isWhitespace),
+            )
 
         case .refusal(let refusal):
             warnings.append(WireWarning(.lossyConversion, "refusal sent as a text block", path: path))

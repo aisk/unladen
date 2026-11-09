@@ -4,7 +4,7 @@
 /// Every field is optional; `nil` means "no opinion", so Profiles merge
 /// field by field (``merged(over:)``). A resolved Profile is the endpoint's
 /// defaults with at most one model rule merged over it (see
-/// ``Provider/profile(for:endpoint:)``). Data-only fields are applied by the
+/// ``Provider/resolve(model:preferring:)``). Data-only fields are applied by the
 /// upstream call on every request; the procedural ones take effect through
 /// the transforms named in ``transforms``.
 public struct Profile: Hashable, Sendable {

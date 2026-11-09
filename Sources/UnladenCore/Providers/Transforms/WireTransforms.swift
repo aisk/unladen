@@ -142,6 +142,8 @@
                     }
                     reasoning.signature = nil
                     reasoning.encrypted = nil
+                    reasoning.itemID = nil
+                    reasoning.summaryIndex = nil
                     reasoning.origin = nil
                     if !reasoning.text.isEmpty { parts.append(.reasoning(reasoning)) }
                     continue
@@ -160,7 +162,7 @@
                 reasoning.origin = nil
                 if !reasoning.text.isEmpty { parts.append(.reasoning(reasoning)) }
             }
-            if let details = request.messages[i].extra.removeValue(forKey: "reasoning_details") {
+            if let details = request.messages[i].extra.removeValue(forKey: ChatReasoningDetails.key) {
                 warnings.append(WireWarning(.droppedField, "`reasoning_details` removed; its text kept as reasoning", path: path))
                 let hasText = parts.contains { part in
                     if case .reasoning(let reasoning) = part { return !reasoning.text.isEmpty }

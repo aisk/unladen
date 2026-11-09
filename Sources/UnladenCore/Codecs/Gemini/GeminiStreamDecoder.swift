@@ -97,7 +97,7 @@
             }
             for (key, value) in candidate {
                 switch key {
-                case "content", "index": break
+                case "content": break
                 case "finishReason":
                     if case .string(let raw) = value { finishReason = GeminiFinish.decode(raw, hasToolCalls: calls > 0) }
                 default: finishExtra[key] = value

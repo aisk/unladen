@@ -336,7 +336,7 @@ enum ChatDecode {
             }
             _ = reader.raw("thinking")
             // Several text parts: the first here, the rest after it (see
-            // ``thinkingParts(_:)``).
+            // ``followingThinking(_:)``).
             return .reasoning(WireReasoning(
                 text: first, summaryIndex: texts.count > 1 ? 0 : nil,
                 sourceKey: ChatMistral.thinkingSourceKey, extra: reader.remaining(warnings: &warnings),

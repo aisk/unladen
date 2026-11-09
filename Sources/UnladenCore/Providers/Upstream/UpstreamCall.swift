@@ -101,10 +101,11 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
     /// Largest complete (non-streaming) reply accepted.
     public var maxResponseBytes = 64 << 20
 
-    public init(target: ResolvedModel, apiKey: String?, transport: any HTTPTransport) {
+    public init(target: ResolvedModel, apiKey: String?, transport: any HTTPTransport, session: String? = nil) {
         self.target = target
         self.apiKey = apiKey
         self.transport = transport
+        self.session = session
     }
 
     /// Client headers never forwarded, whatever an endpoint allows:
@@ -256,7 +257,7 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
     /// not used.
     ///
     /// Throws ``UpstreamError`` for a non-2xx reply, and the transport's
-    /// own errors otherwise.
+    /// own errors otherwise. A reply that is not a model list lists none.
     public func listModels(maxBytes: Int = 4 << 20) async throws -> [String] {
         let endpoint = target.endpoint
         guard let base = BaseURL(endpoint.baseURL) else { throw UpstreamError.invalidBaseURL(endpoint.baseURL) }
@@ -298,7 +299,8 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
     /// `stream`.
     ///
     /// Throws ``UpstreamError`` for a non-2xx reply or an undecodable body,
-    /// and the transport's own errors otherwise.
+    /// `HTTPResponseBodyTooLargeError` for a complete reply over
+    /// ``maxResponseBytes``, and the transport's own errors otherwise.
     public func send(_ request: WireRequest, stream: Bool, clientHeaders: HTTPFields = [:]) async throws -> UpstreamReply {
         let prepared = try prepare(request, stream: stream, clientHeaders: clientHeaders)
         return try await send(prepared, stream: stream)
