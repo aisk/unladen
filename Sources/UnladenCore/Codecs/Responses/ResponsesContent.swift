@@ -576,7 +576,10 @@ enum ResponsesEncode {
         if let id = context.acceptsID(call.itemID, origin: call.origin) { object["id"] = .string(id) }
         object["call_id"] = .string(call.id)
         object["name"] = .string(call.name)
-        object[custom ? "input" : "arguments"] = .string(call.arguments)
+        // A custom tool's input is free text; a function's arguments are a
+        // JSON object, `{}` when there are none.
+        let empty = !custom && call.arguments.trimmingASCIIWhitespace().isEmpty
+        object[custom ? "input" : "arguments"] = .string(empty ? "{}" : call.arguments)
         if call.signature != nil {
             warnings.append(WireWarning(.droppedContent, "tool call signature cannot be carried by Responses", path: path))
         }
@@ -626,6 +629,19 @@ enum ResponsesEncode {
     /// message item; consecutive reasoning parts with the same item id one
     /// reasoning item; each tool call, tool result and opaque item its own
     /// item. The message's form and bag go to its first message item.
+    /// Whether `part` begins a reasoning item of its own rather than
+    /// continuing `last`'s: another item id; or, without ids (a sealed
+    /// item's is cleared), `last` closed its item with the item's data, or
+    /// the summary (or content) numbering starts again.
+    static func startsAnotherItem(_ part: WireReasoning, after last: WireReasoning) -> Bool {
+        if last.itemID != nil || part.itemID != nil { return last.itemID != part.itemID }
+        if last.encrypted != nil || last.signature != nil { return true }
+        guard let index = part.summaryIndex, let previous = last.summaryIndex, part.sourceKey == last.sourceKey else {
+            return part.sourceKey == last.sourceKey || part.sourceKey == nil
+        }
+        return index <= previous
+    }
+
     static func items(_ message: WireMessage, context: Context, path: String, warnings: inout [WireWarning]) -> [JSONValue] {
         let role = message.role
         let isMessageRole = [WireRole.user, .assistant, .system, .developer].contains(role)
@@ -672,7 +688,7 @@ enum ResponsesEncode {
             switch part {
             case .reasoning(let reasoning):
                 flushContent()
-                if let last = pendingReasoning.last, last.itemID == nil || last.itemID != reasoning.itemID {
+                if let last = pendingReasoning.last, Self.startsAnotherItem(reasoning, after: last) {
                     flushReasoning()
                 }
                 pendingReasoning.append(reasoning)

@@ -165,6 +165,16 @@ func appendExtra(
     }
 }
 
+/// Tool-call arguments as the JSON object Anthropic's `input` and Gemini's
+/// `args` must be: empty arguments are `{}`; text that is not a JSON
+/// object is sent as `{}` with a warning.
+func toolArgumentsObject(_ arguments: String, path: String, warnings: inout [WireWarning]) -> JSONValue {
+    if arguments.trimmingASCIIWhitespace().isEmpty { return .object([:]) }
+    if let value = try? JSONValue(parsing: arguments), case .object = value { return value }
+    warnings.append(WireWarning(.lossyConversion, "tool arguments are not a JSON object; sent as {}", path: path))
+    return .object([:])
+}
+
 /// `data:<media-type>;base64,<data>` URLs.
 enum DataURL {
     /// Splits a base64 data URL with a plain media type (no parameters).

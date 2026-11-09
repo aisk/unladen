@@ -184,6 +184,7 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
             let unsigned = profile.acceptsUnsignedThinking ?? (profile.transforms?.contains(.ensureThinkingOnToolTurns) ?? false)
             encoded = AnthropicMessagesCodec.buildRequest(request, options: AnthropicRequestOptions(
                 defaultMaxTokens: maxTokens, trustedReasoningOrigins: endpoint.trustedOrigins, acceptsUnsignedThinking: unsigned,
+                maxTokensCap: profile.maxOutputTokens,
             ))
             suffix = "/v1/messages"
         case .gemini:

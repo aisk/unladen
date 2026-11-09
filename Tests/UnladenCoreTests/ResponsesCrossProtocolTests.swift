@@ -82,6 +82,25 @@ private func echoRequest(_ output: [JSONValue]) -> JSONValue {
     }
 }
 
+@Suite struct TrustedResponsesReplayTests {
+    /// Another system's Responses API (xAI's): its client is told the
+    /// reasoning sealed, and the next turn takes it back to that system.
+    @Test func anotherSystemsReasoningComesBackAsItsOwn() throws {
+        var decoder = ResponsesStreamDecoder(origin: "xai")
+        var events: [WireEvent] = []
+        for element in try Fixtures.sse("Responses/streams/reasoning.sse") { events += try decoder.decode(element) }
+        events += decoder.finish()
+        let defaults = ResponsesResponseDefaults(id: "r", model: "m", created: 0, trustedReasoningOrigins: ["openai", "xai"])
+        let (elements, _) = encodeResponsesStream(events, defaults: defaults)
+        let output = try #require(finalResponse(elements)?["output"]?.arrayValue)
+        #expect(output[0]["encrypted_content"]?.stringValue?.hasPrefix(ResponsesSeal.prefix) == true)
+        let request = try ResponsesCodec.parseRequest(echoRequest(output)).value
+        let built = ResponsesCodec.buildRequest(request, options: ResponsesRequestOptions(trustedReasoningOrigins: ["xai"]))
+        #expect(built.warnings.isEmpty, "\(built.warnings)")
+        #expect(built.json["input"]?[1]?["encrypted_content"] == "gAAAAABoEncryptedReasoning==")
+    }
+}
+
 @Suite struct ChatResponsesRequestTests {
     @Test func chatRequestToResponses() throws {
         let chat = try ChatCompletionsCodec.parseRequest(Fixtures.bytes("Chat/requests/multi_turn_tools.json")).value

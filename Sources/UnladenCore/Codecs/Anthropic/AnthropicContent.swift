@@ -417,7 +417,7 @@ enum AnthropicEncode {
             object["type"] = "tool_use"
             object["id"] = .string(AnthropicToolID.outbound(call.id))
             object["name"] = .string(call.name)
-            object["input"] = toolInput(call.arguments, path: WirePath.key(path, "input"), warnings: &warnings)
+            object["input"] = toolArgumentsObject(call.arguments, path: WirePath.key(path, "input"), warnings: &warnings)
             if call.signature != nil {
                 warnings.append(WireWarning(.droppedContent, "tool call signature cannot be carried by Anthropic", path: path))
             }
@@ -470,16 +470,6 @@ enum AnthropicEncode {
             }
             return AnthropicBlock(json: opaque.value, isToolResult: opaque.value["type"] == "tool_result")
         }
-    }
-
-    /// The `input` object for tool-call arguments. Empty arguments are `{}`;
-    /// text that is not a JSON object becomes `{}` with a warning, since
-    /// Anthropic accepts only objects.
-    static func toolInput(_ arguments: String, path: String, warnings: inout [WireWarning]) -> JSONValue {
-        if arguments.trimmingASCIIWhitespace().isEmpty { return .object([:]) }
-        if let value = try? JSONValue(parsing: arguments), case .object = value { return value }
-        warnings.append(WireWarning(.lossyConversion, "tool arguments are not a JSON object; sent as {}", path: path))
-        return .object([:])
     }
 }
 

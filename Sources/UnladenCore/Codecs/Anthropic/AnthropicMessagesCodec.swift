@@ -61,13 +61,19 @@
     /// written as `thinking` with an empty signature instead of being
     /// dropped.
     public var acceptsUnsignedThinking: Bool
+    /// The model's largest `max_tokens`: one raised to fit a thinking
+    /// budget stops there, and a budget that would not fit under it is
+    /// lowered.
+    public var maxTokensCap: Int?
 
     public init(
         defaultMaxTokens: Int = 4096,
         trustedReasoningOrigins: Set<WireSystemID> = ["anthropic"],
         acceptsUnsignedThinking: Bool = false,
+        maxTokensCap: Int? = nil,
     ) {
         self.defaultMaxTokens = defaultMaxTokens
+        self.maxTokensCap = maxTokensCap
         self.trustedReasoningOrigins = trustedReasoningOrigins
         self.acceptsUnsignedThinking = acceptsUnsignedThinking
     }
@@ -304,8 +310,19 @@ extension AnthropicMessagesCodec {
         object["messages"] = .array(assembler.finish(warnings: &warnings))
 
         var maxTokens = request.maxOutputTokens ?? options.defaultMaxTokens
-        if request.maxOutputTokens == nil, let budget = request.reasoning?.budgetTokens, budget >= maxTokens {
+        var reasoning = request.reasoning
+        if request.maxOutputTokens == nil, let budget = reasoning?.budgetTokens, budget >= maxTokens {
             maxTokens += budget
+            if let cap = options.maxTokensCap, maxTokens > cap {
+                maxTokens = cap
+                if budget >= cap {
+                    reasoning?.budgetTokens = max(cap - 1, 1)
+                    warnings.append(WireWarning(
+                        .adjusted, "thinking budget \(budget) lowered to \(cap - 1), under the model's \(cap) output tokens",
+                        path: "thinking.budget_tokens",
+                    ))
+                }
+            }
         }
         object["max_tokens"] = .number(JSONNumber(maxTokens))
 
@@ -331,7 +348,7 @@ extension AnthropicMessagesCodec {
             }
         }
         if let value = request.temperature { object["temperature"] = .number(value) }
-        if let reasoning = request.reasoning, let thinking = encodeThinking(reasoning, include: include, warnings: &warnings) {
+        if let reasoning, let thinking = encodeThinking(reasoning, include: include, warnings: &warnings) {
             object["thinking"] = thinking
         }
         if let choice = encodeToolChoice(request.toolChoice, parallel: request.parallelToolCalls, warnings: &warnings) {

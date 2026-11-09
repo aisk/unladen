@@ -32,7 +32,7 @@
 ///   decoders write it compactly with the deterministic JSON writer
 ///   (numbers and key order preserved); encoders parse it back. Arguments
 ///   that are not a JSON object are sent as `{}` with a warning (as for
-///   Anthropic); empty arguments omit `args`.
+///   Anthropic); empty arguments omit `args`, streamed or not.
 /// - `functionResponse.response`: `{"output": s}` / `{"error": s}` with a
 ///   string is the text `s` (form ``WireContentForm/string``, `error` sets
 ///   ``WireToolResult/isError``); any other object is its compact JSON text

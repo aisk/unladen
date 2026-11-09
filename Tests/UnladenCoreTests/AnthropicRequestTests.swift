@@ -235,6 +235,19 @@ private func parse(_ text: String) throws(WireDecodingError) -> WireDecoded<Wire
         #expect(AnthropicMessagesCodec.buildRequest(request).json["max_tokens"] == 9000)
     }
 
+    @Test func aRaisedMaxTokensStopsAtTheModelsCap() {
+        var request = WireRequest(model: "m", messages: [WireMessage(role: .user, parts: [.text(WireText("hi"))])])
+        request.reasoning = WireReasoningConfig(budgetTokens: 60000)
+        let fits = AnthropicMessagesCodec.buildRequest(request, options: .init(defaultMaxTokens: 16000, maxTokensCap: 64000))
+        #expect(fits.json["max_tokens"] == 64000)
+        #expect(fits.json["thinking"] == ["type": "enabled", "budget_tokens": 60000])
+        request.reasoning = WireReasoningConfig(budgetTokens: 70000)
+        let lowered = AnthropicMessagesCodec.buildRequest(request, options: .init(defaultMaxTokens: 16000, maxTokensCap: 64000))
+        #expect(lowered.json["max_tokens"] == 64000)
+        #expect(lowered.json["thinking"] == ["type": "enabled", "budget_tokens": 63999])
+        #expect(lowered.warnings.contains { $0.code == .adjusted })
+    }
+
     @Test func reasoningReplayFollowsTheTrustSet() {
         let request = WireRequest(model: "m", messages: [
             WireMessage(role: .assistant, parts: [

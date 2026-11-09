@@ -634,9 +634,13 @@ package struct ResponsesStreamEncoder: Sendable {
             object["type"] = "reasoning"
             object["summary"] = .array(current.summary)
             if !current.content.isEmpty { object["content"] = .array(current.content) }
-            if current.accepted {
+            // Bare `encrypted_content` comes back read as OpenAI's
+            // (``ResponsesReplay/system``): another system's, even a trusted
+            // one, goes sealed so its origin comes back with it.
+            let bare = current.accepted && current.signature == nil
+                && (current.origin == nil || current.origin == ResponsesReplay.system)
+            if bare {
                 if let value = current.encrypted { object["encrypted_content"] = .string(value) }
-                if current.signature != nil { dropFidelity() }
             } else if current.signature != nil || current.encrypted != nil {
                 object["encrypted_content"] = .string(ResponsesSeal.seal(ResponsesSeal.Contents(
                     origin: current.origin ?? "unknown", signature: current.signature, encrypted: current.encrypted,
@@ -677,10 +681,6 @@ package struct ResponsesStreamEncoder: Sendable {
     }
 
     private func number(_ value: Int) -> JSONValue { .number(JSONNumber(value)) }
-
-    private mutating func dropFidelity() {
-        dropOnce("fidelity", "reasoning signature from a trusted system cannot be carried by Responses")
-    }
 
     private mutating func dropOnce(_ key: String, _ message: String) {
         if warned.insert(key).inserted { warnings.append(WireWarning(.droppedContent, message)) }

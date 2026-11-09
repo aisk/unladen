@@ -230,8 +230,6 @@ package struct GeminiStreamEncoder: Sendable {
         if call.signature != nil, signature == nil {
             warnOnce("signature.call", WireWarning(.droppedContent, "tool call signature from another system cannot be carried by Gemini"))
         }
-        var call = call
-        if call.arguments.trimmingASCIIWhitespace().isEmpty { call.arguments = "{}" }
         let part = GeminiEncode.functionCall(call, signature: signature, context: context, path: "part", warnings: &warnings)
         write([part], into: &out)
     }

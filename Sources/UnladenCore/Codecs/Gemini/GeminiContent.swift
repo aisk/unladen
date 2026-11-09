@@ -474,7 +474,7 @@ enum GeminiEncode {
         if !omitsID(call.id, synthesized: call.idSynthesized) { inner["id"] = .string(call.id) }
         inner["name"] = .string(call.name)
         if !call.arguments.trimmingASCIIWhitespace().isEmpty {
-            inner["args"] = args(call.arguments, path: WirePath.key(path, "functionCall.args"), warnings: &warnings)
+            inner["args"] = toolArgumentsObject(call.arguments, path: WirePath.key(path, "functionCall.args"), warnings: &warnings)
         }
         if let itemType = call.itemType {
             warnings.append(WireWarning(.lossyConversion, "`\(itemType)` sent as a functionCall", path: path))
@@ -495,13 +495,6 @@ enum GeminiEncode {
     /// `true` if an id must not be sent to Gemini (see ``GeminiToolID``).
     static func omitsID(_ id: String, synthesized: Bool) -> Bool {
         synthesized || id.isEmpty || GeminiToolID.isSynthesized(id)
-    }
-
-    /// The `args` object for tool-call arguments. Gemini accepts only an
-    /// object: text that is not a JSON object becomes `{}` with a warning,
-    /// as for Anthropic's `input`.
-    static func args(_ arguments: String, path: String, warnings: inout [WireWarning]) -> JSONValue {
-        AnthropicEncode.toolInput(arguments, path: path, warnings: &warnings)
     }
 }
 
@@ -575,7 +568,11 @@ enum GeminiUsage {
         usage.inputTokens = try reader.int("promptTokenCount")
         let candidates = try reader.int("candidatesTokenCount")
         usage.reasoningTokens = try reader.int("thoughtsTokenCount")
-        usage.outputTokens = candidates.map { $0 + (usage.reasoningTokens ?? 0) }
+        // Zero counts are left out: thinking that ran into the limit has
+        // `thoughtsTokenCount` alone.
+        if candidates != nil || usage.reasoningTokens != nil {
+            usage.outputTokens = (candidates ?? 0) + (usage.reasoningTokens ?? 0)
+        }
         usage.cachedInputTokens = try reader.int("cachedContentTokenCount")
         usage.totalTokens = try reader.int("totalTokenCount")
         usage.extra = reader.remaining(warnings: &ignored)
@@ -587,8 +584,10 @@ enum GeminiUsage {
     static func encode(_ usage: WireUsage, include: Bool) -> JSONValue {
         var object = JSONObject()
         if let value = usage.inputTokens { object["promptTokenCount"] = .number(JSONNumber(value)) }
+        // Gemini leaves zero counts out (output that was all thinking).
         if let output = usage.outputTokens {
-            object["candidatesTokenCount"] = .number(JSONNumber(max(output - (usage.reasoningTokens ?? 0), 0)))
+            let candidates = max(output - (usage.reasoningTokens ?? 0), 0)
+            if candidates > 0 || usage.reasoningTokens == nil { object["candidatesTokenCount"] = .number(JSONNumber(candidates)) }
         }
         if let value = usage.totalTokens ?? (include ? nil : sum(usage.inputTokens, usage.outputTokens)) {
             object["totalTokenCount"] = .number(JSONNumber(value))

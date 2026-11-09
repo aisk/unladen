@@ -25,7 +25,8 @@
     "toolCalls": [],
     "finish": "MAX_TOKENS",
     "usage": {
-      "input": 15
+      "input": 15,
+      "output": 2
     }
   }
 }
