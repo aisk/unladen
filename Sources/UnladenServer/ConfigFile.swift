@@ -1,7 +1,6 @@
 // The configuration file: JSON with comments and trailing commas (JSONC),
 // decoded field by field so that unknown fields are refused and errors carry
 // a line and column.
-// See docs/server-config-design.md for the schema.
 
 #if canImport(FoundationEssentials)
 import FoundationEssentials

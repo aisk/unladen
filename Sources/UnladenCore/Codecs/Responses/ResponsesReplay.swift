@@ -34,7 +34,7 @@ enum ResponsesReplay {
 /// thinking signature or `redacted_thinking` data, a Gemini
 /// `thoughtSignature`) through a Responses client inside a reasoning item's
 /// `encrypted_content`, which Responses clients store and send back
-/// verbatim (the idea of magpie's claudeseal).
+/// verbatim.
 ///
 /// Format: the prefix ``prefix`` (`unladen-seal1:`, which also versions the
 /// format) followed by standard base64 of a compact JSON object:

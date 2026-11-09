@@ -76,7 +76,7 @@ extension WireTransforms {
     /// `service_tier`, `prompt_cache_key`, `safety_identifier`, `verbosity`),
     /// one warning each, whatever protocol the request came in. For a Profile
     /// with ``Profile/strictUnknownFields``: Mistral answers OpenCode's
-    /// `store: false` with 422 `extra_forbidden` (magpie #393).
+    /// `store: false` with 422 `extra_forbidden`.
     public static func stripOpenAIPlatformFields(_ request: inout WireRequest, warnings: inout [WireWarning]) {
         func drop<Value>(_ field: inout Value?, _ name: String) {
             guard field != nil else { return }

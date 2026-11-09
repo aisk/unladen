@@ -100,7 +100,7 @@ An account of provider `chatgpt` may hold an OpenAI API key, or none: then it si
 
 An account of provider `antigravity` signs in with Google and uses an Antigravity subscription through Google's Code Assist backend. Google does not offer this to other apps and may suspend an account it sees used outside Antigravity: use one you can afford to lose, at your own risk.
 
-`unladen check-config` checks a configuration without serving it. The gateway reloads its configuration on `SIGHUP` and when it is saved from the control panel. The control panel, in English or Chinese, also shows requests in flight, recent requests and sessions, and token usage by account, client and model; each finished request is appended to `~/.local/state/unladen/usage-YYYY-MM.jsonl` (or under `$XDG_STATE_HOME`). The design, including what later versions will add, is in [docs/server-config-design.md](docs/server-config-design.md) (Chinese).
+`unladen check-config` checks a configuration without serving it. The gateway reloads its configuration on `SIGHUP` and when it is saved from the control panel. The control panel, in English or Chinese, also shows requests in flight, recent requests and sessions, and token usage by account, client and model; each finished request is appended to `~/.local/state/unladen/usage-YYYY-MM.jsonl` (or under `$XDG_STATE_HOME`).
 
 ## Tests
 

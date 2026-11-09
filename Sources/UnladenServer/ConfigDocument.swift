@@ -1,7 +1,6 @@
 // The configuration file as the panel edits it: the file's own JSON
 // (`${VAR}` kept as written), keys written out in the file replaced by
 // placeholders, and a hash for optimistic concurrency.
-// See docs/server-config-design.md ("面板写回文件的规则").
 
 @_spi(Wire) import UnladenCore
 

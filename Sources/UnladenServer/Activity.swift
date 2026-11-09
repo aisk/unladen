@@ -2,7 +2,6 @@
 // attempt, sessions, and token usage by account, client, program and model. Usage is
 // appended to a log of one JSON object per line and read back at start
 // (UsageLog); the rest lives in memory.
-// See docs/server-config-design.md ("用量与活动").
 
 #if canImport(FoundationEssentials)
 import FoundationEssentials
@@ -80,7 +79,7 @@ struct RequestOrigin: Sendable, Hashable {
     var subagent: String?
 
     /// Headers clients name their session in, in the order they are read
-    /// (Claude Code, Codex, OpenCode and others; magpie reads the same).
+    /// (Claude Code, Codex, OpenCode and others).
     static let sessionHeaders = [
         "x-claude-code-session-id", "session_id", "session-id", "x-session-id", "x-opencode-session",
         "x-session-affinity", "x-conversation-id",

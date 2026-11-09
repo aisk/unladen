@@ -1,7 +1,7 @@
 // What one gateway instance serves: upstream providers and their key pools,
 // the menu from client model names to upstream models, and the keys clients
 // present. Built from the configuration file (ConfigFile.swift), command
-// line flags and environment variables; see docs/server-config-design.md.
+// line flags and environment variables.
 
 import NIOConcurrencyHelpers
 @_spi(Wire) import UnladenCore

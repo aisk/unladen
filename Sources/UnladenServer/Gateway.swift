@@ -135,7 +135,7 @@ struct Gateway: Sendable {
         let result: Result<AttemptOutcome, any Error>
         if stream, clientProtocol.toleratesComments, let hold = heldStreams.headersAfter {
             // A stream still without content after `hold` gets its 200 and
-            // SSE comments while the attempts go on (magpie's keepHeldAfter):
+            // SSE comments while the attempts go on:
             // a comment is no event, so whichever candidate answers goes on
             // in the same response.
             guard let done = await settled.wait(upTo: hold) else {

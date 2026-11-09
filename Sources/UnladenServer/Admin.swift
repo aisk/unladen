@@ -1,6 +1,5 @@
 // The control panel's backend: the configuration file read and saved as a
 // document, reloads (the panel's and SIGHUP's), and the status of accounts.
-// See docs/server-config-design.md ("控制面板").
 
 #if canImport(FoundationEssentials)
 import FoundationEssentials

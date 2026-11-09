@@ -4,7 +4,7 @@
 // fallback loop only tries candidates in that order. A `RoutingStrategy`
 // orders them from the request context and each candidate's health. The
 // first version routes each name to one model; its provider's key pool
-// supplies the candidates (docs/server-config-design.md).
+// supplies the candidates.
 
 import NIOConcurrencyHelpers
 @_spi(Wire) import UnladenCore
@@ -44,7 +44,7 @@ struct Candidate: Sendable, Hashable {
 }
 
 /// What a failure is recorded against: the narrowest thing it says is
-/// wrong (docs/server-config-design.md, "健康状态").
+/// wrong.
 enum HealthScope: Hashable, Sendable {
     /// An upstream key: refused (401/402/403) or rate limited (429).
     case key(provider: String, keyName: String)
@@ -248,7 +248,7 @@ struct PlanningError: Error, Sendable {
 
 /// Builds a request's candidate list in route order.
 ///
-/// Name resolution (docs/server-config-design.md): the client's model
+/// Name resolution: the client's model
 /// name (without Gemini's `models/`) is looked up as a route name, exact
 /// then patterns; else, as a `provider/model` reference of a known
 /// provider, it is passed through; else the `*` route serves it. Each
