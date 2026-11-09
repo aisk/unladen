@@ -654,6 +654,19 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         #expect(sessions[0] != nil && sessions[0] == sessions[1])
     }
 
+    @Test func kiloListsItsModelsWithoutAnAccount() async throws {
+        let upstream = MockUpstream { _ in reply(#"{"data": [{"id": "kilo-auto/free"}]}"#) }
+        let routes = [Route(name: "kilo-*", targets: [RouteTarget(model: "kilo/$model")])]
+        try await makeApp(makeGateway(upstream, model: nil, routes: routes, keys: [:])).test(.router) { client in
+            let response = try await client.executeRequest(uri: "/v1/models", method: .get, headers: [:], body: nil)
+            let ids = json(response.body)["data"]?.arrayValue?.compactMap { $0["id"]?.stringValue }
+            #expect(ids == ["kilo-auto/free"])
+        }
+        let hit = try #require(upstream.requests.first)
+        #expect(hit.path == "/api/openrouter/models")
+        #expect(hit.header("authorization") == nil)
+    }
+
     @Test func otherProvidersGetNoSessionHeader() async throws {
         let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
         try await makeApp(makeGateway(upstream)).test(.router) { client in

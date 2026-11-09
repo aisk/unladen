@@ -158,9 +158,9 @@ enum CodeAssist {
         request.headerFields[.authorization] = "Bearer \(token)"
         request.headerFields[.userAgent] = userAgent
         for (name, value) in headers { if let field = HTTPField.Name(name) { request.headerFields[field] = value } }
-        let request2 = request
-        let (status, bytes) = try await Gateway.within(timeout) {
-            let response = try await transport.send(request2, body: body.encoded())
+        let sent = request
+        let (status, bytes) = try await within(timeout) {
+            let response = try await transport.send(sent, body: body.encoded())
             return (response.status.code, try await response.body.collect(upTo: 8 << 20))
         }
         let reply = (try? JSONValue(parsing: bytes)) ?? .null

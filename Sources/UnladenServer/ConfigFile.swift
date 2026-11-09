@@ -273,14 +273,13 @@ private struct Field {
     func mapping(allowed: Set<String>? = nil, reserved: Set<String> = []) throws(ConfigError) -> [(String, Field)] {
         guard let object = value.objectValue else { throw error("expected an object") }
         var entries: [(String, Field)] = []
-        var seen: Set<String> = []
+        // Keys defined twice are refused by the parser (`parseJSON`).
         for (key, value) in object {
             let field = child(key, value)
             if reserved.contains(key) { throw field.error("not supported yet") }
             if let allowed, !allowed.contains(key) {
                 throw field.error("unknown field (expected one of: \(allowed.sorted().joined(separator: ", ")))")
             }
-            guard seen.insert(key).inserted else { throw field.error("defined twice") }
             entries.append((key, field))
         }
         return entries

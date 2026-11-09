@@ -173,15 +173,17 @@ final class QuotaReader: Sendable {
                     quota.error = "\(error)"
                 }
             case .glm(let host, let coding):
+                // Off the coding endpoints, a key without a plan shows
+                // nothing; one that cannot be read still says why.
                 do {
                     let (plan, windows) = try await GLMQuota.read(host: host, key: key.secret, transport: gateway.transport)
                     quota.plan = plan
                     quota.windows = windows
-                    if windows.isEmpty { quota.error = "This key has no Coding Plan." }
+                    if windows.isEmpty, coding { quota.error = "This key has no Coding Plan." }
+                } catch is QuotaReader.Failure where !coding {
                 } catch {
                     quota.error = "\(error)"
                 }
-                if quota.windows.isEmpty, !coding { quota.error = nil }
             case .kimiCode(let base):
                 do {
                     let (status, reply) = try await QuotaReader.get(base + "/usages", bearer: key.secret, transport: gateway.transport)
@@ -195,24 +197,25 @@ final class QuotaReader: Sendable {
                         "https://\(host)/v1/token_plan/remains", bearer: key.secret, transport: gateway.transport,
                     )
                     quota.windows = try MiniMaxQuota.parse(reply, status: status)
-                } catch {}
+                } catch is QuotaReader.Failure {
+                    // A pay-as-you-go key, told it has no plan, shows nothing.
+                } catch {
+                    quota.error = "\(error)"
+                }
             }
             return quota
         }
     }
 
-    /// `GET` of an `https://` address, with `bearer` as the key or, when
-    /// `nil`, `key` bare: the reply's status and its JSON.
+    /// `GET` of an address, with `bearer` as the key or, when `nil`, `key`
+    /// bare: the reply's status and its JSON.
     static func get(_ address: String, bearer: String? = nil, key: String? = nil, transport: any HTTPTransport) async throws -> (Int, JSONValue) {
-        let host = host(of: address)
-        let path = address.split(separator: "://", maxSplits: 1).last.flatMap { rest in
-            rest.firstIndex(of: "/").map { String(rest[$0...]) }
-        } ?? "/"
-        var request = HTTPRequest(method: .get, scheme: "https", authority: host, path: path)
+        guard let url = BaseURL(address) else { throw Failure(description: "not an address: \(address)") }
+        var request = HTTPRequest(method: .get, scheme: url.scheme, authority: url.authority, path: url.path.isEmpty ? "/" : url.path)
         request.headerFields[.authorization] = bearer.map { "Bearer " + $0 } ?? key
         request.headerFields[.accept] = "application/json"
         let sent = request
-        let (status, bytes) = try await Gateway.within(timeout) {
+        let (status, bytes) = try await within(timeout) {
             let response = try await transport.send(sent, body: nil)
             return (response.status.code, try await response.body.collect(upTo: 1 << 20))
         }
@@ -481,10 +484,6 @@ enum MiniMaxQuota {
         guard base["status_code"]?.numberValue?.int ?? 0 == 0 else {
             throw QuotaReader.Failure(description: base["status_msg"]?.stringValue ?? "refused")
         }
-        func milliseconds(_ value: JSONValue?) -> Int64? {
-            guard let n = value?.numberValue?.double, n > 0 else { return nil }
-            return Int64(n < 1e12 ? n * 1000 : n)
-        }
         var windows: [QuotaWindow] = []
         for bucket in reply["model_remains"]?.arrayValue ?? [] {
             let model = bucket["model_name"]?.stringValue?.filter { $0 != " " } ?? ""
@@ -493,8 +492,8 @@ enum MiniMaxQuota {
                 let state = bucket[prefix + "_status"]?.numberValue?.int ?? 0
                 let left = QuotaReader.number(bucket[prefix + "_remaining_percent"])
                 if state == 3 || left == nil && state != 2 { continue }
-                let start = milliseconds(bucket[weekly ? "weekly_start_time" : "start_time"])
-                let end = milliseconds(bucket[weekly ? "weekly_end_time" : "end_time"])
+                let start = QuotaReader.milliseconds(bucket[weekly ? "weekly_start_time" : "start_time"])
+                let end = QuotaReader.milliseconds(bucket[weekly ? "weekly_end_time" : "end_time"])
                 var window = QuotaWindow(
                     name: weekly ? "7 days" : start.flatMap { s in end.map { QuotaReader.name(minutes: Int(($0 - s) / 60000)) } } ?? "Allowance",
                     used: state == 2 ? 100 : min(max(100 - (left ?? 0), 0), 100), resetsAt: end,

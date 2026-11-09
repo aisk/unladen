@@ -63,6 +63,13 @@ struct GatewayConfiguration: Sendable {
     /// Opens the control panel and its API (`panel.token`); without
     /// it they answer 404.
     var adminToken: String?
+
+    /// Whether requests to `provider` at `endpoint` go with no key: an
+    /// endpoint without authentication, or a provider serving some models
+    /// to anyone when no account gives it a key.
+    func goesWithoutKey(_ provider: String, at endpoint: Endpoint) -> Bool {
+        endpoint.auth == .none || (keyPools[provider]?.keys.isEmpty ?? true) && registry[provider]?.servesWithoutKey == true
+    }
 }
 
 // MARK: - Key pools

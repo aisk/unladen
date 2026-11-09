@@ -429,6 +429,8 @@ final class Activity: Sendable {
         var sessions: [String: SessionSummary] = [:]
         var buckets: [UsageBucket.Key: UsageBucket] = [:]
         var logError: String?
+        /// The day usage and sessions were last aged out on.
+        var agedOn: Int?
     }
 
     private let state = NIOLockedValueBox(State())
@@ -485,6 +487,7 @@ final class Activity: Sendable {
             Self.count(record, in: &state.buckets)
             Self.add(record, to: &state.sessions)
             Self.trimSessions(&state.sessions)
+            Self.age(&state, now: record.started)
             return record
         }
         guard let record, let log else { return record }
@@ -517,6 +520,18 @@ final class Activity: Sendable {
         )
         session.add(record)
         sessions[id] = session
+    }
+
+    /// Once a day, drops usage older than ``usageDays`` and sessions idle
+    /// longer than ``sessionDays``, as a restart would.
+    private static func age(_ state: inout State, now: Int64) {
+        let today = LocalDay(milliseconds: now).key
+        guard state.agedOn != today else { return }
+        state.agedOn = today
+        let first = LocalDay(milliseconds: now - Int64(usageDays) * 86_400_000).key
+        state.buckets = state.buckets.filter { $0.key.day >= first }
+        let since = now - Int64(sessionDays) * 86_400_000
+        state.sessions = state.sessions.filter { $0.value.last >= since }
     }
 
     private static func trimSessions(_ sessions: inout [String: SessionSummary]) {

@@ -87,8 +87,10 @@ private func serve(
     do {
         let buffer = try await request.collectBody(upTo: configuration.maxRequestBytes)
         body = Array(buffer.readableBytesView)
-    } catch {
+    } catch is NIOTooManyBytesError {
         return Gateway.errorResponse(clientProtocol, status: 413, message: "request body larger than \(configuration.maxRequestBytes) bytes")
+    } catch {
+        return Gateway.errorResponse(clientProtocol, status: 400, message: "cannot read the request body: \(error)")
     }
     let monitor = await DisconnectMonitor.install(on: context.channel)
     let logger = context.logger

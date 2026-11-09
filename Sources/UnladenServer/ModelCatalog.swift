@@ -56,8 +56,8 @@ final class ModelCatalog: Sendable {
             guard let target = try? configuration.registry.resolve(provider + "/models", preferring: endpoint.apiProtocol),
                   target.endpoint == endpoint
             else { continue }
-            // `nil`: no key (an endpoint without authentication).
-            let credentials: [UpstreamKey?] = endpoint.auth == .none ? [nil] : keys.map(Optional.some)
+            // `nil`: no key.
+            let credentials: [UpstreamKey?] = configuration.goesWithoutKey(provider, at: endpoint) ? [nil] : keys.map(Optional.some)
             for key in credentials {
                 var apiKey = key?.secret
                 if let key, key.signIn != nil {
@@ -66,7 +66,7 @@ final class ModelCatalog: Sendable {
                 }
                 let transport = gateway.upstreamTransport(signIn: key?.signIn, provider: provider, account: key?.name ?? "")
                 let call = UpstreamCall(target: target, apiKey: apiKey, transport: transport)
-                if let names = try? await Gateway.within(Self.timeout, { try await call.listModels() }), !names.isEmpty {
+                if let names = try? await within(Self.timeout, { try await call.listModels() }), !names.isEmpty {
                     return names
                 }
             }

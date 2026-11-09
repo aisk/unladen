@@ -27,8 +27,12 @@ struct Candidate: Sendable, Hashable {
     var upstreamProtocol: WireProtocol { target.endpoint.apiProtocol.wire }
 
     /// The upstream address this candidate calls.
-    var endpointID: String {
-        "\(target.provider) \(target.endpoint.apiProtocol.rawValue) \(target.endpoint.baseURL)"
+    var endpointID: String { Self.endpointID(provider: target.provider, target.endpoint) }
+
+    /// How an upstream address is named in ``HealthScope/endpoint(_:)``:
+    /// the provider first, then a space.
+    static func endpointID(provider: String, _ endpoint: Endpoint) -> String {
+        "\(provider) \(endpoint.apiProtocol.rawValue) \(endpoint.baseURL)"
     }
 
     /// Its key, when it has one.
@@ -295,16 +299,12 @@ struct CandidatePlanner: Sendable {
                 unresolved.append("\(reference): \(error)")
                 continue
             }
-            if target.endpoint.auth == .none {
+            if configuration.goesWithoutKey(target.provider, at: target.endpoint) {
                 candidates.append(Candidate(reference: reference, target: target, apiKey: nil, keyName: ""))
                 continue
             }
             let pool = configuration.keyPools[target.provider]
             let keys = pool?.keys ?? []
-            if keys.isEmpty, configuration.registry[target.provider]?.servesWithoutKey == true {
-                candidates.append(Candidate(reference: reference, target: target, apiKey: nil, keyName: ""))
-                continue
-            }
             if keys.isEmpty { missingKeys.append(target.provider) }
             for key in keys {
                 candidates.append(Candidate(

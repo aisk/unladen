@@ -263,7 +263,7 @@ final class SignIns: Sendable {
             } catch let error as SignInError {
                 throw error
             } catch {
-                throw error as? SignInError ?? SignInError(message: "\(key): token refresh failed: \(error)")
+                throw SignInError(message: "\(key): token refresh failed: \(error)")
             }
         }
     }
@@ -517,12 +517,12 @@ enum OAuthForm {
         let status: Int
         let bytes: [UInt8]
         do {
-            let request = request
-            (status, bytes) = try await Gateway.within(timeout) {
-                let response = try await transport.send(request, body: Array(FormEncoding.encode(form).utf8))
+            let sent = request
+            (status, bytes) = try await within(timeout) {
+                let response = try await transport.send(sent, body: Array(FormEncoding.encode(form).utf8))
                 return (response.status.code, try await response.body.collect(upTo: 1 << 20))
             }
-        } catch is Gateway.HeadTimeout {
+        } catch is TimedOut {
             throw SignInError(message: "\(who)'s sign-in did not answer within \(timeout)")
         } catch {
             throw SignInError(message: "cannot reach \(who)'s sign-in: \(error)")

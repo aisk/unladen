@@ -219,6 +219,9 @@ const TRANSLATIONS = {
       'Save to put it in force.': '保存后生效。',
       'Applied': '已应用',
       'Save to write the file.': '保存后写入文件。',
+      'the configuration is larger than 4 MiB': '配置超过 4 MiB',
+      'Input tokens': '输入 token',
+      'Output tokens': '输出 token',
     },
     // Text built from parts: a pattern, and the translation with the
     // parts it captured ($1…), themselves translated when they can be.
@@ -240,6 +243,14 @@ const TRANSLATIONS = {
       [/^Forget the sign-in of (.+)\?$/, '忘记 $1 的登录？'],
       [/^Not valid JSON: (.+)$/, 'JSON 无效：$1'],
       [/^speaks like (.+)$/, '协议模板：$1'],
+      [/^\((\d+) failed\)$/, '（$1 次失败）'],
+      [/^(\d+) \((\d+) failed\)$/, '$1（$2 次失败）'],
+      [/^(\d+) tries$/, '$1 次尝试'],
+      [/^(.+), streamed$/, '$1，流式'],
+      [/^\(now (.+)\)$/, '（当前：$1）'],
+      [/^(.+) is a provider: give this account another name\.$/, '$1 是一个 provider：请给这个账号换个名字。'],
+      [/^(\S+) endpoint unreachable$/, '$1 端点无法连接'],
+      [/^(.+) failing$/, '$1 连续失败'],
     ],
   },
 };

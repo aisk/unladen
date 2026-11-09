@@ -62,9 +62,6 @@ extension Gateway {
         }
     }
 
-    /// No content within the head timeout.
-    struct HeadTimeout: Error {}
-
     /// Tries `candidates` in order until one answers: a complete reply, or
     /// a stream that reached its first content. Anything that goes wrong
     /// before that (an error status, an error event, a stream that ends
@@ -101,11 +98,14 @@ extension Gateway {
         // with a refreshed one.
         var rejected: [String: String] = [:]
         while let candidate = remaining.popFirst() {
-            guard !unreachable.contains(candidate.endpointID) else { continue }
             try Task.checkCancellation()
             let began = ContinuousClock.now
             var outcome = "skipped"
             defer { tracker.tried(candidate, outcome: outcome, since: began) }
+            if unreachable.contains(candidate.endpointID) {
+                outcome = "skipped: endpoint unreachable"
+                continue
+            }
             var apiKey = candidate.apiKey
             if candidate.signIn != nil {
                 do {
@@ -114,7 +114,10 @@ extension Gateway {
                         rejected: rejected[SignIns.key(candidate.target.provider, candidate.keyName)],
                     )
                 } catch {
-                    if Task.isCancelled { throw CancellationError() }
+                    if Task.isCancelled {
+                        outcome = "cancelled"
+                        throw CancellationError()
+                    }
                     // Not signed in stays so until someone signs in; a
                     // failed refresh may pass.
                     if !error.needsSignIn, let scope = candidate.keyScope {
@@ -151,7 +154,7 @@ extension Gateway {
                 }
             }
             do {
-                let (reply, primed) = try await Self.within(headTimeout) { () async throws -> (UpstreamReply, PrimeOutcome?) in
+                let (reply, primed) = try await within(headTimeout) { () async throws -> (UpstreamReply, PrimeOutcome?) in
                     let reply = try await call.send(prepared, stream: stream)
                     guard case .events(let events) = reply.body else { return (reply, nil) }
                     return (reply, try await Self.prime(events))
@@ -176,7 +179,7 @@ extension Gateway {
                     candidate: candidate, body: body, requestWarnings: requestWarnings,
                     responseWarnings: Array(reply.warnings.dropFirst(prepared.warnings.count)),
                 ))
-            } catch is HeadTimeout {
+            } catch is TimedOut {
                 // Slow but alive: no cooldown.
                 let limit = headTimeout.map { " within \($0)" } ?? ""
                 last = .gateway(status: 504, message: "\(candidate.reference) sent no content\(limit)", candidate: candidate)
@@ -286,21 +289,27 @@ extension Gateway {
         }
         return .failed("the stream ended without content")
     }
+}
 
-    /// `operation`, or ``HeadTimeout`` when it takes longer than `limit`
-    /// (the operation is then cancelled).
-    static func within<T: Sendable>(_ limit: Duration?, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
-        guard let limit else { return try await operation() }
-        return try await withThrowingTaskGroup(of: T?.self) { group in
-            group.addTask { try await operation() }
-            group.addTask {
-                try await Task.sleep(for: limit)
-                return nil
-            }
-            defer { group.cancelAll() }
-            guard let first = try await group.next(), let value = first else { throw HeadTimeout() }
-            return value
+/// An operation that took longer than its limit.
+struct TimedOut: Error, CustomStringConvertible {
+    var limit: Duration
+    var description: String { "no answer within \(limit)" }
+}
+
+/// `operation`, or ``TimedOut`` when it takes longer than `limit` (the
+/// operation is then cancelled).
+func within<T: Sendable>(_ limit: Duration?, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    guard let limit else { return try await operation() }
+    return try await withThrowingTaskGroup(of: T?.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(for: limit)
+            return nil
         }
+        defer { group.cancelAll() }
+        guard let first = try await group.next(), let value = first else { throw TimedOut(limit: limit) }
+        return value
     }
 }
 

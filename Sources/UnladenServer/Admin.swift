@@ -192,7 +192,7 @@ enum AdminStatus {
                 }
             }
             for endpoint in provider.endpoints {
-                let scope = HealthScope.endpoint("\(id) \(endpoint.apiProtocol.rawValue) \(endpoint.baseURL)")
+                let scope = HealthScope.endpoint(Candidate.endpointID(provider: id, endpoint))
                 guard health.isCooling(scope) else { continue }
                 cooling.append([
                     "provider": .string(id),
@@ -351,8 +351,13 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
     router.put("/admin/api/config") { request, _ in
         if let denied = adminDenied(request, gateway: gateway) { return denied }
         var request = request
-        guard let body = try? await request.collectBody(upTo: 4 << 20),
-              let json = try? JSONValue(parsing: Array(body.readableBytesView)),
+        let body: ByteBuffer
+        do {
+            body = try await request.collectBody(upTo: 4 << 20)
+        } catch is NIOTooManyBytesError {
+            return adminError(413, "the configuration is larger than 4 MiB")
+        }
+        guard let json = try? JSONValue(parsing: Array(body.readableBytesView)),
               let document = json["document"], document.objectValue != nil,
               let hash = json["hash"]?.stringValue
         else { return adminError(400, "expected {\"document\": {…}, \"hash\": \"…\"}") }

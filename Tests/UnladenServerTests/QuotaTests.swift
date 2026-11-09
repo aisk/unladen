@@ -185,4 +185,13 @@ import Testing
         let gateway = Gateway(configuration: loaded.gateway, transport: upstream.transport)
         #expect(await gateway.quotas.read(gateway: gateway, refresh: false).isEmpty)
     }
+
+    @Test func aFailedReadSaysWhy() async throws {
+        struct Down: Error, CustomStringConvertible { var description: String { "connection refused" } }
+        let loaded = try ConfigFile.parse(#"{"accounts": {"minimax": "mk"}}"#, file: "c.jsonc") { _ in nil }
+        let upstream = MockUpstream { _ in throw Down() }
+        let gateway = Gateway(configuration: loaded.gateway, transport: upstream.transport)
+        let quotas = await gateway.quotas.read(gateway: gateway, refresh: false)
+        #expect(quotas.map(\.error) == ["connection refused"])
+    }
 }
