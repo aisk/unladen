@@ -324,47 +324,21 @@
     /// Emits complete parts as blocks (for items that never streamed).
     private mutating func emitWhole(_ parts: [WirePart], into events: inout [WireEvent]) {
         for part in parts {
+            let kind: String
             switch part {
-            case .text(var text):
-                let content = text.text
-                text.text = ""
-                let block = newBlock("text")
-                events.append(.textStart(id: block, text: text))
-                if !content.isEmpty { events.append(.textDelta(id: block, delta: content)) }
-                events.append(.textEnd(id: block, text: nil))
-            case .refusal(var refusal):
-                let content = refusal.text
-                refusal.text = ""
-                let block = newBlock("refusal")
-                events.append(.refusalStart(id: block, refusal: refusal))
-                if !content.isEmpty { events.append(.refusalDelta(id: block, delta: content)) }
-                events.append(.refusalEnd(id: block, refusal: nil))
-            case .reasoning(let reasoning):
-                var start = reasoning
-                start.text = ""
-                start.encrypted = nil
-                start.signature = nil
-                start.extra = [:]
-                let block = newBlock("reasoning")
-                events.append(.reasoningStart(id: block, reasoning: start))
-                if !reasoning.text.isEmpty { events.append(.reasoningDelta(id: block, delta: reasoning.text)) }
-                let hasLate = reasoning.encrypted != nil || !reasoning.extra.isEmpty
-                events.append(.reasoningEnd(id: block, reasoning: hasLate
-                    ? WireReasoning(text: "", encrypted: reasoning.encrypted, extra: reasoning.extra) : nil))
-            case .toolCall(let call):
+            case .text: kind = "text"
+            case .refusal: kind = "refusal"
+            case .reasoning: kind = "reasoning"
+            case .toolCall:
+                kind = "tool"
                 sawToolCalls = true
-                var start = call
-                start.arguments = ""
-                let block = newBlock("tool")
-                events.append(.toolInputStart(id: block, call: start))
-                if !call.arguments.isEmpty { events.append(.toolInputDelta(id: block, delta: call.arguments)) }
-                events.append(.toolInputEnd(id: block))
-                events.append(.toolCall(id: block, call: call))
             case .opaque(let opaque):
                 events.append(.opaque(opaque))
+                continue
             case .image, .file, .toolResult:
-                break
+                continue
             }
+            events += WireEvents.of(part, block: newBlock(kind), lateReasoningData: true, streamingToolInput: true) ?? []
         }
     }
 
