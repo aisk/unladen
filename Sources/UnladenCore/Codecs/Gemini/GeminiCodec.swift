@@ -455,8 +455,7 @@ extension GeminiCodec {
             if leading, message.role == .system || message.role == .developer {
                 systemForm = systemParts == nil ? message.contentForm : .parts
                 systemParts = (systemParts ?? []) + message.parts
-                var unused = JSONObject()
-                appendExtra(message.extra, to: &unused, include: false, path: path, warnings: &warnings)
+                discardExtra(message.extra, path: path, warnings: &warnings)
                 systemPatch = WirePatch.combined(systemPatch, message.patch)
                 continue
             }
@@ -520,7 +519,7 @@ extension GeminiCodec {
         if case .object(let partial) = value {
             appendExtra(partial, to: &object, include: include, path: key, warnings: &warnings)
         } else {
-            appendExtra([key: value], to: &object, include: false, path: "", warnings: &warnings)
+            discardExtra([key: value], path: "", warnings: &warnings)
         }
     }
 
@@ -621,8 +620,7 @@ extension GeminiCodec {
                 warnings.append(WireWarning(.droppedField, "response format `\(format.kind.rawValue)` cannot be carried", path: "response_format"))
             }
             if !format.extra.isEmpty {
-                var unused = JSONObject()
-                appendExtra(format.extra, to: &unused, include: false, path: "response_format", warnings: &warnings)
+                discardExtra(format.extra, path: "response_format", warnings: &warnings)
             }
         }
         if let value = request.candidateCount { config["candidateCount"] = .number(JSONNumber(value)) }
@@ -715,8 +713,7 @@ private struct GeminiTurns {
         }
         // Bags of another protocol's message have no place; warn once here.
         if !context.include {
-            var unused = JSONObject()
-            appendExtra(message.extra, to: &unused, include: false, path: path, warnings: &warnings)
+            discardExtra(message.extra, path: path, warnings: &warnings)
         }
         let role: String
         switch message.role {
@@ -987,8 +984,7 @@ enum GeminiChunk {
         if include {
             for (key, value) in topLevel { object[key] = value }
         } else {
-            var unused = JSONObject()
-            appendExtra(topLevel, to: &unused, include: false, path: "", warnings: &warnings)
+            discardExtra(topLevel, path: "", warnings: &warnings)
         }
         if let usage {
             object["usageMetadata"] = GeminiUsage.encode(usage, include: include)

@@ -70,8 +70,7 @@ package struct ChatCompletionsStreamEncoder: Sendable {
             sameProtocol = metadata.source == .chatCompletions
             chunkExtra = metadata.extra
             if !sameProtocol, !metadata.extra.isEmpty {
-                var ignored = JSONObject()
-                appendExtra(metadata.extra, to: &ignored, include: false, path: "", warnings: &warnings)
+                discardExtra(metadata.extra, path: "", warnings: &warnings)
             }
 
         case .textStart(let block, let text) where sameProtocol:
@@ -282,8 +281,7 @@ package struct ChatCompletionsStreamEncoder: Sendable {
 
     /// Part bags have no place in Chat stream deltas.
     private mutating func dropExtra(_ extra: JSONObject) {
-        var ignored = JSONObject()
-        appendExtra(extra, to: &ignored, include: false, path: "", warnings: &warnings)
+        discardExtra(extra, path: "", warnings: &warnings)
     }
 
     private mutating func dropFidelity(_ block: String) {

@@ -554,33 +554,6 @@
     }
 
     static func streamError(_ value: JSONValue) -> WireStreamError {
-        switch value {
-        case .string(let message):
-            return WireStreamError(message: message, raw: value)
-        case .object(let object):
-            let code: String? = switch object["code"] {
-            case .string(let text)?: text
-            case .number(let number)?: number.literal
-            default: nil
-            }
-            return WireStreamError(
-                message: object["message"]?.stringValue ?? "",
-                type: object["type"]?.stringValue,
-                code: code,
-                raw: value,
-            )
-        default:
-            return WireStreamError(message: value.description, raw: value)
-        }
-    }
-}
-
-extension String {
-    func trimmingASCIIWhitespace() -> Substring {
-        let isSpace: (Character) -> Bool = { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" }
-        guard let first = firstIndex(where: { !isSpace($0) }), let last = lastIndex(where: { !isSpace($0) }) else {
-            return ""
-        }
-        return self[first...last]
+        WireStreamError(json: value)
     }
 }

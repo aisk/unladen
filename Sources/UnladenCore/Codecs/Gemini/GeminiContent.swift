@@ -257,15 +257,7 @@ enum GeminiDecode {
 
     /// An in-stream `{"error":{…}}` payload.
     static func streamError(_ value: JSONValue?) -> WireStreamError {
-        guard case .object(let object)? = value else {
-            return WireStreamError(message: value?.description ?? "unknown error", raw: value)
-        }
-        return WireStreamError(
-            message: object["message"]?.stringValue ?? "",
-            type: object["status"]?.stringValue,
-            code: object["code"]?.numberValue?.literal,
-            raw: value,
-        )
+        WireStreamError(json: value, typeKey: "status")
     }
 }
 
@@ -323,7 +315,7 @@ enum GeminiEncode {
         case .refusal(let refusal):
             warnings.append(WireWarning(.lossyConversion, "refusal sent as a text part", path: path))
             object["text"] = .string(refusal.text)
-            appendExtra(refusal.extra, to: &object, include: false, path: path, warnings: &warnings)
+            discardExtra(refusal.extra, path: path, warnings: &warnings)
             applyPatch(refusal.patch, to: &object, target: .gemini)
 
         case .reasoning(let reasoning):

@@ -867,9 +867,8 @@ enum ChatEncode {
             if reasoning.contains(where: \.hasSignedData) {
                 warnings.append(WireWarning(.droppedContent, "reasoning signature/encrypted data cannot be carried by Chat", path: path))
             }
-            var unused = JSONObject()
             for item in reasoning {
-                appendExtra(item.extra, to: &unused, include: false, path: path, warnings: &warnings)
+                discardExtra(item.extra, path: path, warnings: &warnings)
             }
         } else if !reasoning.isEmpty {
             // Same protocol: parts decoded from `reasoning_details` go back
@@ -897,8 +896,7 @@ enum ChatEncode {
             }
             for item in plain {
                 // Chat reasoning is a plain string: an object's bag has no place.
-                var unused = JSONObject()
-                appendExtra(item.extra, to: &unused, include: false, path: keyPath, warnings: &warnings)
+                discardExtra(item.extra, path: keyPath, warnings: &warnings)
             }
             if !entries.isEmpty { object[ChatReasoningDetails.key] = .array(entries) }
         }

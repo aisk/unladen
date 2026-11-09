@@ -75,13 +75,7 @@ enum AnthropicDecode {
     /// The bag of `reader`'s unconsumed keys, warning only for keys that are
     /// neither in ``quietBagKeys`` nor in `quiet`.
     static func bag(_ reader: FieldReader, quiet: Set<String> = [], warnings: inout [WireWarning]) -> JSONObject {
-        var local: [WireWarning] = []
-        let bag = reader.remaining(warnings: &local)
-        for warning in local {
-            let isQuiet = (quietBagKeys.union(quiet)).contains { warning.path == reader.path($0) }
-            if !isQuiet { warnings.append(warning) }
-        }
-        return bag
+        reader.remaining(quiet: quietBagKeys.union(quiet), warnings: &warnings)
     }
 
     /// Anthropic block types the codec keeps opaque on purpose (server tools,
@@ -234,14 +228,7 @@ enum AnthropicDecode {
 
     /// Unknown in-stream `{"type":"error","error":{…}}` payloads.
     static func streamError(_ value: JSONValue?) -> WireStreamError {
-        guard case .object(let object)? = value else {
-            return WireStreamError(message: value?.description ?? "unknown error", raw: value)
-        }
-        return WireStreamError(
-            message: object["message"]?.stringValue ?? "",
-            type: object["type"]?.stringValue,
-            raw: value,
-        )
+        WireStreamError(json: value)
     }
 }
 
@@ -346,7 +333,7 @@ enum AnthropicEncode {
             warnings.append(WireWarning(.lossyConversion, "refusal sent as a text block", path: path))
             object["type"] = "text"
             object["text"] = .string(refusal.text)
-            appendExtra(refusal.extra, to: &object, include: false, path: path, warnings: &warnings)
+            discardExtra(refusal.extra, path: path, warnings: &warnings)
             applyPatch(refusal.patch, to: &object, target: .anthropicMessages)
             return AnthropicBlock(json: .object(object))
 

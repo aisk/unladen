@@ -72,8 +72,7 @@ package struct GeminiStreamEncoder: Sendable {
             if sameProtocol {
                 extra = metadata.extra
             } else if !metadata.extra.isEmpty {
-                var ignored = JSONObject()
-                appendExtra(metadata.extra, to: &ignored, include: false, path: "", warnings: &warnings)
+                discardExtra(metadata.extra, path: "", warnings: &warnings)
             }
 
         case .ping:
@@ -103,8 +102,7 @@ package struct GeminiStreamEncoder: Sendable {
         case .refusalStart(let block, let refusal):
             warnOnce("refusal", WireWarning(.lossyConversion, "refusal sent as text"))
             if !refusal.extra.isEmpty {
-                var ignored = JSONObject()
-                appendExtra(refusal.extra, to: &ignored, include: false, path: "part", warnings: &warnings)
+                discardExtra(refusal.extra, path: "part", warnings: &warnings)
             }
             blocks[block] = Live(thought: false, accepted: false, startExtra: [:])
 
@@ -215,8 +213,7 @@ package struct GeminiStreamEncoder: Sendable {
             if let value = self.signature(signature, accepted: accepted, what: live.thought ? "reasoning" : "text") { late = value }
         }
         if !extra.isEmpty {
-            var ignored = JSONObject()
-            appendExtra(extra, to: &ignored, include: false, path: "part", warnings: &warnings)
+            discardExtra(extra, path: "part", warnings: &warnings)
         }
         let unwritten = !live.wroteStart && (live.startSignature != nil || !live.startExtra.isEmpty)
         if late != nil || unwritten {

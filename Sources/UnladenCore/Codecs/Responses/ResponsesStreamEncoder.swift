@@ -129,8 +129,7 @@ package struct ResponsesStreamEncoder: Sendable {
             if let value = metadata.created { created = value }
             startExtra = metadata.extra
             if !sameProtocol, !metadata.extra.isEmpty {
-                var ignored = JSONObject()
-                appendExtra(metadata.extra, to: &ignored, include: false, path: "", warnings: &warnings)
+                discardExtra(metadata.extra, path: "", warnings: &warnings)
             }
             ensureStarted(into: &out)
 
@@ -256,8 +255,7 @@ package struct ResponsesStreamEncoder: Sendable {
         var overlay = finish.extra
         overlay["error"] = nil
         if !sameProtocol, !overlay.isEmpty {
-            var ignored = JSONObject()
-            appendExtra(overlay, to: &ignored, include: false, path: "", warnings: &warnings)
+            discardExtra(overlay, path: "", warnings: &warnings)
         }
         let response = responseObject(
             status: status, error: error, incompleteReason: incomplete, usage: finish.usage,

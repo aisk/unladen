@@ -277,7 +277,7 @@
     private mutating func itemDone(_ index: Int, _ item: JSONObject, into events: inout [WireEvent]) throws(WireDecodingError) {
         sawItems = true
         let type = item["type"]?.stringValue ?? ""
-        guard var state = items.removeValue(forKey: index) else {
+        guard let state = items.removeValue(forKey: index) else {
             // Done without added: the whole item at once.
             let parts = try ResponsesDecode.outputItem(.object(item), path: "item", origin: origin, warnings: &warnings)
             emitWhole(parts, into: &events)

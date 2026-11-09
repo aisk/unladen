@@ -153,7 +153,7 @@ extension ResponsesCodec {
             var config = WireReasoningConfig()
             config.effort = try inner.string("effort")
             config.summary = try inner.string("summary")
-            config.extra = ResponsesDecode.bag(inner, quiet: ["generate_summary"], warnings: &warnings)
+            config.extra = inner.remaining(quiet: ["generate_summary"], warnings: &warnings)
             request.reasoning = config
         }
         request.safetyIdentifier = try reader.string("safety_identifier")
@@ -178,7 +178,7 @@ extension ResponsesCodec {
         request.topP = try reader.number("top_p")
         request.user = try reader.string("user")
 
-        request.extra = ResponsesDecode.bag(reader, quiet: quietRequestKeys, warnings: &warnings)
+        request.extra = reader.remaining(quiet: quietRequestKeys, warnings: &warnings)
         return WireDecoded(value: request, warnings: warnings)
     }
 
@@ -250,7 +250,7 @@ extension ResponsesCodec {
         tool.description = try reader.string("description")
         if let parameters = reader.raw("parameters") { tool.parameters = parameters }
         tool.strict = try reader.bool("strict")
-        tool.extra = ResponsesDecode.bag(reader, quiet: ["defer_loading"], warnings: &warnings)
+        tool.extra = reader.remaining(quiet: ["defer_loading"], warnings: &warnings)
         return .function(tool)
     }
 
@@ -282,7 +282,7 @@ extension ResponsesCodec {
             if parts.count <= 1, parts.allSatisfy({ if case .text = $0 { true } else { false } }) {
                 if case .text(let text)? = parts.first {
                     instructions = text.text
-                    appendExtra(text.extra, to: &object, include: false, path: "instructions", warnings: &warnings)
+                    discardExtra(text.extra, path: "instructions", warnings: &warnings)
                     dropCacheControl(text.cacheControl, path: "instructions", reason: ResponsesEncode.noCache, warnings: &warnings)
                     dropPatch(text.patch, target: .responses, path: "instructions", warnings: &warnings)
                     if text.signature != nil {
@@ -292,8 +292,7 @@ extension ResponsesCodec {
                     instructions = ""
                 }
                 if !request.instructionsExtra.isEmpty {
-                    var unused = JSONObject()
-                    appendExtra(request.instructionsExtra, to: &unused, include: false, path: "instructions", warnings: &warnings)
+                    discardExtra(request.instructionsExtra, path: "instructions", warnings: &warnings)
                 }
             } else {
                 let system = WireMessage(role: .system, parts: parts, contentForm: .parts, extra: request.instructionsExtra)
@@ -509,7 +508,7 @@ struct ResponsesEnvelope {
         if case .object(let details)? = reader.raw("incomplete_details") {
             incompleteReason = details["reason"]?.stringValue
         }
-        extra = ResponsesDecode.bag(reader, quiet: Self.quietKeys, warnings: &warnings)
+        extra = reader.remaining(quiet: Self.quietKeys, warnings: &warnings)
     }
 }
 
@@ -614,8 +613,7 @@ enum WireEvents {
             }
         }
         if !response.message.extra.isEmpty {
-            var unused = JSONObject()
-            appendExtra(response.message.extra, to: &unused, include: false, path: "", warnings: &warnings)
+            discardExtra(response.message.extra, path: "", warnings: &warnings)
         }
         events.append(.finish(WireFinish(reason: response.finishReason, usage: response.usage, extra: response.choiceExtra)))
         return events

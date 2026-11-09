@@ -99,12 +99,12 @@ struct FieldReader {
     }
 
     /// Unconsumed keys in their original order. Each non-null key yields an
-    /// ``WireWarning/Code/unknownField`` warning.
-    func remaining(warnings: inout [WireWarning]) -> JSONObject {
+    /// ``WireWarning/Code/unknownField`` warning, except the `quiet` ones.
+    func remaining(quiet: Set<String> = [], warnings: inout [WireWarning]) -> JSONObject {
         var bag = JSONObject()
         for (key, value) in object where !consumed.contains(key) {
             bag[key] = value
-            if !value.isNull {
+            if !value.isNull, !quiet.contains(key) {
                 warnings.append(WireWarning(.unknownField, "kept unknown field `\(key)`", path: path(key)))
             }
         }
@@ -163,6 +163,13 @@ func appendExtra(
             object[key] = value
         }
     }
+}
+
+/// Drops a bag the target cannot carry: a warning for each non-null entry
+/// (``appendExtra(_:to:include:path:warnings:)`` with `include` false).
+func discardExtra(_ extra: JSONObject, path: String, warnings: inout [WireWarning]) {
+    var unused = JSONObject()
+    appendExtra(extra, to: &unused, include: false, path: path, warnings: &warnings)
 }
 
 /// Tool-call arguments as the JSON object Anthropic's `input` and Gemini's
@@ -278,5 +285,35 @@ extension WireStreamError {
     /// so a client sees a failed reply, not a clean but truncated one.
     static func endedEarly(missing: String) -> WireStreamError {
         WireStreamError(message: "upstream stream ended early, without \(missing)")
+    }
+
+    /// An error a stream carries as JSON: its `message`, its type under
+    /// `typeKey` (Gemini's `status`), and its `code`, text or a number; a
+    /// string is the message itself.
+    init(json value: JSONValue?, typeKey: String = "type") {
+        switch value {
+        case .string(let message)?:
+            self.init(message: message, raw: value)
+        case .object(let object)?:
+            let code: String? = switch object["code"] {
+            case .string(let text)?: text
+            case .number(let number)?: number.literal
+            default: nil
+            }
+            self.init(message: object["message"]?.stringValue ?? "", type: object[typeKey]?.stringValue, code: code, raw: value)
+        default:
+            self.init(message: value?.description ?? "unknown error", raw: value)
+        }
+    }
+}
+
+extension String {
+    /// Without leading and trailing spaces, tabs and line breaks.
+    func trimmingASCIIWhitespace() -> Substring {
+        let isSpace: (Character) -> Bool = { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" }
+        guard let first = firstIndex(where: { !isSpace($0) }), let last = lastIndex(where: { !isSpace($0) }) else {
+            return ""
+        }
+        return self[first...last]
     }
 }

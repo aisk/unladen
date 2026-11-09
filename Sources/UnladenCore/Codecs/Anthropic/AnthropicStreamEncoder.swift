@@ -76,8 +76,7 @@ package struct AnthropicMessagesStreamEncoder: Sendable {
             startUsage = metadata.usage
             startExtra = metadata.extra
             if !sameProtocol, !metadata.extra.isEmpty {
-                var ignored = JSONObject()
-                appendExtra(metadata.extra, to: &ignored, include: false, path: "", warnings: &warnings)
+                discardExtra(metadata.extra, path: "", warnings: &warnings)
             }
             ensureStarted(into: &output)
 
@@ -249,8 +248,7 @@ package struct AnthropicMessagesStreamEncoder: Sendable {
                     }
                 }
                 if !late.isEmpty {
-                    var ignored = JSONObject()
-                    appendExtra(late, to: &ignored, include: false, path: "content_block", warnings: &warnings)
+                    discardExtra(late, path: "content_block", warnings: &warnings)
                 }
             }
             close(into: &output)

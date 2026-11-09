@@ -13,17 +13,6 @@ enum ResponsesDecode {
         "mcp_approval_request", "mcp_approval_response", "mcp_call", "compaction",
     ]
 
-    /// The bag of `reader`'s unconsumed keys, warning only for keys not in
-    /// `quiet`.
-    static func bag(_ reader: FieldReader, quiet: Set<String> = [], warnings: inout [WireWarning]) -> JSONObject {
-        var local: [WireWarning] = []
-        let bag = reader.remaining(warnings: &local)
-        for warning in local where !quiet.contains(where: { warning.path == reader.path($0) }) {
-            warnings.append(warning)
-        }
-        return bag
-    }
-
     /// Consumes `annotations: []` and `logprobs: []`: defaults that replies
     /// always carry, and the encoder writes back (replies) or leaves out
     /// (requests). Non-empty values stay for the bag.
@@ -86,13 +75,13 @@ enum ResponsesDecode {
             guard case .string(let text)? = object["text"] else { return opaque("malformed \(type) part kept as opaque") }
             _ = reader.raw("text")
             consumeEmptyDefaults(&reader)
-            let extra = bag(reader, quiet: ["annotations", "logprobs"], warnings: &warnings)
+            let extra = reader.remaining(quiet: ["annotations", "logprobs"], warnings: &warnings)
             return .text(WireText(text, itemID: itemID, origin: itemID == nil ? nil : origin, extra: extra))
 
         case "refusal":
             guard case .string(let text)? = object["refusal"] else { return opaque("malformed refusal part kept as opaque") }
             _ = reader.raw("refusal")
-            let extra = bag(reader, warnings: &warnings)
+            let extra = reader.remaining(warnings: &warnings)
             return .refusal(WireRefusal(text, itemID: itemID, origin: itemID == nil ? nil : origin, extra: extra))
 
         case "input_image":
@@ -102,7 +91,7 @@ enum ResponsesDecode {
             _ = reader.raw(url == nil ? "file_id" : "image_url")
             var media = WireMedia(source: url.map { .url($0) } ?? .fileID(fileID ?? ""))
             media.detail = try reader.string("detail")
-            media.extra = bag(reader, warnings: &warnings)
+            media.extra = reader.remaining(warnings: &warnings)
             return .image(media)
 
         case "input_file":
@@ -124,7 +113,7 @@ enum ResponsesDecode {
                 }
             }
             media.filename = try reader.string("filename")
-            media.extra = bag(reader, warnings: &warnings)
+            media.extra = reader.remaining(warnings: &warnings)
             return .file(media)
 
         default:
@@ -191,7 +180,7 @@ enum ResponsesDecode {
                 encrypted = value
             }
         }
-        let extra = bag(reader, quiet: ["status", "content", "encrypted_content"], warnings: &warnings)
+        let extra = reader.remaining(quiet: ["status", "content", "encrypted_content"], warnings: &warnings)
 
         var parts: [WireReasoning] = []
         for (i, text) in summary.enumerated() {
@@ -241,7 +230,7 @@ enum ResponsesDecode {
         return WireToolCall(
             id: callID, name: name, arguments: arguments, itemType: custom ? "custom_tool_call" : nil,
             itemID: itemID, origin: itemID == nil ? nil : context.origin,
-            extra: bag(reader, quiet: ["status"], warnings: &warnings),
+            extra: reader.remaining(quiet: ["status"], warnings: &warnings),
         )
     }
 
@@ -266,7 +255,7 @@ enum ResponsesDecode {
         return WireToolResult(
             callID: callID, content: output.parts, contentForm: output.form,
             itemType: type == "custom_tool_call_output" ? type : nil, itemID: itemID,
-            extra: bag(reader, quiet: ["status"], warnings: &warnings),
+            extra: reader.remaining(quiet: ["status"], warnings: &warnings),
         )
     }
 
@@ -331,7 +320,7 @@ enum ResponsesDecode {
         if rawID != nil, hasTextParts || id == nil { _ = reader.raw("id") }
         return WireMessage(
             role: role, parts: content.parts, contentForm: content.form,
-            extra: bag(reader, quiet: ["status", "id"], warnings: &warnings),
+            extra: reader.remaining(quiet: ["status", "id"], warnings: &warnings),
         )
     }
 
@@ -377,15 +366,7 @@ enum ResponsesDecode {
 
     /// Unknown in-stream `error` payloads and `response.error` objects.
     static func streamError(_ value: JSONValue?) -> WireStreamError {
-        guard case .object(let object)? = value else {
-            return WireStreamError(message: value?.description ?? "unknown error", raw: value)
-        }
-        return WireStreamError(
-            message: object["message"]?.stringValue ?? "",
-            type: object["type"]?.stringValue,
-            code: object["code"]?.stringValue,
-            raw: value,
-        )
+        WireStreamError(json: value)
     }
 }
 
@@ -731,8 +712,7 @@ enum ResponsesEncode {
             output.append(messageItem([], id: nil, first: true))
         }
         if !extraPlaced {
-            var unused = JSONObject()
-            appendExtra(message.extra, to: &unused, include: false, path: path, warnings: &warnings)
+            discardExtra(message.extra, path: path, warnings: &warnings)
         }
         if hasPatch(message.patch, for: .responses) {
             if output.isEmpty { dropPatch(message.patch, target: .responses, path: path, warnings: &warnings) }

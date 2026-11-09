@@ -298,8 +298,7 @@ extension AnthropicMessagesCodec {
                 // One source keeps its form; several are blocks.
                 systemForm = systemParts == nil ? message.contentForm : .parts
                 systemParts = (systemParts ?? []) + message.parts
-                var unused = JSONObject()
-                appendExtra(message.extra, to: &unused, include: false, path: path, warnings: &warnings)
+                discardExtra(message.extra, path: path, warnings: &warnings)
                 // `system` has no message object: set options on the parts.
                 dropPatch(message.patch, target: .anthropicMessages, path: path, warnings: &warnings)
                 continue
@@ -343,8 +342,7 @@ extension AnthropicMessagesCodec {
                 object["system"] = system
             }
             if !request.instructionsExtra.isEmpty {
-                var unused = JSONObject()
-                appendExtra(request.instructionsExtra, to: &unused, include: false, path: "instructions", warnings: &warnings)
+                discardExtra(request.instructionsExtra, path: "instructions", warnings: &warnings)
             }
         }
         if let value = request.temperature { object["temperature"] = .number(value) }
@@ -519,8 +517,7 @@ private struct AnthropicTurns {
         }
         // Bags of another protocol's message have no place; warn once here.
         if !context.include {
-            var unused = JSONObject()
-            appendExtra(message.extra, to: &unused, include: false, path: path, warnings: &warnings)
+            discardExtra(message.extra, path: path, warnings: &warnings)
         }
         var results: [AnthropicBlock] = []
         var rest: [AnthropicBlock] = []
@@ -713,15 +710,14 @@ extension AnthropicMessagesCodec {
         if include {
             appendExtra(response.choiceExtra, to: &object, include: true, path: "", warnings: &warnings)
         } else {
-            appendExtra(response.choiceExtra, to: &object, include: false, path: "", warnings: &warnings)
+            discardExtra(response.choiceExtra, path: "", warnings: &warnings)
             object["stop_sequence"] = .null
         }
         if response.usage != nil || !include {
             object["usage"] = AnthropicUsage.encode(response.usage, include: include)
         }
         if !response.message.extra.isEmpty {
-            var unused = JSONObject()
-            appendExtra(response.message.extra, to: &unused, include: false, path: "", warnings: &warnings)
+            discardExtra(response.message.extra, path: "", warnings: &warnings)
         }
         appendExtra(response.extra, to: &object, include: include, path: "", warnings: &warnings)
         return WireEncoded(json: .object(object), warnings: warnings)
