@@ -58,6 +58,10 @@
             <div class="dropdown-menu dropdown-menu-end" :class="menu && 'show'" @click.outside="menu = false">
               <a class="dropdown-item" href="#" @click.prevent="menu = false; reloadFile()"><i class="ti ti-refresh me-2"></i>Reload the file</a>
               <a class="dropdown-item" href="#" @click.prevent="menu = false; signOut()"><i class="ti ti-logout me-2"></i>Sign out</a>
+              <div class="dropdown-divider"></div>
+              <template x-for="l in languages" :key="l.id">
+                <a class="dropdown-item" href="#" @click.prevent="setLanguage(l.id)"><i class="ti ti-language me-2"></i><span x-text="l.label"></span><i class="ti ti-check ms-auto" x-show="l.id === language"></i></a>
+              </template>
             </div>
           </div>
         </div>
@@ -650,6 +654,7 @@
   </template>
 </div>
 
+<script src="i18n.js"></script>
 <script src="panel.js"></script>
 </body>
 </html>

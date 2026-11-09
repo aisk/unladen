@@ -18,6 +18,8 @@ function panel() {
     tokenInput: '',
     signInError: '',
     tab: 'overview',
+    languages: LANGUAGES,
+    language,
     tabs: [
       { id: 'overview', label: 'Overview', icon: 'ti-dashboard' },
       { id: 'activity', label: 'Activity', icon: 'ti-activity' },
@@ -302,7 +304,7 @@ function panel() {
       }
     },
     async forgetSignIn(provider, account) {
-      if (!confirm('Forget the sign-in of ' + provider + '/' + account + '?')) return;
+      if (!confirm(t('Forget the sign-in of ' + provider + '/' + account + '?'))) return;
       await this.api('POST', 'sign-in/forget', { provider, account });
       await this.refreshStatus();
     },
