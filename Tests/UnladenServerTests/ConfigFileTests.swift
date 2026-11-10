@@ -213,6 +213,13 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         }
     }
 
+    @Test func aFreeProvidersAccountMayHoldNoKey() throws {
+        let loaded = try parse(#"{ "accounts": { "kilo": {}, "free": { "provider": "kilo" }, "off": { "provider": "kilo", "enabled": false } } }"#)
+        let keys = try #require(loaded.gateway.keyPools["kilo"]?.keys)
+        #expect(keys.map(\.name) == ["kilo", "free"])
+        #expect(keys.allSatisfy { $0.apiKey == nil && $0.signIn == nil })
+    }
+
     @Test func invalidValues() {
         #expect(parseError(#"{ "accounts": { "openai": "${NOPE}" } }"#)?.message.contains("NOPE is not set") == true)
         #expect(parseError(#"{ "models": { "a": "nowhere/model" } }"#)?.message.contains("unknown provider `nowhere`") == true)

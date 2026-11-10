@@ -533,7 +533,10 @@ extension ConfigFile {
                         throw item.error("`\(name)` is the name of a provider, so `\(name)/…` would not reach `\(id)`: give this account another name")
                     }
                 } else {
-                    guard key != nil else { throw value.error("`key` is missing") }
+                    let id = provider?.0 ?? name
+                    guard key != nil || registry[id]?.servesWithoutKey == true else {
+                        throw value.error("`key` is missing")
+                    }
                     if let (id, item) = provider, id != name, ProviderRegistry.builtIn[name] != nil {
                         throw item.error("`\(name)` is the name of a provider, so `\(name)/…` would not reach `\(id)`: give this account another name")
                     }
@@ -550,7 +553,12 @@ extension ConfigFile {
                     keys[account.provider, default: []] += account.enabled ? [UpstreamKey(signingIn: account.name, kind)] : []
                     continue
                 }
-                guard let key = account.key else { continue }
+                guard let key = account.key else {
+                    if registry[account.provider]?.servesWithoutKey == true {
+                        keys[account.provider, default: []] += account.enabled ? [UpstreamKey(keyless: account.name)] : []
+                    }
+                    continue
+                }
                 if let owner = owners.updateValue(account.name, forKey: account.provider + "\u{0}" + key) {
                     throw account.providerField.error("account `\(account.name)` has the same key as `\(owner)`")
                 }

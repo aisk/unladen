@@ -51,6 +51,8 @@ function panel() {
     pristine: '',
     status: null,
     presets: [],
+    // Presets that serve some models to accounts without a key.
+    keylessPresets: [],
     messages: [],
     saving: false,
     menu: false,
@@ -256,6 +258,7 @@ function panel() {
       if (result.status === 200) {
         this.status = result.json;
         this.presets = result.json.presets || [];
+        this.keylessPresets = result.json.keyless_presets || [];
       }
     },
 
@@ -298,6 +301,8 @@ function panel() {
 
     signsIn(provider) { return SIGN_IN.includes(provider); },
     takesKeys(provider) { return !KEYLESS.includes(provider); },
+    // The key may stay empty: the provider serves some models without one.
+    keyOptional(provider) { return this.keylessPresets.includes(provider); },
     antigravityRisk: 'Not supported by Google: Antigravity\'s sign-in is meant for Antigravity alone, and Google may suspend an account it sees used elsewhere. Use an account you can afford to lose. Use at your own risk.',
     // The sign-in state of an account of the file, once saved.
     signInOf(a) {
@@ -395,7 +400,7 @@ function panel() {
       if (/[\/*]/.test(name) || name.startsWith('@')) return 'A name cannot contain / or * or start with @.';
       if (this.model.accounts.some(a => a.name.trim() === name)) return 'Another account has this name.';
       if (d.provider && name !== d.provider && this.presets.includes(name)) return name + ' is a provider: give this account another name.';
-      if (d.provider && !this.signsIn(d.provider) && !d.key.trim()) return 'Enter the key.';
+      if (d.provider && !this.signsIn(d.provider) && !this.keyOptional(d.provider) && !d.key.trim()) return 'Enter the key.';
       if (!d.provider && !/^https?:\/\//.test(d.url.trim())) return 'Enter the endpoint address (http:// or https://).';
       return '';
     },

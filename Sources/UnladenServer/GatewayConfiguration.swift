@@ -79,7 +79,7 @@ struct UpstreamKey: Sendable, Hashable {
     /// Stable identity: health is recorded under it, so reordering keys
     /// does not move it to another key. A hash of the key when unnamed.
     var name: String
-    /// Empty for an account that signs in.
+    /// Empty for an account that signs in or holds no key.
     var secret: String
     /// How the account signs in (its tokens are kept in ``SignIns``);
     /// `nil`: it holds `secret`.
@@ -96,6 +96,17 @@ struct UpstreamKey: Sendable, Hashable {
         secret = ""
         signIn = kind
     }
+
+    /// The account `name` of a provider that serves some models to anyone:
+    /// it holds no key and sends none.
+    init(keyless name: String) {
+        self.name = name
+        secret = ""
+    }
+
+    /// The key requests send: `nil` for an account that signs in (its
+    /// token is fetched at the attempt) or holds no key.
+    var apiKey: String? { signIn == nil && !secret.isEmpty ? secret : nil }
 
     /// `key-` and 8 hex digits of the key's FNV-1a hash: names an unnamed
     /// key in logs without showing it.

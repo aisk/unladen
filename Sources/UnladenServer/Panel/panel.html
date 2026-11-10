@@ -377,6 +377,7 @@
                     <label class="form-label">Key</label>
                     <input class="form-control mono" x-model="draft.key" placeholder="sk-… or ${ENV_VAR}" autocomplete="off">
                     <div class="form-hint" x-show="!draft.provider">May stay empty for an address without authentication.</div>
+                    <div class="form-hint" x-show="keyOptional(draft.provider)">May stay empty: the free models need no key.</div>
                     <div class="form-hint" x-show="signsIn(draft.provider)">Or leave it empty and sign in instead. For your own use only: the plan is personal.</div>
                   </div>
                   <template x-if="!draft.provider">
@@ -452,7 +453,7 @@
                           </div>
                         </template>
                         <template x-if="!isHidden(a.key) && !(signsIn(accountProvider(a)) && !a.key)">
-                          <input class="form-control form-control-sm mono" x-model="a.key" :placeholder="a.custom ? 'none' : 'sk-… or ${ENV_VAR}'" autocomplete="off">
+                          <input class="form-control form-control-sm mono" x-model="a.key" :placeholder="a.custom ? 'none' : keyOptional(accountProvider(a)) ? 'none: free models only' : 'sk-… or ${ENV_VAR}'" autocomplete="off">
                         </template>
                         <template x-if="a.custom">
                           <div class="mt-2">

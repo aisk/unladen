@@ -59,7 +59,7 @@ final class ModelCatalog: Sendable {
             // `nil`: no key.
             let credentials: [UpstreamKey?] = configuration.goesWithoutKey(provider, at: endpoint) ? [nil] : keys.map(Optional.some)
             for key in credentials {
-                var apiKey = key?.secret
+                var apiKey = key?.apiKey
                 if let key, key.signIn != nil {
                     apiKey = try? await gateway.signIns.token(provider: provider, account: key.name, transport: gateway.transport)
                     if apiKey == nil { continue }

@@ -228,6 +228,9 @@ enum AdminStatus {
             "models": .array(models),
             "clients": .array(clients),
             "presets": .array(ProviderRegistry.builtIn.providers.keys.sorted().map(JSONValue.string)),
+            "keyless_presets": .array(
+                ProviderRegistry.builtIn.providers.values.filter(\.servesWithoutKey).map(\.id).sorted().map(JSONValue.string),
+            ),
             "providers": .array(configuration.registry.providers.keys.sorted().map(JSONValue.string)),
         ]
     }

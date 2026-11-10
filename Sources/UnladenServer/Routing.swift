@@ -308,7 +308,7 @@ struct CandidatePlanner: Sendable {
             if keys.isEmpty { missingKeys.append(target.provider) }
             for key in keys {
                 candidates.append(Candidate(
-                    reference: reference, target: target, apiKey: key.signIn == nil ? key.secret : nil, keyName: key.name,
+                    reference: reference, target: target, apiKey: key.apiKey, keyName: key.name,
                     poolStrategy: pool?.strategy ?? .order, signIn: key.signIn,
                 ))
             }

@@ -37,6 +37,7 @@ const TRANSLATIONS = {
       // Overview
       'Configuration file:': '配置文件：',
       'none': '无',
+      'none: free models only': '无：只用免费模型',
       'Refreshed every 5 seconds.': '每 5 秒刷新。',
       'Account': '账号',
       'Provider': '提供方',
@@ -124,6 +125,7 @@ const TRANSLATIONS = {
       'Enabled': '启用',
       'Shown in logs and the overview.': '显示在日志和概览里。',
       'May stay empty for an address without authentication.': '地址不需要鉴权时可以留空。',
+      'May stay empty: the free models need no key.': '可以留空：免费模型不需要 key。',
       'Or leave it empty and sign in instead. For your own use only: the plan is personal.': '也可以留空，改为登录。仅限自己使用：订阅套餐属于个人。',
       'another address…': '其他地址…',
       'Speaks like': '协议模板',

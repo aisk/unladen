@@ -626,6 +626,20 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         #expect(hit.header("authorization") == nil)
     }
 
+    @Test func aKeylessAccountSendsNoKey() async throws {
+        let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
+        let gateway = makeGateway(upstream, model: "kilo/kilo-auto/free", keys: [:])
+        var configuration = gateway.configuration
+        configuration.keyPools["kilo"] = KeyPool(keys: [UpstreamKey(keyless: "free")])
+        gateway.replace(configuration)
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "anything"))
+            #expect(response.status == .ok)
+        }
+        let hit = try #require(upstream.requests.first)
+        #expect(hit.header("authorization") == nil)
+    }
+
     @Test func openCodeIsToldTheConversation() async throws {
         let upstream = MockUpstream { _ in reply(fixture("Chat/responses/text.json")) }
         let gateway = makeGateway(upstream, model: "opencode-go/glm-5")
