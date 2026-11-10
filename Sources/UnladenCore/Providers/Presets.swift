@@ -396,8 +396,12 @@ public enum Presets {
 
     /// Kilo Code's gateway, OpenRouter's API: its free models (`…:free`,
     /// `kilo-auto/free`) answer anyone, a limited number of requests an
-    /// hour from one address; a Kilo key reaches the rest.
-    public static let kilo = vendor("kilo", servesWithoutKey: true, [endpoint("kilo", .chatCompletions, "https://api.kilo.ai/api/openrouter")])
+    /// hour from one address; a Kilo key reaches the rest. It keys its
+    /// prompt cache on the task named in `x-kilocode-taskid`: the
+    /// conversation.
+    public static let kilo = vendor("kilo", servesWithoutKey: true, [
+        endpoint("kilo", .chatCompletions, "https://api.kilo.ai/api/openrouter", sessionHeader: "x-kilocode-taskid"),
+    ])
 
     public static let groq = vendor("groq", environment: ["GROQ_API_KEY"], [
         endpoint("groq", .chatCompletions, "https://api.groq.com/openai/v1", Profile(transforms: base + [.flattenTextParts])),

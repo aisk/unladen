@@ -624,6 +624,7 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         #expect(hit.request.authority == "api.kilo.ai")
         #expect(hit.path == "/api/openrouter/chat/completions")
         #expect(hit.header("authorization") == nil)
+        #expect(hit.header("x-kilocode-taskid") != nil)
     }
 
     @Test func aKeylessAccountSendsNoKey() async throws {
