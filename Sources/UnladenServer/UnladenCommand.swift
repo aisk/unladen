@@ -150,6 +150,14 @@ struct Serve: AsyncParsableCommand {
     @OptionGroup var options: ConfigOptions
 
     func run() async throws {
+        // Checked before anything is started, so a mistyped level stops here.
+        var logLevel = Logger.Level.info
+        if let level = ProcessInfo.processInfo.environment["LOG_LEVEL"], !level.isEmpty {
+            guard let parsed = Logger.Level(rawValue: level.lowercased()) else {
+                throw ValidationError("LOG_LEVEL: \(level) is none of trace, debug, info, notice, warning, error, critical")
+            }
+            logLevel = parsed
+        }
         let loaded = try options.load()
         let server = loaded.server
         var clientConfiguration = HTTPClient.Configuration()
@@ -161,7 +169,7 @@ struct Serve: AsyncParsableCommand {
         let client = HTTPClient(eventLoopGroup: HTTPClient.defaultEventLoopGroup, configuration: clientConfiguration)
 
         var logger = Logger(label: "unladen")
-        logger.logLevel = .info
+        logger.logLevel = logLevel
         var gateway = Gateway(configuration: loaded.gateway, transport: AsyncHTTPClientTransport(client: client))
         // Usage and sign-ins are kept across restarts in the state directory.
         let stateDirectory = UsageLog.defaultDirectory { ProcessInfo.processInfo.environment[$0] }
