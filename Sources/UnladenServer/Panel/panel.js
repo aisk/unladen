@@ -90,7 +90,7 @@ function panel() {
       { name: 'max_request_bytes', label: 'Largest request', placeholder: '64MiB', help: 'A request with a larger body is refused.' },
     ],
     apps: [
-      { id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' },
+      { id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }, { id: 'pi', label: 'pi' }, { id: 'opencode', label: 'OpenCode' },
       { id: 'openai', label: 'OpenAI-compatible' }, { id: 'curl', label: 'curl' },
     ],
     app: 'claude',
@@ -510,6 +510,21 @@ function panel() {
         return '# ~/.codex/config.toml\nmodel_provider = "unladen"\n\n[model_providers.unladen]\nname = "unladen"\nbase_url = "' + base + '/v1"\n'
           + 'wire_api = "responses"\nenv_key = "UNLADEN_API_KEY"\n\n# shell\nexport UNLADEN_API_KEY=' + key;
       }
+      // pi and OpenCode ask only for the models they are told of: the
+      // names on the Models page.
+      const names = this.menuNames().filter(name => !name.includes('*'));
+      const listed = names.length ? names : ['MODEL_NAME'];
+      if (app === 'pi') {
+        const models = listed.map(name => '{ "id": ' + JSON.stringify(name) + ' }').join(',\n        ');
+        return '{\n  "providers": {\n    "unladen": {\n      "baseUrl": "' + base + '/v1",\n      "api": "openai-completions",\n'
+          + '      "apiKey": "' + key + '",\n      "models": [\n        ' + models + '\n      ]\n    }\n  }\n}';
+      }
+      if (app === 'opencode') {
+        const models = listed.map(name => JSON.stringify(name) + ': {}').join(',\n        ');
+        return '{\n  "$schema": "https://opencode.ai/config.json",\n  "provider": {\n    "unladen": {\n      "npm": "@ai-sdk/openai-compatible",\n'
+          + '      "name": "Unladen",\n      "options": {\n        "baseURL": "' + base + '/v1",\n        "apiKey": "' + key + '"\n      },\n'
+          + '      "models": {\n        ' + models + '\n      }\n    }\n  }\n}';
+      }
       if (app === 'openai') return 'Base URL: ' + base + '/v1\nAPI key:  ' + key;
       return 'curl ' + base + '/v1/models \\\n  -H "Authorization: Bearer ' + key + '"';
     },
@@ -517,6 +532,8 @@ function panel() {
       return {
         claude: 'Claude Code speaks the Anthropic protocol; the gateway answers it with any model you set up.',
         codex: 'Codex speaks the Responses protocol.',
+        opencode: 'Goes in ~/.config/opencode/opencode.json, or opencode.json in a project. List the models OpenCode may ask for under models, then choose one with /models.',
+        pi: 'Goes in ~/.pi/agent/models.json. List the models pi may ask for under models, then choose one with /model.',
         openai: 'For any tool that takes an OpenAI base URL and key. Anthropic and Gemini clients use the same address without /v1.',
         curl: 'Lists the models this key may ask for.',
       }[app];
