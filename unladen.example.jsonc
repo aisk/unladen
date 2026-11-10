@@ -1,0 +1,18 @@
+{
+  // Mounted as a secret at /data/unladen/config.jsonc. `chmod 0644` it, or the
+  // gateway's uid 65532 cannot read it.
+  "listen": "0.0.0.0:4141",
+  // At least 16 characters; the gateway refuses a shorter one.
+  "panel": { "token": "replace-with-a-panel-token" },
+  "accounts": {
+    "anthropic": "replace-with-an-anthropic-key",
+    "deepseek": { "key": "replace-with-a-deepseek-key" }
+  },
+  "models": {
+    "claude-*": "anthropic",
+    "*": "deepseek/deepseek-chat"
+  },
+  "clients": {
+    "laptop": { "key": "replace-with-a-client-key", "models": "*" }
+  }
+}
