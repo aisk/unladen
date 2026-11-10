@@ -161,6 +161,15 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         #expect(manager.save(snapshot.document, baseHash: snapshot.hash) == .conflict(hash: try manager.document().hash))
     }
 
+    @Test func aSaveWithoutAHashOverwritesAChangedFile() throws {
+        let (manager, path) = try makeManager()
+        let snapshot = try manager.document()
+        try (sample + "\n// edited by hand\n").write(toFile: path, atomically: true, encoding: .utf8)
+        guard case .saved(let hash, _) = manager.save(snapshot.document, baseHash: nil) else { Issue.record("not saved"); return }
+        #expect(try manager.document().hash == hash)
+        #expect(!(try String(contentsOfFile: path, encoding: .utf8)).contains("edited by hand"))
+    }
+
     @Test func anInvalidDocumentLeavesTheFile() throws {
         let (manager, path) = try makeManager()
         let snapshot = try manager.document()
@@ -227,11 +236,15 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
             #expect(saved.status == .ok)
             let again = try await client.execute(uri: "/admin/api/config", method: .put, headers: headers, body: ByteBuffer(bytes: save.encoded()))
             #expect(again.status == .conflict)
+            let forced: JSONValue = ["document": try #require(json["document"]), "overwrite": true]
+            let overwritten = try await client.execute(uri: "/admin/api/config", method: .put, headers: headers, body: ByteBuffer(bytes: forced.encoded()))
+            #expect(overwritten.status == .ok)
 
             let status = try await client.execute(uri: "/admin/api/status", method: .get, headers: headers)
             let body = String(buffer: status.body)
             #expect(status.status == .ok)
             #expect(body.contains(#""name":"env""#))
+            #expect(body.contains(#""listen":"127.0.0.1:4141""#))
             #expect(!body.contains("sk-"))
         }
     }

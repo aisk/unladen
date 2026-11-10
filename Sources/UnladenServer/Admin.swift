@@ -94,15 +94,16 @@ final class ConfigManager: Sendable {
     }
 
     /// Writes `document` over the file, when the file is still the one
-    /// whose hash is `baseHash` and the result loads; then serves it.
-    func save(_ document: JSONValue, baseHash: String) -> SaveOutcome {
+    /// whose hash is `baseHash` (`nil`: whatever it holds now) and the
+    /// result loads; then serves it.
+    func save(_ document: JSONValue, baseHash: String?) -> SaveOutcome {
         lock.withLock {
             guard let path else {
                 return .invalid(ConfigError(message: "the gateway runs without a configuration file; start it with --config to save"))
             }
             do throws(ConfigError) {
                 let current = try ConfigDocument.read(try readFile(), file: path)
-                guard current.hash == baseHash else { return .conflict(hash: current.hash) }
+                if let baseHash, current.hash != baseHash { return .conflict(hash: current.hash) }
                 let text = ConfigDocument.header + (try ConfigDocument.text(from: document, secrets: current.secrets))
                 let loaded = try ConfigFile.parse(text, file: path, overrides: overrides, environment: environment)
                 guard loaded.gateway.adminToken != nil else {
@@ -160,7 +161,7 @@ final class ConfigManager: Sendable {
 enum AdminStatus {
     /// Accounts with their state, what else is cooling down, the menu and
     /// the clients in force, as the panel shows them; no secret is included.
-    static func json(gateway: Gateway, path: String?) -> JSONValue {
+    static func json(gateway: Gateway, path: String?, server: ServerSettings) -> JSONValue {
         let configuration = gateway.configuration
         let health = gateway.health.snapshot()
         func remaining(_ scope: HealthScope) -> JSONValue {
@@ -223,6 +224,7 @@ enum AdminStatus {
         } + configuration.disabledClients.map { name in ["name": .string(name), "disabled": true] }
         return [
             "config_path": path.map(JSONValue.string) ?? .null,
+            "listen": .string("\(server.host):\(server.port)"),
             "accounts": .array(accounts),
             "cooling": .array(cooling),
             "models": .array(models),
@@ -334,7 +336,7 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
 
     router.get("/admin/api/status") { request, _ in
         if let denied = adminDenied(request, gateway: gateway) { return denied }
-        return adminJSON(200, AdminStatus.json(gateway: gateway, path: manager.path))
+        return adminJSON(200, AdminStatus.json(gateway: gateway, path: manager.path, server: manager.server))
     }
 
     router.get("/admin/api/config") { request, _ in
@@ -360,15 +362,19 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         } catch is NIOTooManyBytesError {
             return adminError(413, "the configuration is larger than 4 MiB")
         }
-        guard let json = try? JSONValue(parsing: Array(body.readableBytesView)),
-              let document = json["document"], document.objectValue != nil,
-              let hash = json["hash"]?.stringValue
-        else { return adminError(400, "expected {\"document\": {…}, \"hash\": \"…\"}") }
-        switch manager.save(document, baseHash: hash) {
+        // `overwrite` writes over whatever the file holds now: the panel's
+        // answer to a conflict.
+        let json = try? JSONValue(parsing: Array(body.readableBytesView))
+        let overwrite = json?["overwrite"]?.boolValue == true
+        let hash = json?["hash"]?.stringValue
+        guard let document = json?["document"], document.objectValue != nil, overwrite || hash != nil else {
+            return adminError(400, "expected {\"document\": {…}, \"hash\": \"…\"} or {\"document\": {…}, \"overwrite\": true}")
+        }
+        switch manager.save(document, baseHash: overwrite ? nil : hash) {
         case .saved(let hash, let warnings):
             return adminJSON(200, ["hash": .string(hash), "warnings": .array(warnings.map(JSONValue.string))])
         case .conflict(let hash):
-            return adminJSON(409, ["error": "the file changed since it was loaded; reload it and redo the change", "hash": .string(hash)])
+            return adminJSON(409, ["error": "the file changed since it was loaded", "hash": .string(hash)])
         case .invalid(let error):
             return adminJSON(422, ["error": .string(error.message), "location": error.location.map(JSONValue.string) ?? .null])
         }
