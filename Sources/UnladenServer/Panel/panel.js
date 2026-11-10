@@ -11,6 +11,9 @@ const FAMILIES = {
   zai: ['glm-*'], 'zai-coding': ['glm-*'], zhipu: ['glm-*'], 'zhipu-coding': ['glm-*'],
   minimax: ['MiniMax-*'], 'minimax-cn': ['MiniMax-*'], 'step-plan': ['step-*'], 'step-plan-cn': ['step-*'],
   'ark-coding': ['ark-*', 'doubao-*'], 'bailian-token-plan': ['qwen*'],
+  longcat: ['LongCat-*'], mimo: ['mimo-*'], 'mimo-plan': ['mimo-*'], 'mimo-plan-sgp': ['mimo-*'], 'mimo-plan-ams': ['mimo-*'],
+  dashscope: ['qwen*'], 'dashscope-cn': ['qwen*'], qwencloud: ['qwen*'], 'qwen-token-plan': ['qwen*'], 'qwencloud-token-plan': ['qwen*'],
+  stepfun: ['step-*'], 'stepfun-cn': ['step-*'], ark: ['doubao-*'], 'ark-agent': ['doubao-*'],
 };
 // Providers whose accounts sign in instead of holding a key, and those of
 // them whose accounts never hold one.

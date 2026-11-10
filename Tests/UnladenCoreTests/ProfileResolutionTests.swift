@@ -89,7 +89,11 @@ import Testing
             "openai", "chatgpt", "anthropic", "gemini", "antigravity", "deepseek", "moonshot", "moonshot-cn", "kimi-code", "kimi-code-cn",
             "zai", "zai-coding", "zhipu", "zhipu-coding", "minimax", "minimax-cn", "step-plan", "step-plan-cn", "ark-coding",
             "bailian-token-plan", "openrouter", "opencode-zen", "opencode-go", "kilo", "groq", "mistral", "xai", "together", "nvidia",
-            "modelscope", "siliconflow", "siliconflow-global", "ollama",
+            "modelscope", "siliconflow", "siliconflow-global", "longcat", "ollama-cloud", "fireworks", "nous", "mimo", "mimo-plan",
+            "mimo-plan-sgp", "mimo-plan-ams", "qianfan", "qianfan-plan", "qianfan-plan-team", "tokenhub", "tokenhub-intl", "tencent-plan",
+            "tencent-plan-intl", "huawei-maas", "huawei-plan", "qwen-token-plan", "qwencloud-token-plan", "dashscope", "dashscope-cn",
+            "qwencloud", "stepfun", "stepfun-cn", "ark", "ark-agent", "commandcode", "aihubmix", "302ai", "cherryin", "pipellm", "ollama",
+            "lmstudio",
         ])
         for provider in Presets.all {
             #expect(!provider.endpoints.isEmpty)
@@ -136,6 +140,17 @@ import Testing
         #expect(try openCode("opencode-zen/qwen3.8-max", .anthropicMessages) == (.chatCompletions, "https://opencode.ai/inference/openai/v1"))
         #expect(try openCode("opencode-zen/qwen3.8-flash", .chatCompletions) == (.anthropicMessages, "https://opencode.ai/inference/anthropic"))
         #expect(try ProviderRegistry.builtIn.resolve("opencode-zen/gpt-5.4").profile.reasoningControl == .effort)
+        #expect(try url("tencent-plan/glm-5.3", .anthropicMessages) == "https://tokenhub.tencentmaas.com/plan/anthropic")
+        #expect(try url("mimo-plan-sgp/mimo-v2.6-pro", .responses) == "https://token-plan-sgp.xiaomimimo.com/v1")
+        #expect(try url("qianfan-plan-team/glm-5", .chatCompletions) == "https://qianfan.baidubce.com/v2/tokenplan/team")
+        // Relays: Claude on Messages; PipeLLM's GPT on Responses, the rest on Chat.
+        #expect(try url("aihubmix/claude-sonnet-5", .chatCompletions) == "https://aihubmix.com")
+        #expect(try url("pipellm/gpt-5.4", .anthropicMessages) == "https://api.pipellm.ai/v1")
+        #expect(try url("pipellm/glm-5.3", .anthropicMessages) == "https://api.pipellm.ai/openai/v1")
+        #expect(try url("commandcode/kimi-k3", .anthropicMessages) == "https://api.commandcode.ai/provider/v1")
+        let huawei = try ProviderRegistry.builtIn.resolve("huawei-plan/glm-5.3", preferring: .anthropicMessages).endpoint
+        #expect(huawei.auth == .bearer && huawei.headers["anthropic-version"] == "2023-06-01")
+        #expect(try ProviderRegistry.builtIn.resolve("lmstudio/x").endpoint.auth == EndpointAuth.none)
         #expect(try url("modelscope/Qwen/Qwen3-Coder", .anthropicMessages) == "https://api-inference.modelscope.cn/v1")
         #expect(try ProviderRegistry.builtIn.resolve("modelscope/x", preferring: .anthropicMessages).endpoint.apiProtocol == .responses)
         // Vendors' Chat APIs take `max_tokens`; OpenAI's wants the new name.

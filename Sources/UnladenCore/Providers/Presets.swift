@@ -9,7 +9,10 @@ public enum Presets {
             openAI, chatGPT, anthropic, gemini, antigravity, deepSeek, moonshot, moonshotChina, kimiCode, kimiCodeChina,
             zai, zaiCoding, zhipu, zhipuCoding, miniMax, miniMaxChina, stepPlan, stepPlanChina, arkCoding, bailianTokenPlan,
             openRouter, openCodeZen, openCodeGo, kilo, groq, mistral, xAI, together, nvidia, modelScope, siliconFlow,
-            siliconFlowGlobal, ollama,
+            siliconFlowGlobal, longCat, ollamaCloud, fireworks, nous, miMo, miMoPlan, miMoPlanSingapore, miMoPlanEurope,
+            qianfan, qianfanPlan, qianfanPlanTeam, tokenHub, tokenHubGlobal, tencentPlan, tencentPlanGlobal, huaweiMaaS, huaweiPlan,
+            qwenTokenPlan, qwenCloudTokenPlan, dashScope, dashScopeChina, qwenCloud, stepFun, stepFunChina, ark, arkAgentPlan,
+            commandCode, aiHubMix, ai302, cherryIN, pipeLLM, ollama, lmStudio,
         ]
     }
 
@@ -249,14 +252,35 @@ public enum Presets {
     /// own Chat API is the one that wants `max_completion_tokens`).
     static func endpoint(
         _ system: String, _ apiProtocol: APIProtocol, _ address: String, _ profile: Profile = Profile(),
-        headers: [String: String] = [:], sessionHeader: String? = nil,
+        auth: EndpointAuth? = nil, headers: [String: String] = [:], sessionHeader: String? = nil,
     ) -> Endpoint {
         var defaults = Profile(transforms: base)
         if apiProtocol == .chatCompletions { defaults.maxTokensField = .maxTokens }
+        let usual: EndpointAuth = switch apiProtocol {
+        case .anthropicMessages: .anthropic()
+        case .gemini: .googleAPIKey
+        case .chatCompletions, .responses: .bearer
+        }
         return Endpoint(
-            system: system, apiProtocol: apiProtocol, baseURL: address, auth: apiProtocol == .anthropicMessages ? .anthropic() : apiProtocol == .gemini ? .googleAPIKey : .bearer,
+            system: system, apiProtocol: apiProtocol, baseURL: address, auth: auth ?? usual,
             headers: headers, defaults: profile.merged(over: defaults), sessionHeader: sessionHeader,
         )
+    }
+
+    /// An OpenAI-style API at `openAI` (Chat, and Responses when
+    /// `responses`) and Anthropic's at `anthropic`, when there is one.
+    static func site(
+        _ system: String, openAI: String, responses: Bool = false, anthropic: String? = nil, anthropicBearer: Bool = false,
+    ) -> [Endpoint] {
+        var endpoints = [endpoint(system, .chatCompletions, openAI)]
+        if responses { endpoints.append(endpoint(system, .responses, openAI)) }
+        if let anthropic {
+            // A Bearer key carries no `anthropic-version`: it is set here.
+            endpoints.append(anthropicBearer
+                ? endpoint(system, .anthropicMessages, anthropic, auth: .bearer, headers: ["anthropic-version": "2023-06-01"])
+                : endpoint(system, .anthropicMessages, anthropic))
+        }
+        return endpoints
     }
 
     /// A provider of `endpoints`, in order of preference.
@@ -460,6 +484,158 @@ public enum Presets {
     public static let siliconFlowGlobal = vendor("siliconflow-global", [
         endpoint("siliconflow", .chatCompletions, "https://api.siliconflow.com/v1"),
     ])
+
+    // MARK: - More vendors and plans
+
+    /// Meituan's LongCat API platform: a free allowance of tokens a day.
+    public static let longCat = vendor("longcat", environment: ["LONGCAT_API_KEY"], site(
+        "longcat", openAI: "https://api.longcat.chat/openai/v1", responses: true, anthropic: "https://api.longcat.chat/anthropic",
+    ))
+
+    /// Ollama's cloud models, with an ollama.com key; a free tier.
+    public static let ollamaCloud = vendor("ollama-cloud", environment: ["OLLAMA_API_KEY"], [
+        endpoint("ollama", .chatCompletions, "https://ollama.com/v1", Profile(transforms: base + [.flattenTextParts])),
+        endpoint("ollama", .anthropicMessages, "https://ollama.com", Profile(acceptsUnsignedThinking: true)),
+    ])
+
+    public static let fireworks = vendor("fireworks", environment: ["FIREWORKS_API_KEY"], site(
+        "fireworks", openAI: "https://api.fireworks.ai/inference/v1",
+    ))
+
+    /// Nous Research's Portal: model ids are `vendor/model`. Its Messages
+    /// API serves Anthropic's models alone, so it is not used.
+    public static let nous = vendor("nous", environment: ["NOUS_API_KEY"], site(
+        "nous", openAI: "https://inference-api.nousresearch.com/v1",
+    ))
+
+    /// Xiaomi MiMo: pay as you go, and the Token Plan, whose key is spent
+    /// only at its region's own host.
+    public static let miMo = vendor("mimo", environment: ["MIMO_API_KEY"], miMoSite("api"))
+    public static let miMoPlan = vendor("mimo-plan", miMoSite("token-plan-cn"))
+    public static let miMoPlanSingapore = vendor("mimo-plan-sgp", miMoSite("token-plan-sgp"))
+    public static let miMoPlanEurope = vendor("mimo-plan-ams", miMoSite("token-plan-ams"))
+    static func miMoSite(_ host: String) -> [Endpoint] {
+        site("mimo", openAI: "https://\(host).xiaomimimo.com/v1", responses: true, anthropic: "https://\(host).xiaomimimo.com/anthropic")
+    }
+
+    /// Baidu Qianfan: pay as you go, and the Token Plan's personal and
+    /// enterprise plans, each on a key of its own.
+    public static let qianfan = vendor("qianfan", environment: ["QIANFAN_API_KEY"], site(
+        "qianfan", openAI: "https://qianfan.baidubce.com/v2", responses: true, anthropic: "https://qianfan.baidubce.com/anthropic",
+    ))
+    public static let qianfanPlan = vendor("qianfan-plan", qianfanPlanSite("personal"))
+    public static let qianfanPlanTeam = vendor("qianfan-plan-team", qianfanPlanSite("team"))
+    static func qianfanPlanSite(_ plan: String) -> [Endpoint] {
+        site("qianfan", openAI: "https://qianfan.baidubce.com/v2/tokenplan/" + plan, responses: true,
+             anthropic: "https://qianfan.baidubce.com/anthropic/tokenplan/" + plan)
+    }
+
+    /// Tencent Cloud TokenHub: pay as you go in China and abroad, each on
+    /// its own key, and the Token Plan (`sk-tp-` keys) under `/plan`; the
+    /// enterprise plan is sold abroad too.
+    public static let tokenHub = vendor("tokenhub", environment: ["TOKENHUB_API_KEY"], tokenHubSite("tokenhub", plan: false))
+    public static let tokenHubGlobal = vendor("tokenhub-intl", tokenHubSite("tokenhub-intl", plan: false))
+    public static let tencentPlan = vendor("tencent-plan", tokenHubSite("tokenhub", plan: true))
+    public static let tencentPlanGlobal = vendor("tencent-plan-intl", tokenHubSite("tokenhub-intl", plan: true))
+    static func tokenHubSite(_ host: String, plan: Bool) -> [Endpoint] {
+        let root = "https://\(host).tencentmaas.com"
+        return plan
+            ? site("tencent", openAI: root + "/plan/v3", responses: true, anthropic: root + "/plan/anthropic")
+            : site("tencent", openAI: root + "/v1", responses: true, anthropic: root)
+    }
+
+    /// Huawei Cloud MaaS: pay as you go, and the Token Plan, whose quota is
+    /// spent only under `/plan`. It reads the key from `Authorization`.
+    public static let huaweiMaaS = vendor("huawei-maas", site(
+        "huawei", openAI: "https://api.modelarts-maas.com/openai/v1", anthropic: "https://api.modelarts-maas.com/anthropic", anthropicBearer: true,
+    ))
+    public static let huaweiPlan = vendor("huawei-plan", site(
+        "huawei", openAI: "https://api.modelarts-maas.com/plan/v2", anthropic: "https://api.modelarts-maas.com/plan/anthropic", anthropicBearer: true,
+    ))
+
+    /// Alibaba's Token Plan as the Qwen AI platform and Qwen Cloud sell it,
+    /// each on a key only its own host takes.
+    public static let qwenTokenPlan = vendor("qwen-token-plan", site(
+        "dashscope", openAI: "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1",
+        anthropic: "https://token-plan.maas.qianwenaiapi.com/apps/anthropic",
+    ))
+    public static let qwenCloudTokenPlan = vendor("qwencloud-token-plan", site(
+        "dashscope", openAI: "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1",
+        anthropic: "https://token-plan.maas.qwencloudapi.com/apps/anthropic",
+    ))
+
+    /// Alibaba Cloud Model Studio (DashScope) pay as you go, international
+    /// and China, and Qwen Cloud's (Singapore).
+    public static let dashScope = vendor("dashscope", environment: ["DASHSCOPE_API_KEY"], site(
+        "dashscope", openAI: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", anthropic: "https://dashscope-intl.aliyuncs.com/apps/anthropic",
+    ))
+    public static let dashScopeChina = vendor("dashscope-cn", site(
+        "dashscope", openAI: "https://dashscope.aliyuncs.com/compatible-mode/v1", anthropic: "https://dashscope.aliyuncs.com/apps/anthropic",
+    ))
+    public static let qwenCloud = vendor("qwencloud", site(
+        "dashscope", openAI: "https://ap-southeast-1.maas.qwencloudapi.com/compatible-mode/v1",
+        anthropic: "https://ap-southeast-1.maas.qwencloudapi.com/apps/anthropic",
+    ))
+
+    /// StepFun pay as you go (the Step Plan is `step-plan`).
+    public static let stepFun = vendor("stepfun", environment: ["STEPFUN_API_KEY"], site(
+        "stepfun", openAI: "https://api.stepfun.ai/v1", anthropic: "https://api.stepfun.ai",
+    ))
+    public static let stepFunChina = vendor("stepfun-cn", site(
+        "stepfun", openAI: "https://api.stepfun.com/v1", anthropic: "https://api.stepfun.com",
+    ))
+
+    /// Volcengine Ark pay as you go, and its Agent Plan (the Coding Plan is
+    /// `ark-coding`). Their paths are versioned already.
+    public static let ark = vendor("ark", environment: ["ARK_API_KEY"], site(
+        "volcengine", openAI: "https://ark.cn-beijing.volces.com/api/v3", responses: true,
+    ))
+    public static let arkAgentPlan = vendor("ark-agent", site(
+        "volcengine", openAI: "https://ark.cn-beijing.volces.com/api/plan/v3", responses: true,
+        anthropic: "https://ark.cn-beijing.volces.com/api/plan",
+    ))
+
+    // MARK: - More relays
+
+    /// Command Code's provider API: Claude on Messages alone, the rest on
+    /// Chat and Responses. It reads the key from `Authorization`.
+    public static let commandCode = vendor("commandcode", site(
+        "commandcode", openAI: "https://api.commandcode.ai/provider/v1", responses: true,
+        anthropic: "https://api.commandcode.ai/provider", anthropicBearer: true,
+    ), models: claudeRules(prefix: "", forcing: .anthropicMessages) + [ModelRule(.pattern("*"), Profile(forcedProtocol: .chatCompletions))])
+
+    /// Relays with Anthropic's API beside OpenAI's: Claude goes through
+    /// Messages, which keeps cache breakpoints.
+    public static let aiHubMix = vendor("aihubmix", environment: ["AIHUBMIX_API_KEY"], site(
+        "aihubmix", openAI: "https://aihubmix.com/v1", anthropic: "https://aihubmix.com",
+    ), models: claudeRules(prefix: "", forcing: .anthropicMessages))
+    public static let ai302 = vendor("302ai", site(
+        "302ai", openAI: "https://api.302.ai/v1", anthropic: "https://api.302.ai",
+    ), models: claudeRules(prefix: "", forcing: .anthropicMessages))
+    public static let cherryIN = vendor("cherryin", site(
+        "cherryin", openAI: "https://open.cherryin.ai/v1", responses: true, anthropic: "https://open.cherryin.ai",
+    ), models: claudeRules(prefix: "", forcing: .anthropicMessages))
+
+    /// PipeLLM: every model on its Chat converter; GPT on its own Responses
+    /// API and Claude on its own Messages API, which serve their family
+    /// alone.
+    public static let pipeLLM = vendor("pipellm", [
+        endpoint("pipellm", .chatCompletions, "https://api.pipellm.ai/openai/v1"),
+        endpoint("pipellm", .responses, "https://api.pipellm.ai/v1"),
+        endpoint("pipellm", .anthropicMessages, "https://api.pipellm.ai"),
+    ], models: claudeRules(prefix: "", forcing: .anthropicMessages)
+        + openAIRules(prefix: "").map { ModelRule($0.match, Profile(forcedProtocol: .responses).merged(over: $0.profile)) }
+        + [ModelRule(.prefix("gpt-"), Profile(forcedProtocol: .responses)), ModelRule(.pattern("*"), Profile(forcedProtocol: .chatCompletions))])
+
+    // MARK: - Local servers
+
+    public static let lmStudio = declaringProtocolGaps(Provider(
+        id: "lmstudio",
+        endpoints: [
+            Endpoint(system: "lmstudio", apiProtocol: .chatCompletions, baseURL: "http://localhost:1234/v1",
+                     auth: .none, defaults: Profile(maxTokensField: .maxTokens, transforms: base)),
+        ],
+    ))
 
     public static let ollama = declaringProtocolGaps(Provider(
         id: "ollama",
