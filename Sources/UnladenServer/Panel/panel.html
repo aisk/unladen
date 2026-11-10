@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>unladen</title>
+<title>Unladen</title>
 <script>
   // Before the page is drawn: the theme chosen in the panel, else the system's.
   (() => {
@@ -33,7 +33,7 @@
   <!-- Sign in -->
   <div class="page page-center" x-show="!token || !model">
     <div class="container container-tight py-4">
-      <div class="text-center mb-4"><h1 class="h1"><i class="ti ti-feather me-2 text-primary"></i><span class="mono">unladen</span></h1></div>
+      <div class="text-center mb-4"><h1 class="h1"><i class="ti ti-feather me-2 text-primary"></i><span>Unladen</span></h1></div>
       <form class="card card-md" @submit.prevent="signIn()">
         <div class="card-body">
           <h2 class="h3 text-center mb-4">Control panel</h2>
@@ -52,7 +52,7 @@
     <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
       <div class="container-fluid">
         <button class="navbar-toggler" type="button" @click="navOpen = !navOpen" title="Menu"><span class="navbar-toggler-icon"></span></button>
-        <div class="navbar-brand justify-content-lg-start px-lg-2"><i class="ti ti-feather me-2"></i><span class="mono">unladen</span></div>
+        <div class="navbar-brand justify-content-lg-start px-lg-2"><i class="ti ti-feather me-2"></i><span>Unladen</span></div>
         <div class="navbar-collapse collapse" :class="navOpen && 'show'">
           <ul class="navbar-nav pt-lg-3">
             <template x-for="(p, i) in navigation" :key="i">
@@ -68,7 +68,7 @@
               </li>
             </template>
           </ul>
-          <ul class="navbar-nav mt-auto pb-lg-3">
+          <ul class="navbar-nav flex-grow-0 mt-auto pb-lg-3">
             <template x-for="l in languages.filter(l => l.id !== language)" :key="l.id">
               <li class="nav-item">
                 <a class="nav-link" href="#" @click.prevent="setLanguage(l.id)">
@@ -354,7 +354,7 @@
               </div>
             </template>
             <div x-show="accountGroups().length"><div class="d-flex text-secondary small">
-              <span class="me-auto">Plans and balances are as the providers report them, read at most once a minute.</span>
+              <span class="me-auto">Plans and balances are as the providers report them, read at most once in three minutes.</span>
               <a href="#" @click.prevent="refreshQuotas(true)"><i class="ti ti-refresh me-1"></i>Refresh</a>
             </div></div>
             <div class="card" x-show="!accountGroups().length">
