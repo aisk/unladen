@@ -151,9 +151,7 @@ can already open the file, and the mount is read-only either way.
 A read-only configuration means the panel can show the file but not save it —
 PUTting one answers `cannot write /config/unladen/.config.jsonc.1.saving:
 Read-only file system` (`Device or resource busy` on a Linux host): edit it and
-send `SIGHUP` (`podman kill -s HUP unladen`), or use the panel's Reload. To
-edit from the panel instead, keep the configuration in the volume at
-`/data/unladen/config.jsonc` and leave the directory mount out.
+send `SIGHUP` (`podman kill -s HUP unladen`), or use the panel's Reload.
 
 Environment variables still work for a quick try, without a configuration file:
 
