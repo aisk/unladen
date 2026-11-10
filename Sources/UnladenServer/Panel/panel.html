@@ -4,171 +4,454 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>unladen</title>
+<script>
+  // Before the page is drawn: the theme chosen in the panel, else the system's.
+  (() => {
+    let theme = null;
+    try { theme = localStorage.getItem('unladen.theme'); } catch { /* the system's */ }
+    document.documentElement.setAttribute('data-bs-theme', theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  })();
+</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/css/tabler.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.49.0/dist/tabler-icons.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/js/tabler.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.5/dist/cdn.min.js"></script>
 <style>
   [x-cloak] { display: none !important; }
   .mono { font-family: var(--tblr-font-monospace); }
   .table td { vertical-align: middle; }
   textarea.mono { font-size: .8125rem; }
+  /* A provider's icon, on white in either theme: some are drawn in black. */
+  .brand { background: #fff; color: #49566c; }
+  .brand img { width: 62%; height: 62%; object-fit: contain; }
+  .ti { font-size: 1.25em; vertical-align: -.15em; }
 </style>
 </head>
 <body>
-<div class="page" x-data="panel()" x-init="start()" x-cloak>
+<div x-data="panel()" x-init="start()" x-cloak>
 
   <!-- Sign in -->
-  <div class="page page-center" x-show="!token">
+  <div class="page page-center" x-show="!token || !model">
     <div class="container container-tight py-4">
-      <div class="text-center mb-4"><h1 class="h2">unladen</h1></div>
+      <div class="text-center mb-4"><h1 class="h1"><i class="ti ti-feather me-2 text-primary"></i><span class="mono">unladen</span></h1></div>
       <form class="card card-md" @submit.prevent="signIn()">
         <div class="card-body">
           <h2 class="h3 text-center mb-4">Control panel</h2>
           <label class="form-label">Panel token</label>
-          <input type="password" class="form-control" x-model="tokenInput" autocomplete="current-password" placeholder="panel.token">
+          <input type="password" class="form-control" x-model="tokenInput" autocomplete="current-password">
+          <div class="form-hint">The value of panel.token in the configuration file.</div>
           <div class="text-danger mt-2" x-text="signInError"></div>
-          <button class="btn btn-primary w-100 mt-4" type="submit">Sign in</button>
+          <button class="btn btn-primary w-100 mt-4" type="submit"><i class="ti ti-login-2 me-1"></i>Sign in</button>
         </div>
       </form>
     </div>
   </div>
 
   <template x-if="token && model">
-  <div>
-    <header class="navbar navbar-expand-md d-print-none">
-      <div class="container-xl">
-        <span class="navbar-brand pe-3">unladen</span>
-        <ul class="navbar-nav me-auto">
-          <template x-for="t in tabs" :key="t.id">
-            <li class="nav-item" :class="tab === t.id && 'active'">
-              <a class="nav-link" :href="'#' + t.id" @click.prevent="tab = t.id; history.pushState(null, '', '#' + t.id)">
-                <i class="ti me-1" :class="t.icon"></i><span x-text="t.label"></span>
+  <div class="page">
+    <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+      <div class="container-fluid">
+        <button class="navbar-toggler" type="button" @click="navOpen = !navOpen" title="Menu"><span class="navbar-toggler-icon"></span></button>
+        <div class="navbar-brand justify-content-lg-start px-lg-2"><i class="ti ti-feather me-2"></i><span class="mono">unladen</span></div>
+        <div class="navbar-collapse collapse" :class="navOpen && 'show'">
+          <ul class="navbar-nav pt-lg-3">
+            <template x-for="(p, i) in navigation" :key="i">
+              <li :class="p.id ? 'nav-item' + (tab === p.id ? ' active' : '') : 'mt-3 px-3 subheader'">
+                <template x-if="!p.id"><span x-text="p.label"></span></template>
+                <template x-if="p.id">
+                  <a class="nav-link" :href="'#' + p.id" @click.prevent="go(p.id)">
+                    <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti" :class="p.icon"></i></span>
+                    <span class="nav-link-title" x-text="p.label"></span>
+                    <span class="badge bg-red text-red-fg ms-auto" x-show="p.id === 'home' && attention().length" x-text="attention().length"></span>
+                  </a>
+                </template>
+              </li>
+            </template>
+          </ul>
+          <ul class="navbar-nav mt-auto pb-lg-3">
+            <template x-for="l in languages.filter(l => l.id !== language)" :key="l.id">
+              <li class="nav-item">
+                <a class="nav-link" href="#" @click.prevent="setLanguage(l.id)">
+                  <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-language"></i></span>
+                  <span class="nav-link-title" x-text="l.label"></span>
+                </a>
+              </li>
+            </template>
+            <li class="nav-item">
+              <a class="nav-link" href="#" @click.prevent="setTheme(theme === 'dark' ? 'light' : 'dark')">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti" :class="theme === 'dark' ? 'ti-sun' : 'ti-moon'"></i></span>
+                <span class="nav-link-title" x-text="theme === 'dark' ? 'Light theme' : 'Dark theme'"></span>
               </a>
             </li>
-          </template>
-        </ul>
-        <div class="d-flex align-items-center gap-2">
-          <span class="badge bg-warning-lt" x-show="dirty()">Unsaved changes</span>
-          <button class="btn btn-ghost-secondary" @click="discard()" x-show="dirty()">Discard</button>
-          <button class="btn btn-primary" :disabled="!dirty() || saving" @click="save()">
-            <i class="ti ti-device-floppy me-1"></i>Save
-          </button>
-          <div class="dropdown">
-            <button class="btn btn-ghost-secondary btn-icon" @click="menu = !menu" title="More"><i class="ti ti-dots-vertical"></i></button>
-            <div class="dropdown-menu dropdown-menu-end" :class="menu && 'show'" @click.outside="menu = false">
-              <a class="dropdown-item" href="#" @click.prevent="menu = false; reloadFile()"><i class="ti ti-refresh me-2"></i>Reload the file</a>
-              <a class="dropdown-item" href="#" @click.prevent="menu = false; signOut()"><i class="ti ti-logout me-2"></i>Sign out</a>
-              <div class="dropdown-divider"></div>
-              <template x-for="l in languages" :key="l.id">
-                <a class="dropdown-item" href="#" @click.prevent="setLanguage(l.id)"><i class="ti ti-language me-2"></i><span x-text="l.label"></span><i class="ti ti-check ms-auto" x-show="l.id === language"></i></a>
-              </template>
+            <li class="nav-item">
+              <a class="nav-link" href="#" @click.prevent="signOut()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-logout"></i></span>
+                <span class="nav-link-title">Sign out</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <div class="page-wrapper">
+      <div class="page-header d-print-none">
+        <div class="container-xl">
+          <div class="row g-2 align-items-center">
+            <div class="col">
+              <h2 class="page-title" x-text="page().label"></h2>
+              <div class="text-secondary mt-1" x-text="page().about"></div>
+            </div>
+            <div class="col-auto ms-auto">
+              <button class="btn btn-primary" x-show="tab === 'accounts'" @click="startAdding()"><i class="ti ti-plus me-1"></i>Add account</button>
+              <button class="btn btn-primary" x-show="tab === 'models'" @click="startModel(null)"><i class="ti ti-plus me-1"></i>Add model</button>
+              <button class="btn btn-primary" x-show="tab === 'clients'" @click="startClient(null)"><i class="ti ti-plus me-1"></i>Add client</button>
             </div>
           </div>
         </div>
       </div>
-    </header>
 
-    <div class="page-wrapper">
-      <div class="container-xl pt-3">
-        <template x-for="(m, i) in messages" :key="m.id">
-          <div class="alert alert-dismissible" :class="'alert-' + m.kind">
-            <div class="fw-bold" x-text="m.title"></div>
-            <div x-show="m.text" class="text-secondary" style="white-space: pre-wrap" x-text="m.text"></div>
-            <a class="btn-close" @click="messages.splice(i, 1)"></a>
-          </div>
-        </template>
-      </div>
-
-      <div class="page-body mt-2">
+      <div class="page-body">
         <div class="container-xl">
 
-          <!-- Overview -->
-          <div x-show="tab === 'overview'">
-            <div class="text-secondary mb-3">
-              Configuration file: <code x-text="path || 'none'"></code>
-              <span class="ms-2">Refreshed every 5 seconds.</span>
+          <!-- Home -->
+          <div x-show="tab === 'home'">
+            <div class="card mb-3" x-show="steps().some(s => !s.done)">
+              <div class="card-body">
+                <h3 class="card-title">Getting started</h3>
+                <ul class="steps steps-counter steps-green my-4">
+                  <template x-for="(s, i) in steps()" :key="i">
+                    <li class="step-item" :class="i === steps().findIndex(s => !s.done) && 'active'" x-text="s.label"></li>
+                  </template>
+                </ul>
+                <div class="text-center">
+                  <template x-if="!steps()[0].done">
+                    <div>
+                      <p class="text-secondary">An account is a provider's API key, or a subscription you sign in to. The gateway spends from it to answer your tools.</p>
+                      <button class="btn btn-primary" @click="go('accounts'); startAdding()"><i class="ti ti-plus me-1"></i>Add account</button>
+                    </div>
+                  </template>
+                  <template x-if="steps()[0].done && !steps()[1].done">
+                    <div>
+                      <p class="text-secondary">A client key is what your tools present to the gateway. Without one, anyone who reaches the gateway may use it.</p>
+                      <button class="btn btn-primary" @click="go('clients'); startClient(null)"><i class="ti ti-key me-1"></i>Add a client key</button>
+                    </div>
+                  </template>
+                  <template x-if="steps()[0].done && steps()[1].done">
+                    <p class="text-secondary mb-0">Point a tool at the gateway with the settings below. This card goes away with the first request.</p>
+                  </template>
+                </div>
+              </div>
             </div>
-            <div class="card mb-3">
-              <div class="card-header"><h3 class="card-title">Accounts</h3></div>
-              <table class="table card-table">
-                <thead><tr><th>Account</th><th>Provider</th><th>State</th><th></th></tr></thead>
+
+            <div class="card mb-3" x-show="attention().length">
+              <div class="card-header"><h3 class="card-title"><i class="ti ti-alert-triangle me-2 text-warning"></i>Needs attention</h3></div>
+              <div class="list-group list-group-flush">
+                <template x-for="(item, i) in attention()" :key="i">
+                  <div class="list-group-item">
+                    <div class="row align-items-center g-3">
+                      <div class="col-auto"><i class="ti" :class="item.icon + ' text-' + item.kind"></i></div>
+                      <div class="col" x-text="item.text"></div>
+                      <div class="col-auto" x-show="item.action"><button class="btn btn-sm" @click="item.run()" x-text="item.action"></button></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div class="d-flex align-items-center mb-2">
+              <h3 class="mb-0 me-auto">Today</h3>
+              <a href="#activity" class="text-secondary" @click.prevent="go('activity')">
+                <i class="ti ti-loader-2 me-1"></i><span x-text="(activity?.in_flight || []).length + ' in flight'"></span>
+              </a>
+            </div>
+            <div class="row row-cards mb-3">
+              <template x-for="tile in tiles(today)" :key="tile.label">
+                <div class="col-6 col-lg-3">
+                  <div class="card card-sm"><div class="card-body">
+                    <div class="row align-items-center">
+                      <div class="col-auto"><span class="avatar bg-primary-lt"><i class="ti" :class="tile.icon"></i></span></div>
+                      <div class="col">
+                        <div class="h2 mb-0"><span x-text="tile.value"></span> <span class="fs-5 text-danger fw-normal" x-show="tile.note" x-text="tile.note"></span></div>
+                        <div class="text-secondary" x-text="tile.label"></div>
+                      </div>
+                    </div>
+                  </div></div>
+                </div>
+              </template>
+            </div>
+
+            <div class="row row-cards">
+              <div class="col-lg-7">
+                <div class="card">
+                  <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs">
+                      <template x-for="a in apps" :key="a.id">
+                        <li class="nav-item"><a class="nav-link" href="#" :class="app === a.id && 'active'" @click.prevent="app = a.id" x-text="a.label"></a></li>
+                      </template>
+                    </ul>
+                  </div>
+                  <div class="card-body">
+                    <h3 class="card-title"><i class="ti ti-plug me-2"></i>Connect a tool</h3>
+                    <div class="position-relative">
+                      <pre class="mb-2" x-text="snippet(app)"></pre>
+                      <button class="btn btn-sm btn-icon position-absolute top-0 end-0 m-2" title="Copy" @click="copy(snippet(app))"><i class="ti ti-copy"></i></button>
+                    </div>
+                    <div class="text-secondary" x-text="appNote(app)"></div>
+                    <div class="text-secondary mt-2" x-show="model.clients.length">
+                      <span>Put a client's key in place of YOUR_CLIENT_KEY.</span>
+                      <a href="#clients" @click.prevent="go('clients')">Client keys</a>
+                    </div>
+                    <div class="text-secondary mt-2" x-show="!model.clients.length">No client key is set, so any value is taken as the key.</div>
+                    <div class="text-secondary mt-2">The address is the one this page was opened at; another machine may reach the gateway at a different one.</div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-5">
+                <div class="card">
+                  <div class="card-header">
+                    <h3 class="card-title"><i class="ti ti-wallet me-2"></i>Accounts</h3>
+                    <div class="card-actions"><a href="#accounts" @click.prevent="go('accounts')">Manage</a></div>
+                  </div>
+                  <div class="list-group list-group-flush">
+                    <template x-for="a in status?.accounts || []" :key="a.provider + ' ' + a.name">
+                      <div class="list-group-item">
+                        <div class="row align-items-center g-3">
+                          <div class="col-auto">
+                            <span class="avatar avatar-sm brand" x-data="{ failed: false }">
+                              <img :src="brandIcon(a.provider) || null" x-show="brandIcon(a.provider) && !failed" @error="failed = true" alt="">
+                              <span x-show="!brandIcon(a.provider) || failed" x-text="initials(a.provider)"></span>
+                            </span>
+                          </div>
+                          <div class="col text-truncate">
+                            <div class="mono text-truncate" x-text="a.name"></div>
+                            <div class="text-secondary small" x-show="tightest(a.provider, a.name)">
+                              <span x-text="tightest(a.provider, a.name) && Math.round(100 - tightest(a.provider, a.name).used) + '% left'"></span>
+                              <span x-show="quotaOf(a.provider, a.name)?.plan" x-text="quotaOf(a.provider, a.name)?.plan"></span>
+                            </div>
+                            <div class="text-secondary small" x-show="!tightest(a.provider, a.name) && quotaOf(a.provider, a.name)?.balance" x-text="quotaOf(a.provider, a.name)?.balance"></div>
+                          </div>
+                          <div class="col-auto">
+                            <span class="status" :class="'status-' + accountState(null, a).color"><span class="status-dot"></span><span x-text="accountState(null, a).label"></span></span>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                  <div class="empty" x-show="!(status?.accounts || []).length">
+                    <div class="empty-icon"><i class="ti ti-wallet-off"></i></div>
+                    <p class="empty-title">No account yet</p>
+                    <div class="empty-action"><button class="btn btn-primary" @click="go('accounts'); startAdding()"><i class="ti ti-plus me-1"></i>Add account</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Accounts -->
+          <div x-show="tab === 'accounts'">
+            <template x-for="g in accountGroups()" :key="g.provider">
+              <div class="card mb-3">
+                <div class="card-header">
+                  <span class="avatar avatar-sm brand me-3" x-data="{ failed: false }">
+                    <img :src="brandIcon(g.provider) || null" x-show="brandIcon(g.provider) && !failed" @error="failed = true" alt="">
+                    <span x-show="!brandIcon(g.provider) || failed" x-text="initials(g.provider)"></span>
+                  </span>
+                  <div>
+                    <h3 class="card-title mb-0" x-text="brandName(g.provider)"></h3>
+                    <div class="text-secondary small mono" x-show="brandName(g.provider) !== g.provider" x-text="g.provider"></div>
+                  </div>
+                  <div class="card-actions" x-show="g.accounts.length + g.fromEnvironment.length > 1"><div class="d-flex align-items-center gap-2">
+                    <span class="text-secondary" title="In order: the next account is used only when the one before fails. In turn: each request starts at the next account, which spreads load but breaks prompt caches.">Accounts are used</span>
+                    <select class="form-select form-select-sm w-auto" @change="setPool(g.provider, $event.target.value)">
+                      <option value="order" :selected="poolOf(g.provider) === 'order'">in order</option>
+                      <option value="rotate" :selected="poolOf(g.provider) === 'rotate'">in turn</option>
+                    </select>
+                  </div></div>
+                </div>
+                <div class="list-group list-group-flush">
+                  <template x-for="a in g.accounts" :key="a.uid">
+                    <div class="list-group-item">
+                      <div class="row align-items-center g-3">
+                        <div class="col">
+                          <div class="d-flex align-items-center flex-wrap gap-2">
+                            <span class="mono fw-bold" x-text="a.name"></span>
+                            <span class="status" :class="'status-' + accountState(a, inForce(a)).color">
+                              <span class="status-dot"></span><span x-text="accountState(a, inForce(a)).label"></span>
+                            </span>
+                            <span class="text-secondary" x-show="inForce(a)?.cooling_seconds" x-text="inForce(a)?.cooling_seconds + 's'"></span>
+                            <span class="badge bg-blue-lt" x-show="quotaOf(g.provider, a.name)?.plan || inForce(a)?.sign_in?.plan" x-text="quotaOf(g.provider, a.name)?.plan || inForce(a)?.sign_in?.plan"></span>
+                            <span class="badge bg-secondary-lt" x-show="a.custom">own address</span>
+                          </div>
+                          <div class="text-secondary small mt-1" x-show="inForce(a)?.sign_in?.user" x-text="inForce(a)?.sign_in?.user"></div>
+                          <div class="text-danger small mt-1" x-show="inForce(a)?.sign_in?.problem" x-text="inForce(a)?.sign_in?.problem"></div>
+                        </div>
+                        <div class="col-auto d-flex gap-2">
+                          <button class="btn btn-sm btn-primary" x-show="inForce(a)?.sign_in && inForce(a).sign_in.state !== 'signed in'" @click="startSignIn(g.provider, a.name)"><i class="ti ti-login-2 me-1"></i>Sign in</button>
+                          <button class="btn btn-sm" x-show="inForce(a) && inForce(a).state !== 'ready'" @click="resetKey(g.provider, a.name)"><i class="ti ti-refresh me-1"></i>Try it again</button>
+                          <div class="dropdown">
+                            <button class="btn btn-sm btn-ghost-secondary btn-icon" data-bs-toggle="dropdown" title="More"><i class="ti ti-dots-vertical"></i></button>
+                            <div class="dropdown-menu dropdown-menu-end">
+                              <a class="dropdown-item" href="#" @click.prevent="startAccount(a)"><i class="ti ti-pencil me-2"></i>Edit</a>
+                              <a class="dropdown-item" href="#" x-show="inForce(a)?.sign_in" @click.prevent="startSignIn(g.provider, a.name)"><i class="ti ti-login-2 me-2"></i>Sign in again</a>
+                              <a class="dropdown-item" href="#" x-show="inForce(a)?.sign_in && inForce(a).sign_in.state !== 'signed out'" @click.prevent="forgetSignIn(g.provider, a.name)"><i class="ti ti-user-off me-2"></i>Forget the sign-in</a>
+                              <a class="dropdown-item" href="#" x-show="canMove(g, a, -1)" @click.prevent="moveAccount(g, a, -1)"><i class="ti ti-arrow-up me-2"></i>Use earlier</a>
+                              <a class="dropdown-item" href="#" x-show="canMove(g, a, 1)" @click.prevent="moveAccount(g, a, 1)"><i class="ti ti-arrow-down me-2"></i>Use later</a>
+                              <a class="dropdown-item" href="#" x-show="a.enabled" @click.prevent="setAccountEnabled(a, false)"><i class="ti ti-player-pause me-2"></i>Turn off</a>
+                              <a class="dropdown-item" href="#" x-show="!a.enabled" @click.prevent="setAccountEnabled(a, true)"><i class="ti ti-player-play me-2"></i>Turn on</a>
+                              <div class="dropdown-divider"></div>
+                              <a class="dropdown-item text-danger" href="#" @click.prevent="removeAccount(a)"><i class="ti ti-trash me-2"></i>Remove</a>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <template x-if="quotaOf(g.provider, a.name)">
+                        <div class="row g-3 mt-0">
+                          <template x-for="(w, i) in quotaOf(g.provider, a.name).windows" :key="i">
+                            <div class="col-sm-6 col-lg-4">
+                              <div class="d-flex small">
+                                <span class="text-secondary me-1" x-show="w.group" x-text="w.group"></span>
+                                <span class="text-truncate" :class="w.name.includes('-') && 'mono'" x-text="w.name"></span>
+                                <span class="ms-2 text-secondary text-nowrap" x-show="w.detail" x-text="w.detail"></span>
+                                <span class="ms-auto ps-2 fw-bold text-nowrap" x-text="Math.round(100 - w.used) + '% left'"></span>
+                              </div>
+                              <div class="progress progress-sm my-1">
+                                <div class="progress-bar" :class="quotaBarClass(w.used)" :style="'width: ' + (100 - w.used) + '%'"></div>
+                              </div>
+                              <div class="small text-secondary" x-show="w.resets_at" :title="w.resets_at && new Date(w.resets_at).toLocaleString()" x-text="resetsIn(w.resets_at)"></div>
+                            </div>
+                          </template>
+                          <div class="col-sm-6 col-lg-4" x-show="quotaOf(g.provider, a.name).balance">
+                            <div class="d-flex small"><span>Balance</span><span class="ms-auto fw-bold" x-text="quotaOf(g.provider, a.name).balance"></span></div>
+                            <div class="small text-secondary" x-show="quotaOf(g.provider, a.name).balance_detail" x-text="quotaOf(g.provider, a.name).balance_detail"></div>
+                          </div>
+                          <div class="col-12 small text-danger" x-show="quotaOf(g.provider, a.name).error && !quotaOf(g.provider, a.name).see_at" x-text="quotaOf(g.provider, a.name).error"></div>
+                          <div class="col-12 small text-secondary" x-show="quotaOf(g.provider, a.name).see_at">
+                            <span x-text="quotaOf(g.provider, a.name).error"></span>
+                            <a :href="quotaOf(g.provider, a.name).see_at" target="_blank" rel="noreferrer">Open the usage page</a>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                  <template x-for="s in g.fromEnvironment" :key="'env ' + s.name">
+                    <div class="list-group-item">
+                      <div class="row align-items-center g-3">
+                        <div class="col">
+                          <div class="d-flex align-items-center flex-wrap gap-2">
+                            <span class="mono fw-bold" x-text="s.name"></span>
+                            <span class="status" :class="'status-' + accountState(null, s).color"><span class="status-dot"></span><span x-text="accountState(null, s).label"></span></span>
+                            <span class="badge bg-secondary-lt" title="The key comes from an environment variable, not from the configuration file.">from the environment</span>
+                          </div>
+                        </div>
+                        <div class="col-auto">
+                          <button class="btn btn-sm" x-show="s.state !== 'ready'" @click="resetKey(s.provider, s.name)"><i class="ti ti-refresh me-1"></i>Try it again</button>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+            <div x-show="accountGroups().length"><div class="d-flex text-secondary small">
+              <span class="me-auto">Plans and balances are as the providers report them, read at most once a minute.</span>
+              <a href="#" @click.prevent="refreshQuotas(true)"><i class="ti ti-refresh me-1"></i>Refresh</a>
+            </div></div>
+            <div class="card" x-show="!accountGroups().length">
+              <div class="empty">
+                <div class="empty-icon"><i class="ti ti-wallet-off"></i></div>
+                <p class="empty-title">No account yet</p>
+                <p class="empty-subtitle text-secondary">Add a provider's API key, or sign in to a subscription, and the gateway can answer your tools with it.</p>
+                <div class="empty-action"><button class="btn btn-primary" @click="startAdding()"><i class="ti ti-plus me-1"></i>Add account</button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Models -->
+          <div x-show="tab === 'models'">
+            <div class="card">
+              <div class="table-responsive" x-show="model.models.length">
+              <table class="table card-table table-vcenter">
+                <thead><tr><th>Clients ask for</th><th>Answered by</th><th class="w-1"></th></tr></thead>
                 <tbody>
-                  <template x-for="a in status?.accounts || []" :key="a.provider + ' ' + a.name">
+                  <template x-for="r in model.models" :key="r.uid">
                     <tr>
                       <td>
-                        <span class="mono" x-text="a.name"></span>
-                        <span class="badge bg-secondary-lt ms-1" x-show="a.source === 'environment'">environment</span>
+                        <span class="mono fw-bold" x-text="r.name"></span>
+                        <span class="badge bg-secondary-lt ms-2" x-show="r.name === '*'">every other name</span>
                       </td>
                       <td>
-                        <span class="mono" x-text="a.provider"></span>
-                        <span class="badge ms-1" x-show="a.pool !== 'order'" x-text="a.pool"></span>
-                      </td>
-                      <td>
-                        <span class="badge" :class="stateClass(a.state)" x-text="a.state"></span>
-                        <span class="text-secondary ms-1" x-show="a.cooling_seconds" x-text="a.cooling_seconds + 's'"></span>
-                        <template x-if="a.sign_in">
-                          <div class="small mt-1">
-                            <span class="badge" :class="a.sign_in.state === 'signed in' ? 'bg-green-lt' : 'bg-red-lt'" x-text="a.sign_in.state"></span>
-                            <span class="text-secondary ms-1" x-text="(a.sign_in.user || '') + (a.sign_in.plan ? ' · ' + a.sign_in.plan : '')"></span>
-                            <div class="text-danger" x-show="a.sign_in.problem" x-text="a.sign_in.problem"></div>
+                        <template x-if="r.raw !== undefined">
+                          <code class="text-secondary" x-text="JSON.stringify(r.raw)"></code>
+                        </template>
+                        <template x-if="r.raw === undefined && targetParts(r.target).kind === 'alias'">
+                          <div><i class="ti ti-corner-down-right me-2 text-secondary"></i><span class="text-secondary">the same as</span> <span class="mono" x-text="targetParts(r.target).alias"></span></div>
+                        </template>
+                        <template x-if="r.raw === undefined && targetParts(r.target).kind === 'provider'">
+                          <div class="d-flex align-items-center">
+                            <span class="avatar avatar-xs brand me-2" x-data="{ failed: false }">
+                              <img :src="brandIcon(targetParts(r.target).provider) || null" x-show="brandIcon(targetParts(r.target).provider) && !failed" @error="failed = true" alt="">
+                              <span x-show="!brandIcon(targetParts(r.target).provider) || failed" x-text="initials(targetParts(r.target).provider)"></span>
+                            </span>
+                            <span x-text="brandName(targetParts(r.target).provider)"></span>
+                            <span x-show="targetParts(r.target).upstream"><span class="text-secondary mx-2">as</span><span class="mono" x-text="targetParts(r.target).upstream"></span></span>
                           </div>
                         </template>
                       </td>
-                      <td class="text-end">
-                        <button class="btn btn-sm" x-show="a.state !== 'ready'" @click="resetKey(a.provider, a.name)">Reset</button>
-                        <template x-if="a.sign_in">
-                          <span>
-                            <button class="btn btn-sm btn-primary" @click="startSignIn(a.provider, a.name)" x-text="a.sign_in.state === 'signed in' ? 'Sign in again' : 'Sign in'"></button>
-                            <button class="btn btn-sm btn-ghost-danger" x-show="a.sign_in.state !== 'signed out'" @click="forgetSignIn(a.provider, a.name)">Forget</button>
-                          </span>
-                        </template>
+                      <td class="text-nowrap">
+                        <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Edit" @click="startModel(r)"><i class="ti ti-pencil"></i></button>
+                        <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="removeModel(r)"><i class="ti ti-trash"></i></button>
                       </td>
                     </tr>
                   </template>
-                  <tr x-show="!(status?.accounts || []).length"><td colspan="4" class="text-secondary">No account: add one on the Accounts page.</td></tr>
-                  <template x-for="c in status?.cooling || []" :key="c.provider + c.what">
-                    <tr><td colspan="4" class="text-warning">
-                      <span x-text="c.provider + ': ' + c.what + ', retried in ' + c.cooling_seconds + 's'"></span>
-                    </td></tr>
+                </tbody>
+              </table>
+              </div>
+              <div class="empty" x-show="!model.models.length">
+                <div class="empty-icon"><i class="ti ti-route-off"></i></div>
+                <p class="empty-title">No model yet</p>
+                <p class="empty-subtitle text-secondary">A model gives clients a name to ask for and says which provider answers it. Without any, clients must name both, as provider/model.</p>
+                <div class="empty-action"><button class="btn btn-primary" @click="startModel(null)"><i class="ti ti-plus me-1"></i>Add model</button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Clients -->
+          <div x-show="tab === 'clients'">
+            <div class="card">
+              <div class="table-responsive" x-show="model.clients.length">
+              <table class="table card-table table-vcenter">
+                <thead><tr><th>Client</th><th>Key</th><th>May use</th><th>Enabled</th><th class="w-1"></th></tr></thead>
+                <tbody>
+                  <template x-for="c in model.clients" :key="c.uid">
+                    <tr>
+                      <td><i class="ti ti-key me-2 text-secondary"></i><span class="mono fw-bold" x-text="c.name"></span></td>
+                      <td class="mono text-secondary" x-text="isHidden(c.key) ? '•••• ' + hiddenName(c.key) : c.key"></td>
+                      <td :class="c.access === 'some' && 'mono'" x-text="accessSummary(c)"></td>
+                      <td><label class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" :checked="c.enabled" @change="setClientEnabled(c, $event.target.checked)"></label></td>
+                      <td class="text-nowrap">
+                        <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Edit" @click="startClient(c)"><i class="ti ti-pencil"></i></button>
+                        <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="removeClient(c)"><i class="ti ti-trash"></i></button>
+                      </td>
+                    </tr>
                   </template>
                 </tbody>
               </table>
-            </div>
-            <div class="row row-cards">
-              <div class="col-md-6">
-                <div class="card">
-                  <div class="card-header"><h3 class="card-title">Models in force</h3></div>
-                  <table class="table card-table">
-                    <tbody>
-                      <template x-for="r in status?.models || []" :key="r.name">
-                        <tr><td class="mono" x-text="r.name"></td><td class="mono" x-text="r.targets.join(', ')"></td></tr>
-                      </template>
-                      <tr x-show="!(status?.models || []).length"><td class="text-secondary">No model: clients name provider/model.</td></tr>
-                    </tbody>
-                  </table>
-                </div>
               </div>
-              <div class="col-md-6">
-                <div class="card">
-                  <div class="card-header"><h3 class="card-title">Clients in force</h3></div>
-                  <table class="table card-table">
-                    <tbody>
-                      <template x-for="c in status?.clients || []" :key="c.name">
-                        <tr><td x-text="c.name"></td><td class="text-secondary" x-text="c.disabled ? 'disabled' : clientSummary(c.models)"></td></tr>
-                      </template>
-                      <tr x-show="!(status?.clients || []).length"><td class="text-warning">None: any client may use the gateway.</td></tr>
-                    </tbody>
-                  </table>
-                </div>
+              <div class="empty" x-show="!model.clients.length">
+                <div class="empty-icon"><i class="ti ti-lock-open"></i></div>
+                <p class="empty-title">No client key</p>
+                <p class="empty-subtitle text-secondary">Anyone who reaches the gateway may use it. Add a key, and only the tools that present one are answered.</p>
+                <div class="empty-action"><button class="btn btn-primary" @click="startClient(null)"><i class="ti ti-plus me-1"></i>Add client</button></div>
               </div>
             </div>
           </div>
 
           <!-- Activity -->
           <div x-show="tab === 'activity'">
-            <div class="text-secondary mb-3">Requests as they happen, refreshed every 2 seconds. Sessions of the last 7 days.</div>
             <div class="card mb-3">
-              <div class="card-header"><h3 class="card-title">In flight</h3></div>
+              <div class="card-header"><h3 class="card-title"><i class="ti ti-loader-2 me-2"></i>In flight</h3></div>
+              <div class="table-responsive" x-show="(activity?.in_flight || []).length">
               <table class="table card-table table-sm">
                 <thead><tr><th>Started</th><th>Client</th><th>Model</th><th>Account</th><th>Phase</th><th class="text-end">Elapsed</th></tr></thead>
                 <tbody>
@@ -182,13 +465,14 @@
                       <td class="text-end" x-text="duration(activity.now - r.t)"></td>
                     </tr>
                   </template>
-                  <tr x-show="!(activity?.in_flight || []).length"><td colspan="6" class="text-secondary">Nothing in flight.</td></tr>
                 </tbody>
               </table>
+              </div>
+              <div class="card-body text-secondary" x-show="!(activity?.in_flight || []).length">Nothing in flight.</div>
             </div>
             <div class="card mb-3">
-              <div class="card-header"><h3 class="card-title">Sessions</h3></div>
-              <div class="table-responsive">
+              <div class="card-header"><h3 class="card-title"><i class="ti ti-messages me-2"></i>Sessions</h3></div>
+              <div class="table-responsive" x-show="(activity?.sessions || []).length">
               <table class="table card-table table-sm table-hover">
                 <thead><tr><th>Last active</th><th>Client</th><th>Session</th><th>Model</th><th class="text-end">Requests</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache hit</th><th>Accounts</th></tr></thead>
                 <tbody>
@@ -205,24 +489,24 @@
                       <td class="mono"><span x-text="s.accounts.join(', ')"></span> <span class="badge bg-orange-lt" x-show="s.switches" x-text="s.switches + ' switches'"></span></td>
                     </tr>
                   </template>
-                  <tr x-show="!(activity?.sessions || []).length"><td colspan="9" class="text-secondary">No session yet.</td></tr>
                 </tbody>
               </table>
               </div>
+              <div class="card-body text-secondary" x-show="!(activity?.sessions || []).length">No session yet.</div>
             </div>
             <div class="card mb-3">
               <div class="card-header">
-                <h3 class="card-title" x-text="session ? 'Requests of session ' + short(session.id) : 'Recent requests'"></h3>
+                <h3 class="card-title"><i class="ti ti-list-details me-2"></i><span x-text="session ? 'Requests of session ' + short(session.id) : 'Recent requests'"></span></h3>
                 <div class="card-actions" x-show="session"><button class="btn btn-sm" @click="session = null; sessionRequests = []">Show all recent</button></div>
               </div>
-              <div class="table-responsive">
+              <div class="table-responsive" x-show="shownRequests().length">
               <table class="table card-table table-sm">
                 <thead><tr><th>Time</th><th>Client</th><th>Model</th><th>Served by</th><th>Status</th><th class="text-end">First content</th><th class="text-end">Total</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cached</th></tr></thead>
                 <tbody>
                   <template x-for="r in shownRequests()" :key="r.id">
                     <tr>
                       <td>
-                        <a href="#" class="text-reset" @click.prevent="expanded[r.id] = !expanded[r.id]" x-text="clock(r.t)"></a>
+                        <a href="#" class="text-reset" @click.prevent="expanded[r.id] = !expanded[r.id]"><i class="ti me-1 text-secondary" :class="expanded[r.id] ? 'ti-chevron-down' : 'ti-chevron-right'"></i><span x-text="clock(r.t)"></span></a>
                         <div x-show="expanded[r.id]" class="small text-secondary mt-1">
                           <div x-show="r.session" class="mono" x-text="'session ' + r.session + (r.subagent ? ', subagent ' + r.subagent : '')"></div>
                           <div x-text="r.protocol + (r.stream ? ', streamed' : '')"></div>
@@ -246,435 +530,133 @@
                       <td class="text-end" x-text="r.tokens ? count(r.tokens.cache_read) : ''"></td>
                     </tr>
                   </template>
-                  <tr x-show="!shownRequests().length"><td colspan="10" class="text-secondary">No request recorded since the gateway started.</td></tr>
                 </tbody>
               </table>
               </div>
+              <div class="card-body text-secondary" x-show="!shownRequests().length">No request recorded since the gateway started.</div>
             </div>
           </div>
 
           <!-- Usage -->
           <div x-show="tab === 'usage'">
-            <template x-if="quotas && quotas.length">
-            <div class="mb-4">
-              <div class="d-flex mb-2 align-items-center">
-                <h3 class="mb-0 me-2">Plans and balances</h3>
-                <div class="text-secondary small me-auto">As the providers report them, read at most once a minute.</div>
-                <button class="btn btn-sm" :disabled="quotasBusy" @click="refreshQuotas(true)"><i class="ti ti-refresh me-1"></i>Refresh</button>
-              </div>
-              <div class="row row-cards">
-                <template x-for="q in quotas" :key="q.provider + ' ' + q.account">
-                  <div class="col-md-6 col-xl-4">
-                    <div class="card card-sm h-100"><div class="card-body">
-                      <div class="d-flex align-items-center mb-2">
-                        <span class="mono fw-bold" x-text="q.provider + '/' + q.account"></span>
-                        <span class="badge bg-blue-lt ms-2" x-show="q.plan" x-text="q.plan"></span>
-                        <span class="text-secondary small ms-auto" x-text="ago(q.read_at, Date.now())"></span>
-                      </div>
-                      <template x-for="(w, i) in q.windows" :key="i">
-                        <div class="mb-2">
-                          <div class="small text-secondary mt-2" x-show="w.group && w.group !== q.windows[i - 1]?.group" x-text="w.group"></div>
-                          <div class="d-flex small">
-                            <span :class="w.name.includes('-') && 'mono'" x-text="w.name"></span>
-                            <span class="ms-2 text-secondary" x-show="w.detail" x-text="w.detail"></span>
-                            <span class="ms-auto fw-bold" x-text="Math.round(100 - w.used) + '% left'"></span>
-                          </div>
-                          <div class="progress progress-sm my-1">
-                            <div class="progress-bar" :class="quotaBarClass(w.used)" :style="'width: ' + (100 - w.used) + '%'"></div>
-                          </div>
-                          <div class="small text-secondary" x-show="w.resets_at" :title="w.resets_at && new Date(w.resets_at).toLocaleString()" x-text="resetsIn(w.resets_at)"></div>
-                        </div>
-                      </template>
-                      <template x-if="q.balance">
-                        <div class="mt-2">
-                          <div class="d-flex small">
-                            <span>Balance</span>
-                            <span class="ms-auto fw-bold" x-text="q.balance"></span>
-                          </div>
-                          <div class="small text-secondary" x-show="q.balance_detail" x-text="q.balance_detail"></div>
-                        </div>
-                      </template>
-                      <div class="small text-danger" x-show="q.error && !q.see_at" x-text="q.error"></div>
-                      <div class="small text-secondary" x-show="q.see_at">
-                        <span x-text="q.error"></span>
-                        <a :href="q.see_at" target="_blank" rel="noreferrer">Open the usage page</a>
-                      </div>
-                    </div></div>
-                  </div>
+            <div class="d-flex mb-3 align-items-center flex-wrap gap-2">
+              <div class="btn-group me-auto">
+                <template x-for="d in [1, 7, 30]">
+                  <button class="btn" :class="usageDays === d && 'active'" @click="usageDays = d; refreshUsage()" x-text="d === 1 ? 'Today' : d + ' days'"></button>
                 </template>
               </div>
-            </div>
-            </template>
-            <div class="d-flex mb-3 align-items-center flex-wrap gap-2">
-              <div class="text-secondary me-auto">Tokens as the upstreams reported them, by local day.</div>
               <div class="btn-group">
                 <template x-for="g in usageGroups">
                   <button class="btn" :class="usageBy === g.id && 'active'" @click="usageBy = g.id" x-text="'By ' + g.label.toLowerCase()"></button>
                 </template>
               </div>
-              <div class="btn-group">
-                <template x-for="d in [1, 7, 30]">
-                  <button class="btn" :class="usageDays === d && 'active'" @click="usageDays = d; refreshUsage()" x-text="d === 1 ? 'Today' : d + ' days'"></button>
-                </template>
-              </div>
             </div>
-            <div class="row row-cards mb-3" x-show="usage">
-              <template x-for="tile in usageTiles()">
-                <div class="col-6 col-md-3">
+            <div class="row row-cards mb-3">
+              <template x-for="tile in tiles(usage)" :key="tile.label">
+                <div class="col-6 col-lg-3">
                   <div class="card card-sm"><div class="card-body">
-                    <div class="subheader" x-text="tile.label"></div>
-                    <div class="h2 mb-0" x-text="tile.value"></div>
+                    <div class="row align-items-center">
+                      <div class="col-auto"><span class="avatar bg-primary-lt"><i class="ti" :class="tile.icon"></i></span></div>
+                      <div class="col">
+                        <div class="h2 mb-0"><span x-text="tile.value"></span> <span class="fs-5 text-danger fw-normal" x-show="tile.note" x-text="tile.note"></span></div>
+                        <div class="text-secondary" x-text="tile.label"></div>
+                      </div>
+                    </div>
                   </div></div>
                 </div>
               </template>
             </div>
-              <div class="card mb-3">
-                <div class="table-responsive">
-                <table class="table card-table table-sm">
-                  <thead><tr><th x-text="usageGroups.find(g => g.id === usageBy).label"></th><th class="text-end">Requests</th><th class="text-end">Failed</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache read</th><th class="text-end">Cache write</th><th class="text-end">Cache hit</th></tr></thead>
-                  <tbody>
-                    <template x-for="row in usage?.[usageBy] || []" :key="row.name">
-                      <tr>
-                        <td class="mono" x-text="row.name"></td>
-                        <td class="text-end" x-text="row.requests"></td>
-                        <td class="text-end" :class="row.failures && 'text-danger'" x-text="row.failures"></td>
-                        <td class="text-end" x-text="count(row.tokens.input)"></td>
-                        <td class="text-end" x-text="count(row.tokens.output)"></td>
-                        <td class="text-end" x-text="count(row.tokens.cache_read)"></td>
-                        <td class="text-end" x-text="count(row.tokens.cache_write)"></td>
-                        <td class="text-end" x-text="cacheShare(row.tokens)"></td>
-                      </tr>
-                    </template>
-                    <tr x-show="!(usage?.[usageBy] || []).length"><td colspan="8" class="text-secondary">No request in this period.</td></tr>
-                  </tbody>
-                </table>
-                </div>
-              </div>
-          </div>
-
-          <!-- Accounts -->
-          <div x-show="tab === 'accounts'">
-            <div class="d-flex mb-3 align-items-start">
-              <div class="text-secondary me-auto">
-                The upstream accounts the gateway pays with. Accounts of one provider form a pool, tried in this order:
-                the next is used only when the one before fails.
-              </div>
-              <button class="btn" @click="startAdding()" x-show="!adding"><i class="ti ti-plus me-1"></i>Add account</button>
-            </div>
-
-            <template x-if="adding">
             <div class="card mb-3">
-              <div class="card-header"><h3 class="card-title">Add an account</h3></div>
-              <div class="card-body">
-                <div class="row g-3">
-                  <div class="col-md-4">
-                    <label class="form-label">Provider</label>
-                    <select class="form-select" x-model="draft.provider" @change="draftChanged()">
-                      <template x-for="id in providerIds()" :key="id"><option :value="id" x-text="id" :selected="draft.provider === id"></option></template>
-                      <option value="">another address…</option>
-                    </select>
-                  </div>
-                  <div class="col-md-4">
-                    <label class="form-label">Name</label>
-                    <input class="form-control mono" x-model="draft.name" @input="draftChanged()" placeholder="work">
-                    <div class="form-hint">Shown in logs and the overview.</div>
-                  </div>
-                  <div class="col-12" x-show="draft.provider === 'antigravity'">
-                    <div class="alert alert-warning mb-0" x-text="antigravityRisk"></div>
-                  </div>
-                  <div class="col-md-4" x-show="takesKeys(draft.provider)">
-                    <label class="form-label">Key</label>
-                    <input class="form-control mono" x-model="draft.key" placeholder="sk-… or ${ENV_VAR}" autocomplete="off">
-                    <div class="form-hint" x-show="!draft.provider">May stay empty for an address without authentication.</div>
-                    <div class="form-hint" x-show="keyOptional(draft.provider)">May stay empty: the free models need no key.</div>
-                    <div class="form-hint" x-show="signsIn(draft.provider)">Or leave it empty and sign in instead. For your own use only: the plan is personal.</div>
-                  </div>
-                  <template x-if="!draft.provider">
-                    <div class="col-12">
-                      <div class="row g-3">
-                        <div class="col-md-4">
-                          <label class="form-label">Speaks like</label>
-                          <select class="form-select" x-model="draft.preset">
-                            <option value="">nothing built in</option>
-                            <template x-for="id in presets" :key="id"><option :value="id" x-text="id"></option></template>
-                          </select>
-                        </div>
-                        <div class="col-md-8">
-                          <label class="form-label">Endpoint</label>
-                          <div class="input-group">
-                            <select class="form-select" style="max-width: 9rem" x-model="draft.protocol">
-                              <template x-for="proto in protocols" :key="proto"><option :value="proto" x-text="proto" :selected="draft.protocol === proto"></option></template>
-                            </select>
-                            <input class="form-control mono" x-model="draft.url" placeholder="https://relay.example.com/v1">
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </template>
-                  <div class="col-12" x-show="draft.suggestions.length">
-                    <label class="form-label">Models</label>
-                    <template x-for="s in draft.suggestions" :key="s.name">
-                      <label class="form-check">
-                        <input class="form-check-input" type="checkbox" x-model="s.chosen">
-                        <span class="form-check-label">
-                          <span x-text="s.current ? 'Point' : 'Add'"></span>
-                          <code x-text="s.name"></code> →
-                          <code x-text="s.target"></code>
-                          <span class="text-secondary" x-show="s.current" x-text="'(now ' + s.current + ')'"></span>
-                        </span>
-                      </label>
-                    </template>
-                  </div>
-                </div>
-              </div>
-              <div class="card-footer d-flex gap-2">
-                <button class="btn btn-primary" x-show="signsIn(draft.provider) && !draft.key.trim()" @click="startSignIn(draft.provider, draft.name.trim(), true)" :disabled="!!draftProblem()">Sign in and add</button>
-                <button class="btn btn-primary" x-show="!(signsIn(draft.provider) && !draft.key.trim())" @click="addAccount()" :disabled="!!draftProblem()">Add</button>
-                <button class="btn btn-ghost-secondary" @click="adding = false">Cancel</button>
-                <span class="text-secondary align-self-center" x-text="draftProblem()"></span>
-              </div>
-            </div>
-            </template>
-
-            <div class="card">
-              <table class="table card-table">
-                <thead><tr><th style="width: 13rem">Name</th><th style="width: 11rem">Provider</th><th>Key</th><th style="width: 5rem">Enabled</th><th style="width: 8rem"></th></tr></thead>
+              <div class="table-responsive" x-show="(usage?.[usageBy] || []).length">
+              <table class="table card-table table-sm">
+                <thead><tr><th x-text="usageGroups.find(g => g.id === usageBy).label"></th><th class="text-end">Requests</th><th class="text-end">Failed</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache read</th><th class="text-end">Cache write</th><th class="text-end">Cache hit</th></tr></thead>
                 <tbody>
-                  <template x-for="(a, ai) in model.accounts" :key="a.uid">
+                  <template x-for="row in usage?.[usageBy] || []" :key="row.name">
                     <tr>
-                      <td><input class="form-control form-control-sm mono" x-model="a.name"></td>
-                      <td>
-                        <span class="mono" x-text="accountProvider(a)"></span>
-                        <span class="badge bg-secondary-lt ms-1" x-show="a.custom">own address</span>
-                      </td>
-                      <td>
-                        <template x-if="signsIn(accountProvider(a)) && !a.key">
-                          <div class="d-flex align-items-center gap-2">
-                            <span class="badge" :class="signInOf(a)?.state === 'signed in' ? 'bg-green-lt' : 'bg-secondary-lt'" x-text="signInOf(a)?.state || 'not saved yet'"></span>
-                            <span class="text-secondary small" x-text="signInOf(a)?.user || ''"></span>
-                            <button class="btn btn-sm" @click="startSignIn(accountProvider(a), a.name.trim())" x-text="signInOf(a)?.state === 'signed in' ? 'Sign in again' : 'Sign in'"></button>
-                          </div>
-                        </template>
-                        <template x-if="isHidden(a.key)">
-                          <div class="d-flex align-items-center gap-2">
-                            <span class="mono text-secondary" x-text="'•••• ' + hiddenName(a.key)"></span>
-                            <button class="btn btn-sm" @click="a.key = ''">Replace</button>
-                          </div>
-                        </template>
-                        <template x-if="!isHidden(a.key) && !(signsIn(accountProvider(a)) && !a.key)">
-                          <input class="form-control form-control-sm mono" x-model="a.key" :placeholder="a.custom ? 'none' : keyOptional(accountProvider(a)) ? 'none: free models only' : 'sk-… or ${ENV_VAR}'" autocomplete="off">
-                        </template>
-                        <template x-if="a.custom">
-                          <div class="mt-2">
-                            <template x-for="(e, ei) in a.endpoints" :key="e.uid">
-                              <div class="input-group input-group-sm mb-1">
-                                <select class="form-select" style="max-width: 8rem" x-model="e.protocol">
-                                  <template x-for="proto in protocols" :key="proto"><option :value="proto" x-text="proto" :selected="e.protocol === proto"></option></template>
-                                </select>
-                                <input class="form-control mono" x-model="e.url">
-                                <button class="btn btn-icon" @click="a.endpoints.splice(ei, 1)"><i class="ti ti-x"></i></button>
-                              </div>
-                            </template>
-                            <template x-for="(h, hi) in a.headers" :key="h.uid">
-                              <div class="input-group input-group-sm mb-1">
-                                <input class="form-control mono" style="max-width: 12rem" x-model="h.name" placeholder="Header-Name">
-                                <input class="form-control mono" x-model="h.value" placeholder="value or ${ENV_VAR}">
-                                <button class="btn btn-icon" @click="a.headers.splice(hi, 1)"><i class="ti ti-x"></i></button>
-                              </div>
-                            </template>
-                            <button class="btn btn-sm" @click="a.endpoints.push({uid: uid(), protocol: 'chat', url: ''})"><i class="ti ti-plus me-1"></i>Endpoint</button>
-                            <button class="btn btn-sm" @click="a.headers.push({uid: uid(), name: '', value: ''})"><i class="ti ti-plus me-1"></i>Header</button>
-                            <span class="text-secondary ms-2" x-show="a.preset" x-text="'speaks like ' + a.preset"></span>
-                          </div>
-                        </template>
-                      </td>
-                      <td><input type="checkbox" class="form-check-input" x-model="a.enabled"></td>
-                      <td class="text-end text-nowrap">
-                        <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Earlier in the pool" @click="move(model.accounts, ai, -1)" :disabled="ai === 0"><i class="ti ti-arrow-up"></i></button>
-                        <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Later in the pool" @click="move(model.accounts, ai, 1)" :disabled="ai === model.accounts.length - 1"><i class="ti ti-arrow-down"></i></button>
-                        <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="model.accounts.splice(ai, 1)"><i class="ti ti-trash"></i></button>
-                      </td>
+                      <td class="mono" x-text="row.name"></td>
+                      <td class="text-end" x-text="row.requests"></td>
+                      <td class="text-end" :class="row.failures && 'text-danger'" x-text="row.failures"></td>
+                      <td class="text-end" x-text="count(row.tokens.input)"></td>
+                      <td class="text-end" x-text="count(row.tokens.output)"></td>
+                      <td class="text-end" x-text="count(row.tokens.cache_read)"></td>
+                      <td class="text-end" x-text="count(row.tokens.cache_write)"></td>
+                      <td class="text-end" x-text="cacheShare(row.tokens)"></td>
                     </tr>
                   </template>
-                  <tr x-show="!model.accounts.length"><td colspan="5" class="text-secondary">No account in the file: providers use keys from the environment.</td></tr>
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          <!-- Models -->
-          <div x-show="tab === 'models'">
-            <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">Models</h3>
-                <div class="card-actions"><button class="btn" @click="model.models.push({uid: uid(), name: '', target: '', raw: undefined})"><i class="ti ti-plus me-1"></i>Add model</button></div>
               </div>
-              <div class="card-body text-secondary">
-                The names clients may ask for, and who answers them. A target is a provider (the name asked for is passed on),
-                <code>provider/model</code>, or <code>@name</code> for another entry. Names may use <code>*</code>;
-                <code>*</code> alone answers every other name.
+              <div class="empty" x-show="!(usage?.[usageBy] || []).length">
+                <div class="empty-icon"><i class="ti ti-chart-bar-off"></i></div>
+                <p class="empty-title">No request in this period.</p>
               </div>
-              <table class="table card-table">
-                <thead><tr><th style="width: 35%">Name</th><th>Target</th><th style="width: 3rem"></th></tr></thead>
-                <tbody>
-                  <template x-for="(r, ri) in model.models" :key="r.uid">
-                    <tr>
-                      <td><input class="form-control mono" x-model="r.name" placeholder="claude-*, fast, *"></td>
-                      <td>
-                        <template x-if="r.raw === undefined">
-                          <input class="form-control mono" x-model="r.target" placeholder="anthropic, deepseek/deepseek-chat, @fast" list="target-list">
-                        </template>
-                        <template x-if="r.raw !== undefined">
-                          <code class="text-secondary" x-text="JSON.stringify(r.raw)" title="Edit it under Settings, Edit as JSON"></code>
-                        </template>
-                      </td>
-                      <td><button class="btn btn-ghost-danger btn-icon" @click="model.models.splice(ri, 1)"><i class="ti ti-x"></i></button></td>
-                    </tr>
-                  </template>
-                  <tr x-show="!model.models.length"><td colspan="3" class="text-secondary">No model: clients name provider/model directly.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Clients -->
-          <div x-show="tab === 'clients'">
-            <div class="d-flex mb-3 align-items-start">
-              <div class="text-secondary me-auto">
-                The keys clients present (Bearer, <code>x-api-key</code> or <code>x-goog-api-key</code>). With none, any client may use the gateway.
-              </div>
-              <button class="btn" @click="addClient()"><i class="ti ti-plus me-1"></i>Add client</button>
-            </div>
-            <template x-for="(c, ci) in model.clients" :key="c.uid">
-              <div class="card mb-3">
-                <div class="card-header">
-                  <input class="form-control form-control-flush h3 mb-0" style="max-width: 16rem" x-model="c.name" placeholder="name">
-                  <div class="card-actions d-flex gap-3 align-items-center">
-                    <label class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" x-model="c.enabled"><span class="form-check-label">Enabled</span></label>
-                    <button class="btn btn-ghost-danger btn-icon" title="Remove" @click="model.clients.splice(ci, 1)"><i class="ti ti-trash"></i></button>
-                  </div>
-                </div>
-                <div class="card-body">
-                  <label class="form-label">Key</label>
-                  <template x-if="isHidden(c.key)">
-                    <div class="d-flex align-items-center gap-2">
-                      <span class="mono text-secondary" x-text="'•••• ' + hiddenName(c.key)"></span>
-                      <button class="btn btn-sm" @click="c.key = ''">Replace</button>
-                    </div>
-                  </template>
-                  <template x-if="!isHidden(c.key)">
-                    <div class="input-group">
-                      <input class="form-control mono" x-model="c.key" placeholder="key or ${ENV_VAR}" autocomplete="off">
-                      <button class="btn btn-icon" title="Generate" @click="c.key = generateSecret()"><i class="ti ti-dice-5"></i></button>
-                      <button class="btn btn-icon" title="Copy" @click="navigator.clipboard.writeText(c.key)"><i class="ti ti-copy"></i></button>
-                    </div>
-                  </template>
-                  <label class="form-label mt-3">May use</label>
-                  <div class="btn-group mb-2">
-                    <button class="btn btn-sm" :class="c.access === 'menu' && 'btn-primary'" @click="c.access = 'menu'">Every model</button>
-                    <button class="btn btn-sm" :class="c.access === 'some' && 'btn-primary'" @click="c.access = 'some'">Some models</button>
-                    <button class="btn btn-sm" :class="c.access === 'all' && 'btn-primary'" @click="c.access = 'all'">Everything, provider/model too</button>
-                  </div>
-                  <div x-show="c.access === 'some'">
-                    <div class="d-flex flex-wrap gap-3 mb-2">
-                      <template x-for="name in menuNames()" :key="name">
-                        <label class="form-check mb-0">
-                          <input class="form-check-input" type="checkbox" :checked="c.chosen.includes(name)" @change="toggle(c.chosen, name)">
-                          <span class="form-check-label mono" x-text="name"></span>
-                        </label>
-                      </template>
-                    </div>
-                    <input class="form-control form-control-sm mono" x-model="c.extra" placeholder="also, comma-separated: deepseek/*, openai/gpt-4o">
-                  </div>
-                </div>
-              </div>
-            </template>
-            <div class="empty" x-show="!model.clients.length">
-              <p class="empty-title">No client key</p>
-              <p class="empty-subtitle text-secondary">Any client that reaches the gateway may use it.</p>
             </div>
           </div>
 
           <!-- Settings -->
           <div x-show="tab === 'settings'">
             <div class="card mb-3">
+              <div class="card-header">
+                <h3 class="card-title"><i class="ti ti-server me-2"></i>Gateway</h3>
+                <div class="card-actions"><button class="btn btn-sm" @click="reloadFile()" title="Use it after editing the file by hand."><i class="ti ti-refresh me-1"></i>Read the file again</button></div>
+              </div>
               <div class="card-body">
-                <div class="row g-3">
-                  <div class="col-md-6">
-                    <label class="form-label"><span class="mono">listen</span><span class="badge bg-secondary-lt ms-1">restart</span></label>
-                    <input class="form-control mono" x-model="model.listen" placeholder="127.0.0.1:4141">
-                    <div class="form-hint">host:port</div>
+                <div class="datagrid">
+                  <div class="datagrid-item">
+                    <div class="datagrid-title">Listens on</div>
+                    <div class="datagrid-content mono" x-text="status?.listen || '–'"></div>
                   </div>
-                  <div class="col-md-6">
-                    <label class="form-label"><span class="mono">panel.token</span></label>
-                    <template x-if="isHidden(model.panelToken)">
-                      <div class="d-flex align-items-center gap-2">
-                        <span class="mono text-secondary" x-text="'•••• ' + hiddenName(model.panelToken)"></span>
-                        <button class="btn btn-sm" @click="model.panelToken = ''">Replace</button>
-                      </div>
-                    </template>
-                    <template x-if="!isHidden(model.panelToken)">
-                      <input class="form-control mono" x-model="model.panelToken" placeholder="${UNLADEN_ADMIN_TOKEN}" autocomplete="off">
-                    </template>
-                    <div class="form-hint">Opens this panel; at least 16 characters. After a change, sign in again.</div>
+                  <div class="datagrid-item">
+                    <div class="datagrid-title">Configuration file</div>
+                    <div class="datagrid-content mono" x-text="path || '–'"></div>
+                  </div>
+                  <div class="datagrid-item">
+                    <div class="datagrid-title">Panel token</div>
+                    <div class="datagrid-content">Set in the file</div>
                   </div>
                 </div>
-                <h4 class="mt-4">Advanced</h4>
-                <div class="row g-3">
-                  <template x-for="f in advancedFields" :key="f.name">
+              </div>
+              <div class="card-footer text-secondary">The address and the panel token are changed in the configuration file alone. A new address takes effect after a restart.</div>
+            </div>
+
+            <template x-if="settings">
+            <div class="card mb-3">
+              <div class="card-header"><h3 class="card-title"><i class="ti ti-adjustments me-2"></i>Behaviour</h3></div>
+              <div class="card-body">
+                <div class="row g-4">
+                  <template x-for="f in settingFields" :key="f.name">
                     <div class="col-md-6">
-                      <label class="form-label">
-                        <span class="mono" x-text="f.name"></span>
-                        <span class="badge bg-secondary-lt ms-1" x-show="f.restart">restart</span>
-                      </label>
-                      <template x-if="f.kind === 'bool'">
-                        <label class="form-check form-switch">
-                          <input class="form-check-input" type="checkbox" x-model="model.advanced[f.name]">
-                          <span class="form-check-label" x-text="f.help"></span>
-                        </label>
-                      </template>
-                      <template x-if="f.kind !== 'bool'">
-                        <div>
-                          <input class="form-control mono" x-model="model.advanced[f.name]" :placeholder="f.placeholder">
-                          <div class="form-hint" x-text="f.help"></div>
-                        </div>
-                      </template>
+                      <label class="form-label"><span x-text="f.label"></span><span class="form-label-description mono" x-text="f.name"></span></label>
+                      <input class="form-control mono" x-model="settings[f.name]" :placeholder="f.placeholder">
+                      <div class="form-hint" x-text="f.help"></div>
                     </div>
                   </template>
-                  <div class="col-md-6">
-                    <label class="form-label"><span class="mono">pools</span></label>
-                    <template x-for="id in poolProviders()" :key="id">
-                      <div class="input-group input-group-sm mb-1">
-                        <span class="input-group-text mono" style="min-width: 9rem" x-text="id"></span>
-                        <select class="form-select" @change="model.pools[id] = $event.target.value">
-                          <option value="order" :selected="(model.pools[id] || 'order') === 'order'">order</option>
-                          <option value="rotate" :selected="model.pools[id] === 'rotate'">rotate</option>
-                        </select>
-                      </div>
-                    </template>
-                    <div class="form-hint">
-                      How a provider's accounts take turns. <code>order</code>: the next only when one fails.
-                      <code>rotate</code>: each request starts at the next account; it spreads load but breaks prompt caches.
-                    </div>
+                  <div class="col-12">
+                    <label class="form-check form-switch mb-0">
+                      <input class="form-check-input" type="checkbox" x-model="settings.strict">
+                      <span class="form-check-label">Strict</span>
+                      <span class="form-check-description">Refuse a request the model cannot take exactly as it is, where the gateway would otherwise adapt it.</span>
+                    </label>
                   </div>
                 </div>
               </div>
-            </div>
-            <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">Edit as JSON</h3>
-                <div class="card-actions d-flex gap-2">
-                  <button class="btn btn-sm" @click="showJSON()">Show the current form</button>
-                  <button class="btn btn-sm btn-primary" @click="applyJSON()" :disabled="!jsonText">Apply to the form</button>
-                </div>
+              <div class="card-footer d-flex gap-2 justify-content-end">
+                <button class="btn btn-ghost-secondary" x-show="settingsChanged()" @click="settings = { ...model.advanced }">Undo</button>
+                <button class="btn btn-primary" :disabled="!settingsChanged() || saving" @click="saveSettings()"><i class="ti ti-device-floppy me-1"></i>Save</button>
               </div>
+            </div>
+            </template>
+
+            <div class="card">
+              <div class="card-header"><h3 class="card-title"><i class="ti ti-braces me-2"></i>The file as JSON</h3></div>
               <div class="card-body">
-                <div class="text-secondary mb-2">
-                  The whole file as JSON, keys hidden as <code>&lt;hidden key-…&gt;</code> (kept as they are when saved).
-                  Applying fills the pages above; Save writes the file. Comments in the file are not kept.
-                </div>
+                <div class="text-secondary mb-2">Everything the pages edit, and what they do not. Keys are hidden behind a fingerprint and kept as they are when saved. Comments in the file are not kept.</div>
                 <textarea class="form-control mono" rows="18" x-model="jsonText" spellcheck="false"></textarea>
                 <div class="text-danger mt-2" x-text="jsonError"></div>
+              </div>
+              <div class="card-footer d-flex gap-2 justify-content-end">
+                <button class="btn btn-ghost-secondary" x-show="jsonChanged()" @click="showSettings()">Undo</button>
+                <button class="btn btn-primary" :disabled="!jsonChanged() || saving" @click="saveJSON()"><i class="ti ti-device-floppy me-1"></i>Save</button>
               </div>
             </div>
           </div>
@@ -683,28 +665,450 @@
       </div>
     </div>
 
-    <template x-if="signing">
-      <div class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-start justify-content-center p-3" style="background: rgba(0,0,0,.5); z-index: 1050; overflow-y: auto">
-        <div class="card mt-5" style="max-width: 40rem; width: 100%">
-          <div class="card-header"><h3 class="card-title">Sign in <span class="mono" x-text="signing.provider + '/' + signing.account"></span></h3></div>
-          <div class="card-body">
-            <div class="alert alert-warning" x-show="signing.provider === 'antigravity'" x-text="antigravityRisk"></div>
-            <ol class="ps-3">
-              <li class="mb-2">Open <a :href="signing.url" target="_blank" rel="noopener noreferrer">the sign-in page</a> <span x-text="signing.provider === 'antigravity' ? 'and sign in with the Google account.' : 'and sign in to ChatGPT.'"></span></li>
-              <li class="mb-2">The browser then goes to an address starting with <code x-text="signing.redirect"></code>, which does not load unless the browser runs on the gateway's machine: the sign-in sends it back only to a loopback address. Copy that whole address from the address bar and paste it here:</li>
-            </ol>
-            <input class="form-control mono" x-model="signing.callback" :placeholder="signing.redirect + '?code=…'" autocomplete="off" @keydown.enter="signing.callback.trim() && finishSignIn()">
-            <div class="text-danger mt-2" x-text="signing.error"></div>
-          </div>
-          <div class="card-footer d-flex justify-content-end gap-2">
-            <button class="btn" @click="signing = null">Cancel</button>
-            <button class="btn btn-primary" :disabled="!signing.callback.trim() || signing.busy" @click="finishSignIn()">Finish</button>
+    <!-- Add an account -->
+    <template x-if="draft && !signing">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1" @mousedown.self="draft = null" @keydown.escape.window="draft = null">
+          <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" x-text="draft.step === 'pick' ? 'Add an account' : draft.provider ? 'Add an account of ' + brandName(draft.provider) : 'Add your own address'"></h5>
+                <button type="button" class="btn-close" @click="draft = null"></button>
+              </div>
+
+              <template x-if="draft.step === 'pick'">
+                <div class="modal-body">
+                  <div class="input-icon mb-3">
+                    <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                    <input class="form-control" x-model="draft.query" placeholder="Search providers" x-init="$nextTick(() => $el.focus())">
+                  </div>
+                  <template x-for="group in providerChoices()" :key="group.label">
+                    <div class="mb-3">
+                      <div class="subheader mb-2" x-text="group.label"></div>
+                      <div class="row g-2">
+                        <template x-for="id in group.ids" :key="id">
+                          <div class="col-6 col-md-4">
+                            <a class="card card-sm card-link" href="#" @click.prevent="pickProvider(id)">
+                              <div class="card-body d-flex align-items-center p-2">
+                                <span class="avatar avatar-sm brand me-2" x-data="{ failed: false }">
+                                  <img :src="brandIcon(id) || null" x-show="brandIcon(id) && !failed" @error="failed = true" alt="" loading="lazy">
+                                  <span x-show="!brandIcon(id) || failed" x-text="initials(id)"></span>
+                                </span>
+                                <div class="text-truncate">
+                                  <div class="fw-medium text-truncate" x-text="brandName(id)"></div>
+                                  <div class="mono small text-secondary text-truncate" x-show="brandName(id) !== id" x-text="id"></div>
+                                </div>
+                              </div>
+                            </a>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                  <div class="subheader mb-2">Not in the list</div>
+                  <a class="card card-sm card-link" href="#" @click.prevent="pickProvider('')">
+                    <div class="card-body d-flex align-items-center p-2">
+                      <span class="avatar avatar-sm me-2"><i class="ti ti-world-plus"></i></span>
+                      <div>
+                        <div>Your own address</div>
+                        <div class="small text-secondary">A relay or a local server that speaks one of the usual protocols.</div>
+                      </div>
+                    </div>
+                  </a>
+                </div>
+              </template>
+
+              <template x-if="draft.step === 'details'">
+                <div class="modal-body">
+                  <div class="alert alert-warning" x-show="draft.provider === 'antigravity'" x-text="antigravityRisk"></div>
+                  <div class="row g-3">
+                    <div class="col-md-6" x-show="takesKeys(draft.provider)">
+                      <label class="form-label">Key</label>
+                      <input class="form-control mono" x-model="draft.key" placeholder="sk-… or ${ENV_VAR}" autocomplete="off">
+                      <div class="form-hint" x-show="!draft.provider">May stay empty for an address without authentication.</div>
+                      <div class="form-hint" x-show="keyOptional(draft.provider)">May stay empty: the free models need no key.</div>
+                      <div class="form-hint" x-show="signsIn(draft.provider)">Or leave it empty and sign in instead. For your own use only: the plan is personal.</div>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Name</label>
+                      <input class="form-control mono" x-model="draft.name" @input="draftChanged()">
+                      <div class="form-hint">Tells this account from the others, here and in the logs.</div>
+                    </div>
+                    <template x-if="!draft.provider">
+                      <div class="col-12">
+                        <div class="row g-3">
+                          <div class="col-md-8">
+                            <label class="form-label">Address</label>
+                            <div class="input-group">
+                              <select class="form-select" style="max-width: 9rem" x-model="draft.protocol">
+                                <template x-for="proto in protocols" :key="proto"><option :value="proto" x-text="proto" :selected="draft.protocol === proto"></option></template>
+                              </select>
+                              <input class="form-control mono" x-model="draft.url" placeholder="https://relay.example.com/v1">
+                            </div>
+                            <div class="form-hint">The protocol the address speaks, and where it is.</div>
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label">Behaves like</label>
+                            <select class="form-select" x-model="draft.preset">
+                              <option value="">nothing built in</option>
+                              <template x-for="id in presets" :key="id"><option :value="id" x-text="id"></option></template>
+                            </select>
+                            <div class="form-hint">Borrows a provider's quirks.</div>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                    <div class="col-12" x-show="draft.suggestions.length">
+                      <label class="form-label">Models to answer with this account</label>
+                      <template x-for="s in draft.suggestions" :key="s.name">
+                        <label class="form-check">
+                          <input class="form-check-input" type="checkbox" x-model="s.chosen">
+                          <span class="form-check-label">
+                            <code x-text="s.name"></code>
+                            <span class="text-secondary" x-show="s.current" x-text="'(now ' + s.current + ')'"></span>
+                          </span>
+                        </label>
+                      </template>
+                      <div class="form-hint">Clients that ask for these names are answered by this provider.</div>
+                    </div>
+                  </div>
+                  <div class="text-danger mt-3" x-show="saveError" x-text="saveError"></div>
+                </div>
+              </template>
+
+              <div class="modal-footer" x-show="draft.step === 'details'">
+                <button class="btn btn-ghost-secondary me-auto" @click="draft.step = 'pick'"><i class="ti ti-arrow-left me-1"></i>Back</button>
+                <span class="text-secondary" x-text="draftProblem()"></span>
+                <button class="btn btn-primary" x-show="draftSignsIn()" @click="startSignIn(draft.provider, draft.name.trim(), true)" :disabled="!!draftProblem()"><i class="ti ti-login-2 me-1"></i>Sign in and add</button>
+                <button class="btn btn-primary" x-show="!draftSignsIn()" @click="addAccount()" :disabled="!!draftProblem() || saving"><i class="ti ti-plus me-1"></i>Add</button>
+              </div>
+            </div>
           </div>
         </div>
+        <div class="modal-backdrop show"></div>
       </div>
     </template>
 
-    <datalist id="target-list"><template x-for="t in targetChoices()" :key="t"><option :value="t"></option></template></datalist>
+    <!-- Edit an account -->
+    <template x-if="accountEdit">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1" @mousedown.self="accountEdit = null" @keydown.escape.window="accountEdit = null">
+          <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" x-text="'Edit ' + accountEdit.original"></h5>
+                <button type="button" class="btn-close" @click="accountEdit = null"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label">Name</label>
+                    <input class="form-control mono" x-model="accountEdit.name">
+                    <div class="form-hint" x-show="signsIn(accountEdit.provider)">A sign-in belongs to the name: a renamed account signs in again.</div>
+                  </div>
+                  <div class="col-md-6" x-show="takesKeys(accountEdit.provider)">
+                    <label class="form-label">Key</label>
+                    <template x-if="isHidden(accountEdit.key)">
+                      <div class="input-group">
+                        <input class="form-control mono" :value="'•••• ' + hiddenName(accountEdit.key)" disabled>
+                        <button class="btn" @click="accountEdit.key = ''">Replace</button>
+                      </div>
+                    </template>
+                    <template x-if="!isHidden(accountEdit.key)">
+                      <input class="form-control mono" x-model="accountEdit.key" :placeholder="signsIn(accountEdit.provider) ? 'none: signs in' : 'sk-… or ${ENV_VAR}'" autocomplete="off">
+                    </template>
+                  </div>
+                  <template x-if="accountEdit.custom">
+                    <div class="col-12">
+                      <label class="form-label">Addresses</label>
+                      <template x-for="(e, ei) in accountEdit.endpoints" :key="e.uid">
+                        <div class="input-group mb-2">
+                          <select class="form-select" style="max-width: 9rem" x-model="e.protocol">
+                            <template x-for="proto in protocols" :key="proto"><option :value="proto" x-text="proto" :selected="e.protocol === proto"></option></template>
+                          </select>
+                          <input class="form-control mono" x-model="e.url">
+                          <button class="btn btn-icon" title="Remove" @click="accountEdit.endpoints.splice(ei, 1)"><i class="ti ti-x"></i></button>
+                        </div>
+                      </template>
+                      <button class="btn btn-sm" @click="accountEdit.endpoints.push({ uid: uid(), protocol: 'chat', url: '' })"><i class="ti ti-plus me-1"></i>Address</button>
+                      <label class="form-label mt-3">Headers sent with each request</label>
+                      <template x-for="(h, hi) in accountEdit.headers" :key="h.uid">
+                        <div class="input-group mb-2">
+                          <input class="form-control mono" style="max-width: 14rem" x-model="h.name" placeholder="Header-Name">
+                          <input class="form-control mono" x-model="h.value" placeholder="value or ${ENV_VAR}">
+                          <button class="btn btn-icon" title="Remove" @click="accountEdit.headers.splice(hi, 1)"><i class="ti ti-x"></i></button>
+                        </div>
+                      </template>
+                      <button class="btn btn-sm" @click="accountEdit.headers.push({ uid: uid(), name: '', value: '' })"><i class="ti ti-plus me-1"></i>Header</button>
+                      <div class="form-hint mt-2" x-show="accountEdit.preset" x-text="'behaves like ' + accountEdit.preset"></div>
+                    </div>
+                  </template>
+                </div>
+                <div class="text-danger mt-3" x-show="saveError" x-text="saveError"></div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-ghost-secondary" @click="accountEdit = null">Cancel</button>
+                <button class="btn btn-primary" :disabled="!accountEdit.name.trim() || saving" @click="saveAccount()"><i class="ti ti-device-floppy me-1"></i>Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop show"></div>
+      </div>
+    </template>
+
+    <!-- Add or edit a model -->
+    <template x-if="modelEdit">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1" @mousedown.self="modelEdit = null" @keydown.escape.window="modelEdit = null">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" x-text="modelEdit.original === null ? 'Add a model' : 'Edit ' + modelEdit.original"></h5>
+                <button type="button" class="btn-close" @click="modelEdit = null"></button>
+              </div>
+              <div class="modal-body">
+                <div class="mb-3">
+                  <label class="form-label">Clients ask for</label>
+                  <input class="form-control mono" x-model="modelEdit.name" placeholder="claude-*, fast, *" x-init="modelEdit.original === null && $nextTick(() => $el.focus())">
+                  <div class="form-hint">A star stands for any run of characters: claude-* takes every name that starts with claude-, and a star alone takes every name no other model takes.</div>
+                </div>
+                <template x-if="modelEdit.raw !== undefined">
+                  <div>
+                    <label class="form-label">Answered by</label>
+                    <pre class="mb-2" x-text="JSON.stringify(modelEdit.raw, null, 2)"></pre>
+                    <div class="form-hint">This model has more than one target: change them under Settings, in the file as JSON.</div>
+                  </div>
+                </template>
+                <template x-if="modelEdit.raw === undefined">
+                  <div>
+                    <label class="form-label">Answered by</label>
+                    <div class="form-selectgroup w-100 mb-3">
+                      <label class="form-selectgroup-item flex-fill">
+                        <input type="radio" class="form-selectgroup-input" value="provider" x-model="modelEdit.kind">
+                        <span class="form-selectgroup-label"><i class="ti ti-building-store me-1"></i>A provider</span>
+                      </label>
+                      <label class="form-selectgroup-item flex-fill">
+                        <input type="radio" class="form-selectgroup-input" value="alias" x-model="modelEdit.kind" :disabled="!menuNames().some(n => !n.includes('*') && n !== modelEdit.original)">
+                        <span class="form-selectgroup-label"><i class="ti ti-corner-down-right me-1"></i>Another model</span>
+                      </label>
+                    </div>
+                    <div x-show="modelEdit.kind === 'provider'">
+                      <select class="form-select mb-3" x-model="modelEdit.provider">
+                        <template x-for="id in targetProviders()" :key="id">
+                          <option :value="id" :selected="modelEdit.provider === id" x-text="brandName(id) === id ? id : brandName(id) + ' (' + id + ')'"></option>
+                        </template>
+                      </select>
+                      <label class="form-label">Model the provider is asked for</label>
+                      <input class="form-control mono" x-model="modelEdit.upstream" placeholder="deepseek-chat">
+                      <div class="form-hint">Leave it empty to pass on the name the client asked for.</div>
+                    </div>
+                    <div x-show="modelEdit.kind === 'alias'">
+                      <select class="form-select mono" x-model="modelEdit.alias">
+                        <option value="" :selected="!modelEdit.alias">–</option>
+                        <template x-for="name in menuNames().filter(n => !n.includes('*') && n !== modelEdit.original)" :key="name">
+                          <option :value="name" :selected="modelEdit.alias === name" x-text="name"></option>
+                        </template>
+                      </select>
+                      <div class="form-hint">Asking for this name is the same as asking for that one.</div>
+                    </div>
+                  </div>
+                </template>
+                <div class="text-danger mt-3" x-show="saveError" x-text="saveError"></div>
+              </div>
+              <div class="modal-footer">
+                <span class="text-secondary me-auto" x-text="modelProblem()"></span>
+                <button class="btn btn-ghost-secondary" @click="modelEdit = null">Cancel</button>
+                <button class="btn btn-primary" :disabled="!!modelProblem() || saving" @click="saveModel()"><i class="ti ti-device-floppy me-1"></i>Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop show"></div>
+      </div>
+    </template>
+
+    <!-- Add or edit a client -->
+    <template x-if="clientEdit">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1" @mousedown.self="clientEdit = null" @keydown.escape.window="clientEdit = null">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" x-text="clientEdit.original === null ? 'Add a client' : 'Edit ' + clientEdit.original"></h5>
+                <button type="button" class="btn-close" @click="clientEdit = null"></button>
+              </div>
+              <div class="modal-body">
+                <div class="mb-3">
+                  <label class="form-label">Name</label>
+                  <input class="form-control mono" x-model="clientEdit.name" placeholder="laptop" x-init="clientEdit.original === null && $nextTick(() => $el.focus())">
+                  <div class="form-hint">Who holds the key: a person, a machine or a tool. Usage is counted under it.</div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Key</label>
+                  <template x-if="isHidden(clientEdit.key)">
+                    <div class="input-group">
+                      <input class="form-control mono" :value="'•••• ' + hiddenName(clientEdit.key)" disabled>
+                      <button class="btn" @click="clientEdit.key = generateSecret()">Replace</button>
+                    </div>
+                  </template>
+                  <template x-if="!isHidden(clientEdit.key)">
+                    <div>
+                      <div class="input-group">
+                        <input class="form-control mono" x-model="clientEdit.key" placeholder="key or ${ENV_VAR}" autocomplete="off">
+                        <button class="btn btn-icon" title="Generate" @click="clientEdit.key = generateSecret()"><i class="ti ti-dice-5"></i></button>
+                        <button class="btn btn-icon" title="Copy" @click="copy(clientEdit.key)"><i class="ti ti-copy"></i></button>
+                      </div>
+                      <div class="form-hint">Copy it now: once saved, the panel shows only its fingerprint.</div>
+                    </div>
+                  </template>
+                </div>
+                <label class="form-label">May use</label>
+                <div class="form-selectgroup form-selectgroup-boxes d-flex flex-column">
+                  <label class="form-selectgroup-item flex-fill">
+                    <input type="radio" class="form-selectgroup-input" value="menu" x-model="clientEdit.access">
+                    <span class="form-selectgroup-label d-flex align-items-center p-3">
+                      <span class="me-3"><span class="form-selectgroup-check"></span></span>
+                      <span><span class="d-block">Every model</span><span class="d-block text-secondary">The names on the Models page.</span></span>
+                    </span>
+                  </label>
+                  <label class="form-selectgroup-item flex-fill">
+                    <input type="radio" class="form-selectgroup-input" value="some" x-model="clientEdit.access">
+                    <span class="form-selectgroup-label d-flex align-items-center p-3">
+                      <span class="me-3"><span class="form-selectgroup-check"></span></span>
+                      <span><span class="d-block">Some models</span><span class="d-block text-secondary">Only the ones you choose.</span></span>
+                    </span>
+                  </label>
+                  <label class="form-selectgroup-item flex-fill">
+                    <input type="radio" class="form-selectgroup-input" value="all" x-model="clientEdit.access">
+                    <span class="form-selectgroup-label d-flex align-items-center p-3">
+                      <span class="me-3"><span class="form-selectgroup-check"></span></span>
+                      <span><span class="d-block">Everything, provider/model too</span><span class="d-block text-secondary">Any model of any account, named directly.</span></span>
+                    </span>
+                  </label>
+                </div>
+                <div class="mt-3" x-show="clientEdit.access === 'some'">
+                  <div class="d-flex flex-wrap gap-3 mb-2">
+                    <template x-for="name in menuNames()" :key="name">
+                      <label class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" :checked="clientEdit.chosen.includes(name)" @change="toggle(clientEdit.chosen, name)">
+                        <span class="form-check-label mono" x-text="name"></span>
+                      </label>
+                    </template>
+                  </div>
+                  <input class="form-control mono" x-model="clientEdit.extra" placeholder="also, comma-separated: deepseek/*, openai/gpt-4o">
+                </div>
+                <div class="text-danger mt-3" x-show="saveError" x-text="saveError"></div>
+              </div>
+              <div class="modal-footer">
+                <span class="text-secondary me-auto" x-text="clientProblem()"></span>
+                <button class="btn btn-ghost-secondary" @click="clientEdit = null">Cancel</button>
+                <button class="btn btn-primary" :disabled="!!clientProblem() || saving" @click="saveClient()"><i class="ti ti-device-floppy me-1"></i>Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop show"></div>
+      </div>
+    </template>
+
+    <!-- Sign an account in -->
+    <template x-if="signing">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1">
+          <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title"><i class="ti ti-login-2 me-2"></i><span x-text="'Sign in ' + signing.provider + '/' + signing.account"></span></h5>
+                <button type="button" class="btn-close" @click="signing = null"></button>
+              </div>
+              <div class="modal-body">
+                <div class="alert alert-warning" x-show="signing.provider === 'antigravity'" x-text="antigravityRisk"></div>
+                <ol class="ps-3">
+                  <li class="mb-2">Open <a :href="signing.url" target="_blank" rel="noopener noreferrer">the sign-in page</a> <span x-text="signing.provider === 'antigravity' ? 'and sign in with the Google account.' : 'and sign in to ChatGPT.'"></span></li>
+                  <li class="mb-2">The browser then goes to an address starting with <code x-text="signing.redirect"></code>, which does not load unless the browser runs on the gateway's machine: the sign-in sends it back only to a loopback address. Copy that whole address from the address bar and paste it here:</li>
+                </ol>
+                <input class="form-control mono" x-model="signing.callback" :placeholder="signing.redirect + '?code=…'" autocomplete="off" @keydown.enter="signing.callback.trim() && finishSignIn()">
+                <div class="text-danger mt-2" x-text="signing.error"></div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-ghost-secondary" @click="signing = null">Cancel</button>
+                <button class="btn btn-primary" :disabled="!signing.callback.trim() || signing.busy" @click="finishSignIn()"><i class="ti ti-check me-1"></i>Finish</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop show"></div>
+      </div>
+    </template>
+
+    <!-- A question before something is removed -->
+    <template x-if="question">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1" @mousedown.self="question = null" @keydown.escape.window="question = null">
+          <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-status bg-danger"></div>
+              <div class="modal-body text-center py-4">
+                <i class="ti ti-alert-triangle text-danger fs-1 mb-2"></i>
+                <h3 x-text="question.title"></h3>
+                <div class="text-secondary" x-text="question.text"></div>
+              </div>
+              <div class="modal-footer">
+                <div class="w-100">
+                  <div class="row">
+                    <div class="col"><button class="btn w-100" @click="question = null">Cancel</button></div>
+                    <div class="col"><button class="btn btn-danger w-100" @click="answer()" x-text="question.action"></button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop show"></div>
+      </div>
+    </template>
+
+    <!-- The file changed elsewhere -->
+    <template x-if="conflict">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-status bg-warning"></div>
+              <div class="modal-body text-center py-4">
+                <i class="ti ti-file-alert text-warning fs-1 mb-2"></i>
+                <h3>The configuration file changed</h3>
+                <div class="text-secondary">It was edited outside the panel after this page read it. Load the file to see it as it is now, without your change; or save your change over it, and what was edited there is lost.</div>
+              </div>
+              <div class="modal-footer">
+                <div class="w-100">
+                  <div class="row">
+                    <div class="col"><button class="btn w-100" :disabled="saving" @click="takeFile()"><i class="ti ti-refresh me-1"></i>Load the file</button></div>
+                    <div class="col"><button class="btn btn-warning w-100" :disabled="saving" @click="overwrite()"><i class="ti ti-device-floppy me-1"></i>Save over it</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop show"></div>
+      </div>
+    </template>
+
+    <!-- Messages -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1040">
+      <template x-for="m in messages" :key="m.id">
+        <div class="toast show" role="alert">
+          <div class="toast-header">
+            <i class="ti me-2" :class="messageIcon(m.kind)"></i>
+            <strong class="me-auto" x-text="m.title"></strong>
+            <button type="button" class="ms-2 btn-close" @click="messages = messages.filter(other => other.id !== m.id)"></button>
+          </div>
+          <div class="toast-body" x-show="m.text" style="white-space: pre-wrap" x-text="m.text"></div>
+        </div>
+      </template>
+    </div>
   </div>
   </template>
 </div>

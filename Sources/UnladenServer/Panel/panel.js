@@ -1,7 +1,10 @@
 const TOKEN_KEY = 'unladen.adminToken';
+const THEME_KEY = 'unladen.theme';
 const HIDDEN = /^<hidden (key-[0-9a-f]{8})>$/;
-const SECTIONS = ['listen', 'panel', 'accounts', 'models', 'clients', 'advanced'];
-const ADVANCED = ['strict', 'keepalive', 'connect_timeout', 'head_timeout', 'idle_timeout', 'max_request_bytes'];
+// The sections the forms edit. `listen` and `panel` are set in the file
+// alone and carried back as they are.
+const SECTIONS = ['accounts', 'models', 'clients', 'advanced'];
+const ADVANCED = ['strict', 'keepalive', 'head_timeout', 'idle_timeout', 'max_request_bytes'];
 // The names a provider's own models go by, offered as models when an
 // account of it is added.
 const FAMILIES = {
@@ -19,6 +22,41 @@ const FAMILIES = {
 // them whose accounts never hold one.
 const SIGN_IN = ['chatgpt', 'antigravity'];
 const KEYLESS = ['antigravity'];
+// Shown first among the providers an account is added of.
+const FEATURED = ['anthropic', 'openai', 'gemini', 'deepseek', 'openrouter', 'xai'];
+// Providers' names and icons (files of @lobehub/icons-static-svg), by id.
+// A provider not listed goes by its id and its initials.
+const ICONS = 'https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.102.0/icons/';
+const BRANDS = {
+  openai: ['OpenAI', 'openai'], chatgpt: ['ChatGPT', 'openai'], anthropic: ['Anthropic', 'claude-color'],
+  gemini: ['Gemini', 'gemini-color'], antigravity: ['Antigravity', 'antigravity-color'], deepseek: ['DeepSeek', 'deepseek-color'],
+  moonshot: ['Moonshot', 'moonshot'], 'moonshot-cn': ['Moonshot China', 'moonshot'],
+  'kimi-code': ['Kimi Code', 'kimi-color'], 'kimi-code-cn': ['Kimi Code China', 'kimi-color'],
+  zai: ['Z.ai', 'zai'], 'zai-coding': ['Z.ai Coding Plan', 'zai'],
+  zhipu: ['Zhipu', 'zhipu-color'], 'zhipu-coding': ['Zhipu Coding Plan', 'zhipu-color'],
+  minimax: ['MiniMax', 'minimax-color'], 'minimax-cn': ['MiniMax China', 'minimax-color'],
+  'step-plan': ['Step Plan', 'stepfun-color'], 'step-plan-cn': ['Step Plan China', 'stepfun-color'],
+  stepfun: ['StepFun', 'stepfun-color'], 'stepfun-cn': ['StepFun China', 'stepfun-color'],
+  ark: ['Volcengine Ark', 'volcengine-color'], 'ark-coding': ['Ark Coding Plan', 'volcengine-color'], 'ark-agent': ['Ark Agent Plan', 'volcengine-color'],
+  'bailian-token-plan': ['Bailian Token Plan', 'bailian-color'],
+  openrouter: ['OpenRouter', 'openrouter'], 'opencode-zen': ['OpenCode Zen', 'opencode'], 'opencode-go': ['OpenCode Go', 'opencode'],
+  kilo: ['Kilo', 'kilocode'], groq: ['Groq', 'groq'], mistral: ['Mistral', 'mistral-color'], xai: ['xAI', 'xai'],
+  together: ['Together', 'together-color'], nvidia: ['NVIDIA', 'nvidia-color'], modelscope: ['ModelScope', 'modelscope-color'],
+  siliconflow: ['SiliconFlow', 'siliconcloud-color'], 'siliconflow-global': ['SiliconFlow Global', 'siliconcloud-color'],
+  longcat: ['LongCat', 'longcat-color'], 'ollama-cloud': ['Ollama Cloud', 'ollama'], ollama: ['Ollama', 'ollama'],
+  fireworks: ['Fireworks', 'fireworks-color'], nous: ['Nous Research', 'nousresearch'],
+  mimo: ['Xiaomi MiMo', 'xiaomimimo'], 'mimo-plan': ['MiMo Token Plan', 'xiaomimimo'],
+  'mimo-plan-sgp': ['MiMo Token Plan Singapore', 'xiaomimimo'], 'mimo-plan-ams': ['MiMo Token Plan Europe', 'xiaomimimo'],
+  qianfan: ['Baidu Qianfan', 'baiducloud-color'], 'qianfan-plan': ['Qianfan Token Plan', 'baiducloud-color'],
+  'qianfan-plan-team': ['Qianfan Token Plan Team', 'baiducloud-color'],
+  tokenhub: ['Tencent TokenHub', 'tencentcloud-color'], 'tokenhub-intl': ['Tencent TokenHub Global', 'tencentcloud-color'],
+  'tencent-plan': ['Tencent Token Plan', 'tencentcloud-color'], 'tencent-plan-intl': ['Tencent Token Plan Global', 'tencentcloud-color'],
+  'huawei-maas': ['Huawei Cloud MaaS', 'huaweicloud-color'], 'huawei-plan': ['Huawei Token Plan', 'huaweicloud-color'],
+  'qwen-token-plan': ['Qwen Token Plan', 'qwen-color'], 'qwencloud-token-plan': ['Qwen Cloud Token Plan', 'qwen-color'],
+  dashscope: ['DashScope', 'alibabacloud-color'], 'dashscope-cn': ['DashScope China', 'alibabacloud-color'], qwencloud: ['Qwen Cloud', 'qwen-color'],
+  commandcode: ['Command Code', 'commandcode'], aihubmix: ['AiHubMix', 'aihubmix-color'], '302ai': ['302.AI', 'ai302-color'],
+  cherryin: ['CherryIN', 'cherrystudio-color'], pipellm: ['PipeLLM', ''], lmstudio: ['LM Studio', 'lmstudio'],
+};
 let counter = 0;
 
 function panel() {
@@ -26,43 +64,61 @@ function panel() {
     token: localStorage.getItem(TOKEN_KEY) || '',
     tokenInput: '',
     signInError: '',
-    tab: 'overview',
+    tab: 'home',
     languages: LANGUAGES,
     language,
-    tabs: [
-      { id: 'overview', label: 'Overview', icon: 'ti-dashboard' },
-      { id: 'activity', label: 'Activity', icon: 'ti-activity' },
-      { id: 'usage', label: 'Usage', icon: 'ti-chart-bar' },
-      { id: 'accounts', label: 'Accounts', icon: 'ti-wallet' },
-      { id: 'models', label: 'Models', icon: 'ti-list-details' },
-      { id: 'clients', label: 'Clients', icon: 'ti-key' },
-      { id: 'settings', label: 'Settings', icon: 'ti-settings' },
+    theme: document.documentElement.getAttribute('data-bs-theme') || 'light',
+    origin: location.origin,
+    // The pages, under their headings (entries without an id).
+    navigation: [
+      { id: 'home', label: 'Home', icon: 'ti-home', about: 'What needs you, and how tools connect.' },
+      { label: 'Set up' },
+      { id: 'accounts', label: 'Accounts', icon: 'ti-wallet', about: 'The provider accounts the gateway spends from.' },
+      { id: 'models', label: 'Models', icon: 'ti-route', about: 'The names clients ask for, and who answers them.' },
+      { id: 'clients', label: 'Clients', icon: 'ti-key', about: 'The keys your tools present to the gateway.' },
+      { label: 'Observe' },
+      { id: 'activity', label: 'Activity', icon: 'ti-activity', about: 'Requests as they happen, and the sessions of the last 7 days.' },
+      { id: 'usage', label: 'Usage', icon: 'ti-chart-bar', about: 'Tokens as the providers reported them, by local day.' },
+      { label: 'Gateway' },
+      { id: 'settings', label: 'Settings', icon: 'ti-settings', about: 'How the gateway behaves, and its configuration file.' },
     ],
     protocols: ['chat', 'responses', 'anthropic', 'gemini'],
-    advancedFields: [
-      { name: 'strict', kind: 'bool', help: 'Refuse requests a model cannot take exactly' },
-      { name: 'keepalive', placeholder: '15s', help: 'Keepalive interval for streams' },
-      { name: 'connect_timeout', placeholder: '10s', help: 'Upstream connection timeout', restart: true },
-      { name: 'head_timeout', placeholder: '240s', help: 'Wait for the first content before the next account; off: no limit' },
-      { name: 'idle_timeout', placeholder: '300s', help: 'Longest silence of a forwarded stream; off: no limit' },
-      { name: 'max_request_bytes', placeholder: '64MiB', help: 'Largest request body' },
+    settingFields: [
+      { name: 'head_timeout', label: 'Wait for a reply to start', placeholder: '240s', help: 'How long an account may take to send its first content before the next one is tried. off: no limit.' },
+      { name: 'idle_timeout', label: 'Longest silence in a stream', placeholder: '300s', help: 'A stream that stays silent this long is ended. off: no limit.' },
+      { name: 'keepalive', label: 'Keepalive interval', placeholder: '15s', help: 'How often a stream that is waiting is kept alive.' },
+      { name: 'max_request_bytes', label: 'Largest request', placeholder: '64MiB', help: 'A request with a larger body is refused.' },
     ],
+    apps: [
+      { id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' },
+      { id: 'openai', label: 'OpenAI-compatible' }, { id: 'curl', label: 'curl' },
+    ],
+    app: 'claude',
     path: null,
     hash: null,
     original: null,
     model: null,
-    pristine: '',
     status: null,
     presets: [],
     // Presets that serve some models to accounts without a key.
     keylessPresets: [],
     messages: [],
     saving: false,
-    menu: false,
-    adding: false,
+    // Why the last save was refused, shown in the dialog that asked for it.
+    saveError: '',
+    // The file changed elsewhere: {document}, what was being saved.
+    conflict: null,
+    // A question before something is removed: {title, text, action, run}.
+    question: null,
+    navOpen: false,
+    // The add dialog's account, the accounts, models and clients being edited.
     draft: null,
+    accountEdit: null,
+    modelEdit: null,
+    clientEdit: null,
     // The account being signed in: {provider, account, id, url, callback, error, busy}.
     signing: null,
+    settings: null,
     jsonText: '',
     jsonError: '',
     activity: null,
@@ -70,6 +126,7 @@ function panel() {
     sessionRequests: [],
     expanded: {},
     usage: null,
+    today: null,
     quotas: null,
     quotasBusy: false,
     usageDays: 1,
@@ -86,15 +143,26 @@ function panel() {
       window.addEventListener('hashchange', () => this.readHash());
       for (const name of ['tab', 'usageDays', 'usageBy', 'session']) this.$watch(name, () => this.writeHash());
       if (this.token) await this.load();
-      if (this.tab === 'activity') this.refreshActivity();
-      if (this.tab === 'usage') this.refreshUsage();
-      setInterval(() => { if (this.token && this.tab === 'overview') this.refreshStatus(); }, 5000);
+      this.refreshTab();
+      setInterval(() => { if (this.token && ['home', 'accounts'].includes(this.tab)) this.refreshTab(); }, 5000);
       setInterval(() => { if (this.token && this.tab === 'activity') this.refreshActivity(); }, 2000);
       setInterval(() => { if (this.token && this.tab === 'usage') this.refreshUsage(); }, 10000);
-      this.$watch('tab', tab => {
-        if (tab === 'activity') this.refreshActivity();
-        if (tab === 'usage') this.refreshUsage();
-      });
+      this.$watch('tab', () => { this.navOpen = false; this.refreshTab(); });
+    },
+
+    pages() { return this.navigation.filter(p => p.id); },
+    page() { return this.pages().find(p => p.id === this.tab); },
+    go(tab) { this.tab = tab; },
+
+    // What the page in view shows, read again.
+    refreshTab() {
+      if (!this.token || !this.model) return;
+      if (this.tab === 'home') { this.refreshStatus(); this.refreshActivity(); this.refreshToday(); this.refreshQuotas(false); }
+      if (this.tab === 'accounts') { this.refreshStatus(); this.refreshQuotas(false); }
+      if (this.tab === 'models' || this.tab === 'clients') this.refreshStatus();
+      if (this.tab === 'activity') this.refreshActivity();
+      if (this.tab === 'usage') this.refreshUsage();
+      if (this.tab === 'settings') this.showSettings();
     },
 
     readHash() {
@@ -102,7 +170,7 @@ function panel() {
       const mark = fragment.indexOf('?');
       const name = decodeURIComponent(mark < 0 ? fragment : fragment.slice(0, mark));
       const params = new URLSearchParams(mark < 0 ? '' : fragment.slice(mark + 1));
-      this.tab = this.tabs.some(t => t.id === name) ? name : 'overview';
+      this.tab = this.pages().some(p => p.id === name) ? name : 'home';
       const days = Number(params.get('days'));
       if ([1, 7, 30].includes(days) && days !== this.usageDays) { this.usageDays = days; if (this.model) this.refreshUsage(); }
       const by = params.get('by');
@@ -127,6 +195,14 @@ function panel() {
       if (location.hash !== hash) history.replaceState(null, '', hash);
     },
 
+    setTheme(theme) {
+      this.theme = theme;
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      try { localStorage.setItem(THEME_KEY, theme); } catch { /* the choice is not kept */ }
+    },
+
+    // Activity and usage
+
     async refreshActivity() {
       const result = await this.api('GET', 'activity');
       if (result.status === 200) this.activity = result.json;
@@ -150,10 +226,15 @@ function panel() {
     async refreshUsage() {
       const result = await this.api('GET', 'usage?days=' + this.usageDays);
       if (result.status === 200) this.usage = result.json;
-      if (!this.quotasBusy) this.refreshQuotas(false);
+    },
+
+    async refreshToday() {
+      const result = await this.api('GET', 'usage?days=1');
+      if (result.status === 200) this.today = result.json;
     },
 
     async refreshQuotas(refresh) {
+      if (this.quotasBusy) return;
       this.quotasBusy = true;
       try {
         const result = await this.api('GET', 'quotas' + (refresh ? '?refresh=1' : ''));
@@ -163,7 +244,13 @@ function panel() {
       }
     },
 
+    quotaOf(provider, name) { return (this.quotas || []).find(q => q.provider === provider && q.account === name) || null; },
     quotaBarClass(used) { return used >= 90 ? 'bg-red' : used >= 70 ? 'bg-yellow' : 'bg-green'; },
+    // The window with the least left, as the home page shows an account.
+    tightest(provider, name) {
+      const windows = this.quotaOf(provider, name)?.windows || [];
+      return windows.reduce((worst, w) => (!worst || w.used > worst.used ? w : worst), null);
+    },
     resetsIn(t) {
       if (!t) return '';
       const m = Math.max(0, Math.round((t - Date.now()) / 60000));
@@ -172,14 +259,13 @@ function panel() {
       return 'resets in ' + Math.floor(m / 1440) + 'd ' + Math.floor((m % 1440) / 60) + 'h';
     },
 
-    usageTiles() {
-      const t = this.usage?.total;
-      if (!t) return [];
+    tiles(usage) {
+      const t = usage?.total;
       return [
-        { label: 'Requests', value: t.requests + (t.failures ? ' (' + t.failures + ' failed)' : '') },
-        { label: 'Input tokens', value: this.count(t.tokens.input) },
-        { label: 'Output tokens', value: this.count(t.tokens.output) },
-        { label: 'Cache hit', value: this.cacheShare(t.tokens) || '–' },
+        { label: 'Requests', icon: 'ti-arrows-exchange', value: t ? String(t.requests) : '–', note: t?.failures ? t.failures + ' failed' : '' },
+        { label: 'Input tokens', icon: 'ti-arrow-bar-to-down', value: t ? this.count(t.tokens.input) : '–', note: '' },
+        { label: 'Output tokens', icon: 'ti-arrow-bar-up', value: t ? this.count(t.tokens.output) : '–', note: '' },
+        { label: 'Cache hit', icon: 'ti-bolt', value: (t && this.cacheShare(t.tokens)) || '–', note: '' },
       ];
     },
 
@@ -212,6 +298,8 @@ function panel() {
     },
     short(id) { return id && id.length > 14 ? id.slice(0, 12) + '…' : id; },
 
+    // The panel's own sign-in, and the file
+
     async api(method, path, body) {
       const response = await fetch('/admin/api/' + path, {
         method,
@@ -228,6 +316,7 @@ function panel() {
       this.token = this.tokenInput.trim();
       this.tokenInput = '';
       await this.load();
+      this.refreshTab();
     },
 
     signOut(reason) {
@@ -237,6 +326,7 @@ function panel() {
       this.signInError = typeof reason === 'string' ? reason : '';
     },
 
+    // Reads the file as it is on disk; what the forms showed is dropped.
     async load() {
       const config = await this.api('GET', 'config');
       if (config.status !== 200) {
@@ -249,10 +339,8 @@ function panel() {
       this.hash = config.json.hash;
       this.original = config.json.document || {};
       this.model = fromDocument(this.original);
-      this.pristine = JSON.stringify(toDocument(this.model, this.original));
-      this.adding = false;
-      this.jsonText = '';
-      this.jsonError = '';
+      this.settings = null;
+      if (this.tab === 'settings') this.showSettings();
       await this.refreshStatus();
     },
 
@@ -265,29 +353,54 @@ function panel() {
       }
     },
 
-    dirty() { return this.model && JSON.stringify(toDocument(this.model, this.original)) !== this.pristine; },
-
-    discard() {
-      this.model = fromDocument(this.original);
+    // Writes the forms (or `document`) to the file, which is then in
+    // force. A refusal puts the forms back as the file has them and is
+    // told in `saveError`; a file changed elsewhere asks what to do.
+    async persist(document) {
+      document = document || toDocument(this.model, this.original);
+      return this.write({ document, hash: this.hash }, document);
     },
 
-    async save() {
+    async write(body, document) {
       this.saving = true;
+      this.saveError = '';
       try {
-        const document = toDocument(this.model, this.original);
-        const result = await this.api('PUT', 'config', { document, hash: this.hash });
+        const result = await this.api('PUT', 'config', body);
         if (result.status === 200) {
-          this.say('success', 'Saved and in force', (result.json.warnings || []).join('\n'));
+          this.conflict = null;
+          const warnings = result.json.warnings || [];
+          if (warnings.length) this.say('warning', 'Saved, with a warning', warnings.join('\n'));
           await this.load();
-        } else if (result.status === 409) {
-          this.say('warning', 'The file was changed elsewhere', 'Reload the file from the menu to see it; your changes here would be lost.');
+          return true;
+        }
+        this.model = fromDocument(this.original);
+        if (result.status === 409) {
+          this.draft = this.accountEdit = this.modelEdit = this.clientEdit = this.question = null;
+          this.conflict = { document };
         } else if (result.status !== 401) {
           const where = result.json.location ? result.json.location + ': ' : '';
-          this.say('danger', 'Not saved', where + (result.json.error || 'HTTP ' + result.status));
+          this.saveError = where + (result.json.error || 'HTTP ' + result.status);
         }
+        return false;
       } finally {
         this.saving = false;
       }
+    },
+
+    // A change made outside a dialog: a refusal is told in a message.
+    async apply() {
+      if (!(await this.persist()) && this.saveError) this.say('danger', 'Not saved', this.saveError);
+    },
+
+    // The answers to a file changed elsewhere.
+    async overwrite() {
+      const document = this.conflict.document;
+      if (await this.write({ document, overwrite: true }, document)) this.say('success', 'Saved over the file', '');
+      else if (this.saveError) { this.conflict = null; this.say('danger', 'Not saved', this.saveError); }
+    },
+    async takeFile() {
+      this.conflict = null;
+      await this.load();
     },
 
     async reloadFile() {
@@ -297,83 +410,224 @@ function panel() {
       await this.load();
     },
 
-    async resetKey(provider, key) {
-      await this.api('POST', 'keys/reset', { provider, key });
-      await this.refreshStatus();
+    // A message in the corner. The same one said again takes the place of
+    // the first; all but refusals go away by themselves.
+    say(kind, title, text) {
+      const id = ++counter;
+      this.messages = this.messages.filter(m => !(m.kind === kind && m.title === title && m.text === text));
+      this.messages.push({ id, kind, title, text });
+      if (kind !== 'danger') setTimeout(() => { this.messages = this.messages.filter(m => m.id !== id); }, kind === 'warning' ? 12000 : 5000);
+    },
+    messageIcon(kind) { return { success: 'ti-circle-check text-success', warning: 'ti-alert-triangle text-warning', danger: 'ti-alert-circle text-danger' }[kind] || 'ti-info-circle text-info'; },
+
+    ask(title, text, action, run) { this.question = { title, text, action, run }; },
+    async answer() {
+      const run = this.question.run;
+      this.question = null;
+      await run();
     },
 
+    async copy(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // No clipboard on a plain http address: the old way.
+        const area = document.createElement('textarea');
+        area.value = text;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+      }
+      this.say('success', 'Copied', '');
+    },
+
+    // Providers
+
+    brandName(id) { return BRANDS[id]?.[0] || id; },
+    brandIcon(id) { const icon = BRANDS[id]?.[1]; return icon ? ICONS + icon + '.svg' : ''; },
+    initials(id) { return (id || '?').replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || '?'; },
     signsIn(provider) { return SIGN_IN.includes(provider); },
     takesKeys(provider) { return !KEYLESS.includes(provider); },
     // The key may stay empty: the provider serves some models without one.
     keyOptional(provider) { return this.keylessPresets.includes(provider); },
     antigravityRisk: 'Not supported by Google: Antigravity\'s sign-in is meant for Antigravity alone, and Google may suspend an account it sees used elsewhere. Use an account you can afford to lose. Use at your own risk.',
-    // The sign-in state of an account of the file, once saved.
-    signInOf(a) {
-      const name = a.name.trim(), provider = this.accountProvider(a).trim();
-      return (this.status?.accounts || []).find(s => s.provider === provider && s.name === name)?.sign_in || null;
-    },
-    // `adding`: the account is the add form's, added (and saved) once signed in.
-    async startSignIn(provider, account, adding = false) {
-      const result = await this.api('POST', 'sign-in/start', { provider, account });
-      if (result.status === 200) this.signing = { provider, account, adding, id: result.json.id, url: result.json.url, redirect: result.json.redirect, callback: '', error: '', busy: false };
-      else if (result.status !== 401) this.say('danger', 'Cannot sign in', result.json.error || 'HTTP ' + result.status);
-    },
-    async finishSignIn() {
-      const s = this.signing;
-      s.busy = true;
-      s.error = '';
-      try {
-        const result = await this.api('POST', 'sign-in/finish', { id: s.id, callback: s.callback.trim() });
-        if (result.status === 200) {
-          this.signing = null;
-          this.say('success', 'Signed in ' + s.provider + '/' + s.account, result.json.user + (result.json.plan ? ' (' + result.json.plan + ')' : ''));
-          if (s.adding) {
-            // Saved at once unless other changes are pending, which the user saves.
-            const clean = !this.dirty();
-            this.addAccount();
-            if (clean) await this.save();
-          }
-          await this.refreshStatus();
-        } else if (result.status !== 401) {
-          s.error = result.json.error || 'HTTP ' + result.status;
-        }
-      } finally {
-        s.busy = false;
-      }
-    },
-    async forgetSignIn(provider, account) {
-      if (!confirm(t('Forget the sign-in of ' + provider + '/' + account + '?'))) return;
-      await this.api('POST', 'sign-in/forget', { provider, account });
-      await this.refreshStatus();
-    },
 
-    say(kind, title, text) {
-      this.messages.push({ id: ++counter, kind, title, text });
-      if (kind !== 'danger' && kind !== 'warning') { const id = counter; setTimeout(() => { this.messages = this.messages.filter(m => m.id !== id); }, 5000); }
+    // Home
+
+    // What is wrong or about to be, each with what to do about it.
+    attention() {
+      const items = [];
+      for (const a of this.status?.accounts || []) {
+        const who = a.provider + '/' + a.name;
+        if (a.sign_in && a.sign_in.state !== 'signed in') {
+          items.push({
+            kind: 'danger', icon: 'ti-login-2', text: who + (a.sign_in.state === 'lapsed' ? ': the sign-in has lapsed' : ': not signed in yet'),
+            action: 'Sign in', run: () => this.startSignIn(a.provider, a.name),
+          });
+        } else if (a.state === 'disabled') {
+          items.push({
+            kind: 'danger', icon: 'ti-key-off', text: who + ': the key was refused repeatedly and is no longer tried',
+            action: 'Try it again', run: () => this.resetKey(a.provider, a.name),
+          });
+        } else if (a.state === 'cooling') {
+          items.push({ kind: 'warning', icon: 'ti-snowflake', text: who + ': cooling down, tried again in ' + a.cooling_seconds + 's', action: 'Try it now', run: () => this.resetKey(a.provider, a.name) });
+        }
+        for (const w of this.quotaOf(a.provider, a.name)?.windows || []) {
+          if (w.used >= 90) items.push({ kind: 'warning', icon: 'ti-gauge', text: who + ': ' + Math.round(100 - w.used) + '% left of ' + t(w.name), action: '', run: null });
+        }
+      }
+      for (const c of this.status?.cooling || []) {
+        items.push({ kind: 'warning', icon: 'ti-plug-connected-x', text: c.provider + ': ' + c.what + ', retried in ' + c.cooling_seconds + 's', action: '', run: null });
+      }
+      if (this.exposed()) {
+        items.push({
+          kind: 'warning', icon: 'ti-lock-open', text: 'No client key is set: anyone who reaches the gateway can spend from your accounts.',
+          action: 'Add a client key', run: () => { this.go('clients'); this.startClient(null); },
+        });
+      }
+      return items;
+    },
+    // No client key, on an address other machines reach.
+    exposed() {
+      const host = (this.status?.listen || '').replace(/:\d+$/, '');
+      return this.status && !this.model.clients.some(c => c.enabled) && !['127.0.0.1', 'localhost', '[::1]', '::1'].includes(host);
+    },
+    // The three steps to a working gateway.
+    steps() {
+      return [
+        { label: 'Add an account', done: this.model.accounts.length > 0 || (this.status?.accounts || []).length > 0 },
+        { label: 'Give your tools a key', done: this.model.clients.length > 0 },
+        { label: 'Connect a tool', done: (this.activity?.sessions || []).length > 0 || (this.today?.total?.requests || 0) > 0 },
+      ];
+    },
+    // What a tool is given to reach the gateway. A client's key is
+    // readable only while it is entered: the file's own are hidden.
+    snippet(app) {
+      const base = this.origin, key = this.model.clients.length ? 'YOUR_CLIENT_KEY' : 'unladen';
+      if (app === 'claude') return 'export ANTHROPIC_BASE_URL=' + base + '\nexport ANTHROPIC_AUTH_TOKEN=' + key + '\nclaude';
+      if (app === 'codex') {
+        return '# ~/.codex/config.toml\nmodel_provider = "unladen"\n\n[model_providers.unladen]\nname = "unladen"\nbase_url = "' + base + '/v1"\n'
+          + 'wire_api = "responses"\nenv_key = "UNLADEN_API_KEY"\n\n# shell\nexport UNLADEN_API_KEY=' + key;
+      }
+      if (app === 'openai') return 'Base URL: ' + base + '/v1\nAPI key:  ' + key;
+      return 'curl ' + base + '/v1/models \\\n  -H "Authorization: Bearer ' + key + '"';
+    },
+    appNote(app) {
+      return {
+        claude: 'Claude Code speaks the Anthropic protocol; the gateway answers it with any model you set up.',
+        codex: 'Codex speaks the Responses protocol.',
+        openai: 'For any tool that takes an OpenAI base URL and key. Anthropic and Gemini clients use the same address without /v1.',
+        curl: 'Lists the models this key may ask for.',
+      }[app];
     },
 
     // Accounts
 
     accountProvider(a) { return a.custom ? a.name : (a.provider || a.name); },
+    // Accounts by provider, in the file's order: a provider's accounts are
+    // its pool. Accounts from the environment come after the file's.
+    accountGroups() {
+      const groups = [], byProvider = {};
+      const group = provider => byProvider[provider] || (groups.push(byProvider[provider] = { provider, accounts: [], fromEnvironment: [] }), byProvider[provider]);
+      for (const a of this.model.accounts) group(this.accountProvider(a).trim()).accounts.push(a);
+      for (const s of this.status?.accounts || []) if (s.source === 'environment') group(s.provider).fromEnvironment.push(s);
+      return groups;
+    },
+    // The account as the gateway has it in force, when it has.
+    inForce(a) {
+      const name = a.name.trim(), provider = this.accountProvider(a).trim();
+      return (this.status?.accounts || []).find(s => s.provider === provider && s.name === name) || null;
+    },
+    // How an account is doing, in one word and a colour.
+    accountState(a, live) {
+      if (a && !a.enabled) return { color: 'secondary', label: 'turned off' };
+      if (!live) return { color: 'secondary', label: 'not in force' };
+      if (live.sign_in && live.sign_in.state !== 'signed in') {
+        return live.sign_in.state === 'lapsed' ? { color: 'red', label: 'sign-in lapsed' } : { color: 'orange', label: 'not signed in' };
+      }
+      if (live.state === 'disabled') return { color: 'red', label: 'key refused' };
+      if (live.state === 'cooling') return { color: 'yellow', label: 'cooling down' };
+      return { color: 'green', label: 'ready' };
+    },
+    poolOf(provider) { return this.model.pools[provider] || 'order'; },
+    async setPool(provider, pick) {
+      this.model.pools[provider] = pick;
+      await this.apply();
+    },
+    // Moves an account among its provider's: earlier is tried first.
+    canMove(group, a, by) { const i = group.accounts.indexOf(a) + by; return i >= 0 && i < group.accounts.length; },
+    async moveAccount(group, a, by) {
+      const other = group.accounts[group.accounts.indexOf(a) + by];
+      const all = this.model.accounts, i = all.indexOf(a), j = all.indexOf(other);
+      [all[i], all[j]] = [all[j], all[i]];
+      await this.apply();
+    },
+    async setAccountEnabled(a, enabled) {
+      a.enabled = enabled;
+      await this.apply();
+    },
+    removeAccount(a) {
+      this.ask('Remove ' + a.name + '?', 'The account is taken out of the configuration file. Models that point at it stay, and fail until they point elsewhere.', 'Remove', async () => {
+        this.model.accounts.splice(this.model.accounts.indexOf(a), 1);
+        await this.apply();
+      });
+    },
+    async resetKey(provider, key) {
+      await this.api('POST', 'keys/reset', { provider, key });
+      await this.refreshStatus();
+    },
+
+    startAccount(a) {
+      this.saveError = '';
+      this.accountEdit = {
+        original: a.name, name: a.name, key: a.key, enabled: a.enabled, custom: a.custom, preset: a.preset,
+        provider: this.accountProvider(a),
+        endpoints: a.endpoints.map(e => ({ ...e })), headers: a.headers.map(h => ({ ...h })),
+      };
+    },
+    async saveAccount() {
+      const e = this.accountEdit;
+      const a = this.model.accounts.find(a => a.name === e.original);
+      if (!a) { this.accountEdit = null; return; }
+      const name = e.name.trim();
+      // An account named after its provider keeps the provider once renamed.
+      if (!a.custom && !a.provider && name !== a.name) a.provider = a.name;
+      Object.assign(a, { name, key: e.key, enabled: e.enabled, endpoints: e.endpoints, headers: e.headers });
+      if (await this.persist()) this.accountEdit = null;
+    },
+
     // Presets, and the accounts that are providers of their own.
     providerIds() {
       const ids = new Set(this.presets);
       for (const a of this.model.accounts) if (a.custom && a.name.trim()) ids.add(a.name.trim());
       return [...ids].sort();
     },
-    // Providers with more than one account, and those the file sets.
-    poolProviders() {
-      const counts = {};
-      for (const a of this.model.accounts) { const p = this.accountProvider(a).trim(); if (p) counts[p] = (counts[p] || 0) + 1; }
-      const ids = new Set(Object.keys(counts).filter(p => counts[p] > 1));
-      for (const id of Object.keys(this.model.pools)) ids.add(id);
-      return [...ids].sort();
+    // The add dialog's providers, as the search narrows them: those that
+    // sign in, those of your own addresses, and the rest.
+    providerChoices() {
+      const query = (this.draft?.query || '').trim().toLowerCase();
+      const own = this.model.accounts.filter(a => a.custom && a.name.trim()).map(a => a.name.trim());
+      const matches = id => !query || id.toLowerCase().includes(query) || this.brandName(id).toLowerCase().includes(query);
+      // The providers most come for, then the rest by name.
+      const first = id => { const i = FEATURED.indexOf(id); return i < 0 ? FEATURED.length : i; };
+      const byName = (a, b) => first(a) - first(b) || this.brandName(a).localeCompare(this.brandName(b));
+      return [
+        { label: 'Sign in with a subscription', ids: SIGN_IN.filter(id => this.presets.includes(id) && matches(id)) },
+        { label: 'Your own addresses', ids: own.filter(matches) },
+        { label: 'With an API key', ids: this.presets.filter(id => !SIGN_IN.includes(id) && !own.includes(id) && matches(id)).sort(byName) },
+      ].filter(group => group.ids.length);
     },
 
     startAdding() {
-      this.draft = { provider: this.presets[0] || '', name: '', autoName: '', key: '', preset: '', protocol: 'chat', url: '', suggestions: [] };
+      this.saveError = '';
+      this.draft = { step: 'pick', query: '', provider: '', name: '', autoName: '', key: '', preset: '', protocol: 'chat', url: '', suggestions: [] };
+    },
+    // `provider`: a preset or an address of your own; empty: a new address.
+    pickProvider(provider) {
+      this.draft.provider = provider;
+      this.draft.step = 'details';
       this.draftChanged(true);
-      this.adding = true;
     },
     // A name that follows the provider until it is typed over, and the
     // models the provider's family suggests.
@@ -407,7 +661,9 @@ function panel() {
       if (!d.provider && !/^https?:\/\//.test(d.url.trim())) return 'Enter the endpoint address (http:// or https://).';
       return '';
     },
-    addAccount() {
+    // The add dialog signs the account in when it has no key to give.
+    draftSignsIn() { return this.signsIn(this.draft.provider) && !this.draft.key.trim(); },
+    async addAccount() {
       const d = this.draft, name = d.name.trim();
       const account = { uid: ++counter, name, provider: '', key: this.signsIn(d.provider) ? '' : d.key.trim(), enabled: true, custom: false, preset: '', endpoints: [], headers: [], rest: {} };
       if (d.provider) {
@@ -423,52 +679,174 @@ function panel() {
         if (existing) { existing.target = s.target; existing.raw = undefined; }
         else this.model.models.push({ uid: ++counter, name: s.name, target: s.target, raw: undefined });
       }
-      this.adding = false;
-      this.say('info', 'Added ' + name, 'Save to put it in force.');
+      if (await this.persist()) {
+        this.draft = null;
+        this.say('success', 'Added ' + name, '');
+        this.refreshQuotas(true);
+      }
     },
 
-    // Models and clients
+    // `adding`: the account is the add dialog's, added once signed in.
+    async startSignIn(provider, account, adding = false) {
+      const result = await this.api('POST', 'sign-in/start', { provider, account });
+      if (result.status === 200) this.signing = { provider, account, adding, id: result.json.id, url: result.json.url, redirect: result.json.redirect, callback: '', error: '', busy: false };
+      else if (result.status !== 401) this.say('danger', 'Cannot sign in', result.json.error || 'HTTP ' + result.status);
+    },
+    async finishSignIn() {
+      const s = this.signing;
+      s.busy = true;
+      s.error = '';
+      try {
+        const result = await this.api('POST', 'sign-in/finish', { id: s.id, callback: s.callback.trim() });
+        if (result.status === 200) {
+          this.signing = null;
+          this.say('success', 'Signed in ' + s.provider + '/' + s.account, result.json.user + (result.json.plan ? ' (' + result.json.plan + ')' : ''));
+          if (s.adding) await this.addAccount();
+          await this.refreshStatus();
+          this.refreshQuotas(true);
+        } else if (result.status !== 401) {
+          s.error = result.json.error || 'HTTP ' + result.status;
+        }
+      } finally {
+        s.busy = false;
+      }
+    },
+    forgetSignIn(provider, account) {
+      this.ask('Forget the sign-in of ' + provider + '/' + account + '?', 'The account stays, and cannot be used until it signs in again.', 'Forget', async () => {
+        await this.api('POST', 'sign-in/forget', { provider, account });
+        await this.refreshStatus();
+      });
+    },
+
+    // Models
 
     menuNames() { return this.model.models.map(r => r.name.trim()).filter(Boolean); },
-    targetChoices() {
+    // Who may answer a model: the providers with an account.
+    targetProviders() {
       const providers = new Set(this.model.accounts.map(a => this.accountProvider(a).trim()).filter(Boolean));
       for (const a of this.status?.accounts || []) providers.add(a.provider);
-      return [...[...providers].sort(), ...this.menuNames().filter(n => !n.includes('*')).map(n => '@' + n)];
+      if (this.modelEdit?.provider) providers.add(this.modelEdit.provider);
+      return [...providers].sort();
     },
-    addClient() {
-      this.model.clients.push({ uid: ++counter, name: '', key: generateSecret(), access: 'menu', chosen: [], extra: '', enabled: true, rest: {} });
+    // A target as its parts: `@name`, `provider` or `provider/model`.
+    targetParts(target) {
+      const text = (target || '').trim();
+      if (text.startsWith('@')) return { kind: 'alias', alias: text.slice(1), provider: '', upstream: '' };
+      const slash = text.indexOf('/');
+      return { kind: 'provider', alias: '', provider: slash < 0 ? text : text.slice(0, slash), upstream: slash < 0 ? '' : text.slice(slash + 1) };
     },
-    clientSummary(models) {
-      if (models === null || models === undefined) return 'every model';
-      if (models.includes('*')) return 'everything, provider/model too';
-      return models.join(', ');
+    // What the gateway resolves a name to, once in force.
+    resolved(name) { return (this.status?.models || []).find(r => r.name === name)?.targets || []; },
+    startModel(r) {
+      this.saveError = '';
+      const parts = this.targetParts(r?.target);
+      this.modelEdit = {
+        original: r ? r.name : null, name: r ? r.name : '', raw: r?.raw,
+        kind: parts.kind, alias: parts.alias, provider: parts.provider || this.targetProviders()[0] || '', upstream: parts.upstream,
+      };
+    },
+    modelProblem() {
+      const e = this.modelEdit;
+      if (!e) return '';
+      const name = e.name.trim();
+      if (!name) return 'Give the model a name.';
+      if (name !== e.original && this.menuNames().includes(name)) return 'Another model has this name.';
+      if (e.raw !== undefined) return '';
+      if (e.kind === 'alias' && !e.alias) return 'Choose the model it stands for.';
+      if (e.kind === 'provider' && !e.provider) return 'Add an account first: a model needs a provider to answer it.';
+      return '';
+    },
+    async saveModel() {
+      const e = this.modelEdit, name = e.name.trim();
+      const target = e.kind === 'alias' ? '@' + e.alias : e.provider + (e.upstream.trim() ? '/' + e.upstream.trim() : '');
+      const existing = this.model.models.find(r => r.name === e.original);
+      if (existing) Object.assign(existing, e.raw === undefined ? { name, target } : { name });
+      else this.model.models.push({ uid: ++counter, name, target, raw: undefined });
+      if (await this.persist()) this.modelEdit = null;
+    },
+    removeModel(r) {
+      this.ask('Remove ' + r.name + '?', 'Clients that ask for this name are refused, unless another model takes it.', 'Remove', async () => {
+        this.model.models.splice(this.model.models.indexOf(r), 1);
+        await this.apply();
+      });
+    },
+
+    // Clients
+
+    startClient(c) {
+      this.saveError = '';
+      this.clientEdit = c
+        ? { original: c.name, name: c.name, key: c.key, access: c.access, chosen: [...c.chosen], extra: c.extra, enabled: c.enabled }
+        : { original: null, name: '', key: generateSecret(), access: 'menu', chosen: [], extra: '', enabled: true };
+    },
+    clientProblem() {
+      const e = this.clientEdit;
+      if (!e) return '';
+      const name = e.name.trim();
+      if (!name) return 'Give the client a name.';
+      if (name !== e.original && this.model.clients.some(c => c.name.trim() === name)) return 'Another client has this name.';
+      if (!e.key.trim()) return 'Enter the key.';
+      return '';
+    },
+    async saveClient() {
+      const e = this.clientEdit;
+      const fields = { name: e.name.trim(), key: e.key.trim(), access: e.access, chosen: e.chosen, extra: e.extra, enabled: e.enabled };
+      const existing = this.model.clients.find(c => c.name === e.original);
+      if (existing) Object.assign(existing, fields);
+      else this.model.clients.push({ uid: ++counter, rest: {}, ...fields });
+      if (await this.persist()) this.clientEdit = null;
+    },
+    async setClientEnabled(c, enabled) {
+      c.enabled = enabled;
+      await this.apply();
+    },
+    removeClient(c) {
+      const last = this.model.clients.length === 1;
+      this.ask('Remove ' + c.name + '?', last ? 'With no client key left, anyone who reaches the gateway may use it.' : 'Tools that present this key are refused.', 'Remove', async () => {
+        this.model.clients.splice(this.model.clients.indexOf(c), 1);
+        await this.apply();
+      });
+    },
+    accessSummary(c) {
+      if (c.access === 'menu') return 'Every model';
+      if (c.access === 'all') return 'Everything, provider/model too';
+      const names = [...c.chosen, ...globs(c.extra)];
+      return names.length ? names.join(', ') : 'No model';
     },
 
     // Settings
 
-    showJSON() {
-      this.jsonText = JSON.stringify(toDocument(this.model, this.original), null, 2);
+    showSettings() {
+      if (!this.model) return;
+      if (!this.settings) this.settings = { ...this.model.advanced };
+      this.jsonText = JSON.stringify(this.original, null, 2);
       this.jsonError = '';
     },
-    applyJSON() {
+    settingsChanged() { return !!this.settings && JSON.stringify(this.settings) !== JSON.stringify(this.model.advanced); },
+    async saveSettings() {
+      this.model.advanced = { ...this.settings };
+      if (await this.persist()) this.say('success', 'Saved and in force', '');
+      else if (this.saveError) this.say('danger', 'Not saved', this.saveError);
+    },
+    jsonChanged() { return this.jsonText !== JSON.stringify(this.original, null, 2); },
+    async saveJSON() {
+      let document;
       try {
-        const document = JSON.parse(this.jsonText);
+        document = JSON.parse(this.jsonText);
         if (typeof document !== 'object' || document === null || Array.isArray(document)) throw new Error('expected an object');
-        this.model = fromDocument(document);
-        this.original = document;
-        this.jsonError = '';
-        this.say('info', 'Applied', 'Save to write the file.');
       } catch (e) {
         this.jsonError = 'Not valid JSON: ' + e.message;
+        return;
       }
+      this.jsonError = '';
+      if (await this.persist(document)) this.say('success', 'Saved and in force', '');
+      else this.jsonError = this.saveError;
     },
 
     // Helpers
 
-    stateClass(state) { return { ready: 'bg-success-lt', cooling: 'bg-warning-lt', disabled: 'bg-danger-lt' }[state]; },
     isHidden(value) { return typeof value === 'string' && HIDDEN.test(value); },
     hiddenName(value) { return value.match(HIDDEN)[1]; },
-    move(items, index, by) { const [item] = items.splice(index, 1); items.splice(index + by, 0, item); },
     toggle(items, value) { const i = items.indexOf(value); if (i < 0) items.push(value); else items.splice(i, 1); },
     uid() { return ++counter; },
     generateSecret,
@@ -502,9 +880,6 @@ function text(value) {
 function fromDocument(doc) {
   const advanced = doc.advanced || {};
   const model = {
-    listen: text(doc.listen),
-    panelToken: text(doc.panel?.token),
-    panelRest: omit(doc.panel, ['token']),
     advanced: {},
     advancedRest: omit(advanced, [...ADVANCED, 'pools']),
     pools: { ...(advanced.pools || {}) },
@@ -564,11 +939,6 @@ function scalar(value) {
 
 function toDocument(model, original) {
   const sections = {};
-  if (model.listen.trim()) sections.listen = model.listen.trim();
-
-  const panel = { ...model.panelRest };
-  if (model.panelToken.trim()) panel.token = model.panelToken.trim();
-  if (Object.keys(panel).length) sections.panel = panel;
 
   const accounts = {};
   for (const a of model.accounts) {
@@ -613,8 +983,8 @@ function toDocument(model, original) {
   advanced = { ...advanced, ...model.advancedRest };
   if (Object.keys(advanced).length) sections.advanced = advanced;
 
-  // The file's order of sections, then the usual one; sections the panel
-  // does not know are kept, for the server to name.
+  // The file's order of sections, then the usual one; sections the forms
+  // do not edit (listen, panel, and any the panel does not know) are kept.
   const doc = {};
   const order = Object.keys(original || {});
   for (const key of SECTIONS) if (!order.includes(key)) order.push(key);
