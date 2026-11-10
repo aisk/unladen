@@ -154,6 +154,10 @@ struct Serve: AsyncParsableCommand {
         let server = loaded.server
         var clientConfiguration = HTTPClient.Configuration()
         clientConfiguration.timeout = .init(connect: .nanoseconds(Int64(server.connectTimeout / .nanoseconds(1))), read: nil)
+        // A redirect to another host would carry `x-api-key` and
+        // `x-goog-api-key` there (only `Authorization` is dropped): an API
+        // that redirects answers with the redirect instead.
+        clientConfiguration.redirectConfiguration = .disallow
         let client = HTTPClient(eventLoopGroup: HTTPClient.defaultEventLoopGroup, configuration: clientConfiguration)
 
         var logger = Logger(label: "unladen")
@@ -241,6 +245,7 @@ struct SignIn: AsyncParsableCommand {
         }
         var clientConfiguration = HTTPClient.Configuration()
         clientConfiguration.timeout = .init(connect: .nanoseconds(Int64(loaded.server.connectTimeout / .nanoseconds(1))), read: nil)
+        clientConfiguration.redirectConfiguration = .disallow
         let client = HTTPClient(eventLoopGroup: HTTPClient.defaultEventLoopGroup, configuration: clientConfiguration)
         let result: Result<SignInCredentials, SignInError>
         do throws(SignInError) {
