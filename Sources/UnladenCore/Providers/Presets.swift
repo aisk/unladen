@@ -268,11 +268,14 @@ public enum Presets {
     }
 
     /// An OpenAI-style API at `openAI` (Chat, and Responses when
-    /// `responses`) and Anthropic's at `anthropic`, when there is one.
+    /// `responses`) and Anthropic's at `anthropic`, when there is one: with
+    /// `x-api-key`, or a Bearer key (`anthropicBearer`) for a vendor not
+    /// seen reading `x-api-key` there.
     static func site(
         _ system: String, openAI: String, responses: Bool = false, anthropic: String? = nil, anthropicBearer: Bool = false,
+        chat: Profile = Profile(),
     ) -> [Endpoint] {
-        var endpoints = [endpoint(system, .chatCompletions, openAI)]
+        var endpoints = [endpoint(system, .chatCompletions, openAI, chat)]
         if responses { endpoints.append(endpoint(system, .responses, openAI)) }
         if let anthropic {
             // A Bearer key carries no `anthropic-version`: it is set here.
@@ -344,14 +347,12 @@ public enum Presets {
 
     /// StepFun's Step Plan, international and China: served at its own
     /// endpoints, its key refused at the pay-as-you-go ones.
-    public static let stepPlan = vendor("step-plan", [
-        endpoint("stepfun", .chatCompletions, "https://api.stepfun.ai/step_plan/v1"),
-        endpoint("stepfun", .anthropicMessages, "https://api.stepfun.ai/step_plan"),
-    ])
-    public static let stepPlanChina = vendor("step-plan-cn", [
-        endpoint("stepfun", .chatCompletions, "https://api.stepfun.com/step_plan/v1"),
-        endpoint("stepfun", .anthropicMessages, "https://api.stepfun.com/step_plan"),
-    ])
+    public static let stepPlan = vendor("step-plan", site(
+        "stepfun", openAI: "https://api.stepfun.ai/step_plan/v1", anthropic: "https://api.stepfun.ai/step_plan", anthropicBearer: true,
+    ))
+    public static let stepPlanChina = vendor("step-plan-cn", site(
+        "stepfun", openAI: "https://api.stepfun.com/step_plan/v1", anthropic: "https://api.stepfun.com/step_plan", anthropicBearer: true,
+    ))
 
     /// Volcengine Ark's Coding Plan, with a key of its own; pay as you go
     /// (`/api/v3`) bills apart. Its paths are versioned already.
@@ -363,10 +364,16 @@ public enum Presets {
 
     /// Alibaba Cloud Bailian's Token Plan: its own `sk-sp-` keys, taken
     /// only at its own host.
-    public static let bailianTokenPlan = vendor("bailian-token-plan", [
-        endpoint("dashscope", .chatCompletions, "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
-        endpoint("dashscope", .anthropicMessages, "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"),
-    ])
+    public static let bailianTokenPlan = vendor("bailian-token-plan", site(
+        "dashscope", openAI: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+        anthropic: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic", chat: dashScopeChat,
+    ))
+
+    /// DashScope's Chat API answers a thinking Qwen model whole only with
+    /// its thinking off ("parameter.enable_thinking must be set to false
+    /// for non-streaming calls"): it is asked streamed, and the reply
+    /// given back whole when the client wanted it so.
+    static let dashScopeChat = Profile(streaming: .always)
 
     public static let openRouter = declaringProtocolGaps(Provider(
         id: "openrouter",
@@ -495,7 +502,8 @@ public enum Presets {
     /// Ollama's cloud models, with an ollama.com key; a free tier.
     public static let ollamaCloud = vendor("ollama-cloud", environment: ["OLLAMA_API_KEY"], [
         endpoint("ollama", .chatCompletions, "https://ollama.com/v1", Profile(transforms: base + [.flattenTextParts])),
-        endpoint("ollama", .anthropicMessages, "https://ollama.com", Profile(acceptsUnsignedThinking: true)),
+        endpoint("ollama", .anthropicMessages, "https://ollama.com", Profile(acceptsUnsignedThinking: true),
+                 auth: .bearer, headers: ["anthropic-version": "2023-06-01"]),
     ])
 
     public static let fireworks = vendor("fireworks", environment: ["FIREWORKS_API_KEY"], site(
@@ -515,7 +523,8 @@ public enum Presets {
     public static let miMoPlanSingapore = vendor("mimo-plan-sgp", miMoSite("token-plan-sgp"))
     public static let miMoPlanEurope = vendor("mimo-plan-ams", miMoSite("token-plan-ams"))
     static func miMoSite(_ host: String) -> [Endpoint] {
-        site("mimo", openAI: "https://\(host).xiaomimimo.com/v1", responses: true, anthropic: "https://\(host).xiaomimimo.com/anthropic")
+        site("mimo", openAI: "https://\(host).xiaomimimo.com/v1", responses: true, anthropic: "https://\(host).xiaomimimo.com/anthropic",
+             anthropicBearer: true)
     }
 
     /// Baidu Qianfan: pay as you go, and the Token Plan's personal and
@@ -540,8 +549,8 @@ public enum Presets {
     static func tokenHubSite(_ host: String, plan: Bool) -> [Endpoint] {
         let root = "https://\(host).tencentmaas.com"
         return plan
-            ? site("tencent", openAI: root + "/plan/v3", responses: true, anthropic: root + "/plan/anthropic")
-            : site("tencent", openAI: root + "/v1", responses: true, anthropic: root)
+            ? site("tencent", openAI: root + "/plan/v3", responses: true, anthropic: root + "/plan/anthropic", anthropicBearer: true)
+            : site("tencent", openAI: root + "/v1", responses: true, anthropic: root, anthropicBearer: true)
     }
 
     /// Huawei Cloud MaaS: pay as you go, and the Token Plan, whose quota is
@@ -557,32 +566,32 @@ public enum Presets {
     /// each on a key only its own host takes.
     public static let qwenTokenPlan = vendor("qwen-token-plan", site(
         "dashscope", openAI: "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1",
-        anthropic: "https://token-plan.maas.qianwenaiapi.com/apps/anthropic",
+        anthropic: "https://token-plan.maas.qianwenaiapi.com/apps/anthropic", chat: dashScopeChat,
     ))
     public static let qwenCloudTokenPlan = vendor("qwencloud-token-plan", site(
         "dashscope", openAI: "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1",
-        anthropic: "https://token-plan.maas.qwencloudapi.com/apps/anthropic",
+        anthropic: "https://token-plan.maas.qwencloudapi.com/apps/anthropic", chat: dashScopeChat,
     ))
 
     /// Alibaba Cloud Model Studio (DashScope) pay as you go, international
     /// and China, and Qwen Cloud's (Singapore).
     public static let dashScope = vendor("dashscope", environment: ["DASHSCOPE_API_KEY"], site(
-        "dashscope", openAI: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", anthropic: "https://dashscope-intl.aliyuncs.com/apps/anthropic",
+        "dashscope", openAI: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", anthropic: "https://dashscope-intl.aliyuncs.com/apps/anthropic", chat: dashScopeChat,
     ))
     public static let dashScopeChina = vendor("dashscope-cn", site(
-        "dashscope", openAI: "https://dashscope.aliyuncs.com/compatible-mode/v1", anthropic: "https://dashscope.aliyuncs.com/apps/anthropic",
+        "dashscope", openAI: "https://dashscope.aliyuncs.com/compatible-mode/v1", anthropic: "https://dashscope.aliyuncs.com/apps/anthropic", chat: dashScopeChat,
     ))
     public static let qwenCloud = vendor("qwencloud", site(
         "dashscope", openAI: "https://ap-southeast-1.maas.qwencloudapi.com/compatible-mode/v1",
-        anthropic: "https://ap-southeast-1.maas.qwencloudapi.com/apps/anthropic",
+        anthropic: "https://ap-southeast-1.maas.qwencloudapi.com/apps/anthropic", chat: dashScopeChat,
     ))
 
     /// StepFun pay as you go (the Step Plan is `step-plan`).
     public static let stepFun = vendor("stepfun", environment: ["STEPFUN_API_KEY"], site(
-        "stepfun", openAI: "https://api.stepfun.ai/v1", anthropic: "https://api.stepfun.ai",
+        "stepfun", openAI: "https://api.stepfun.ai/v1", anthropic: "https://api.stepfun.ai", anthropicBearer: true,
     ))
     public static let stepFunChina = vendor("stepfun-cn", site(
-        "stepfun", openAI: "https://api.stepfun.com/v1", anthropic: "https://api.stepfun.com",
+        "stepfun", openAI: "https://api.stepfun.com/v1", anthropic: "https://api.stepfun.com", anthropicBearer: true,
     ))
 
     /// Volcengine Ark pay as you go, and its Agent Plan (the Coding Plan is
@@ -622,7 +631,7 @@ public enum Presets {
     public static let pipeLLM = vendor("pipellm", [
         endpoint("pipellm", .chatCompletions, "https://api.pipellm.ai/openai/v1"),
         endpoint("pipellm", .responses, "https://api.pipellm.ai/v1"),
-        endpoint("pipellm", .anthropicMessages, "https://api.pipellm.ai"),
+        endpoint("pipellm", .anthropicMessages, "https://api.pipellm.ai", auth: .bearer, headers: ["anthropic-version": "2023-06-01"]),
     ], models: claudeRules(prefix: "", forcing: .anthropicMessages)
         + openAIRules(prefix: "").map { ModelRule($0.match, Profile(forcedProtocol: .responses).merged(over: $0.profile)) }
         + [ModelRule(.prefix("gpt-"), Profile(forcedProtocol: .responses)), ModelRule(.pattern("*"), Profile(forcedProtocol: .chatCompletions))])

@@ -14,6 +14,9 @@
 ///    else the first endpoint.
 /// 3. Merge: endpoint ``Endpoint/defaults`` < rule profile
 ///    (``Profile/merged(over:)``).
+/// 4. A DeepSeek model on a Chat endpoint, wherever it is served, gets
+///    ``ProfileTransform/replayReasoningContent``: its thinking mode refuses
+///    a tool turn without its reasoning.
 public struct Provider: Hashable, Sendable {
     /// The name in model references (`"<id>/<model>"`).
     public var id: String
@@ -68,7 +71,11 @@ public struct Provider: Hashable, Sendable {
         }
         guard let endpoint else { throw .noEndpoint(provider: id) }
         try ModelID.validate(model, for: endpoint.apiProtocol)
-        let profile = rule.map { $0.profile.merged(over: endpoint.defaults) } ?? endpoint.defaults
+        var profile = rule.map { $0.profile.merged(over: endpoint.defaults) } ?? endpoint.defaults
+        if endpoint.apiProtocol == .chatCompletions, model.lowercased().contains("deepseek"),
+           profile.transforms?.contains(.replayReasoningContent) != true {
+            profile.transforms = (profile.transforms ?? []) + [.replayReasoningContent]
+        }
         return ResolvedModel(provider: id, model: model, endpoint: endpoint, profile: profile)
     }
 }

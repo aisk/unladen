@@ -148,6 +148,17 @@ import Testing
         #expect(try url("pipellm/gpt-5.4", .anthropicMessages) == "https://api.pipellm.ai/v1")
         #expect(try url("pipellm/glm-5.3", .anthropicMessages) == "https://api.pipellm.ai/openai/v1")
         #expect(try url("commandcode/kimi-k3", .anthropicMessages) == "https://api.commandcode.ai/provider/v1")
+        // DeepSeek's models replay their reasoning on any vendor's Chat API.
+        for reference in ["tokenhub/deepseek-v4-pro", "opencode-go/deepseek-v4.1-flash", "qianfan/DeepSeek-V4"] {
+            #expect(try ProviderRegistry.builtIn.resolve(reference, preferring: .chatCompletions).profile.transforms?.contains(.replayReasoningContent) == true)
+        }
+        #expect(try ProviderRegistry.builtIn.resolve("tokenhub/glm-5.3", preferring: .chatCompletions).profile.transforms?.contains(.replayReasoningContent) != true)
+        // DashScope answers thinking Qwen models whole only when streamed.
+        for reference in ["dashscope/qwen3.8-max", "qwen-token-plan/qwen3.8-max", "bailian-token-plan/qwen3.8-max"] {
+            #expect(try ProviderRegistry.builtIn.resolve(reference, preferring: .chatCompletions).profile.streaming == .always)
+        }
+        let mimo = try ProviderRegistry.builtIn.resolve("mimo-plan/mimo-v2.6-pro", preferring: .anthropicMessages).endpoint
+        #expect(mimo.auth == .bearer && mimo.headers["anthropic-version"] == "2023-06-01")
         let huawei = try ProviderRegistry.builtIn.resolve("huawei-plan/glm-5.3", preferring: .anthropicMessages).endpoint
         #expect(huawei.auth == .bearer && huawei.headers["anthropic-version"] == "2023-06-01")
         #expect(try ProviderRegistry.builtIn.resolve("lmstudio/x").endpoint.auth == EndpointAuth.none)
