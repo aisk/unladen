@@ -37,9 +37,7 @@ services:
       # Sign-ins (logins.json) and the usage log (usage-YYYY-MM.jsonl). The
       # configuration is the read-only mount above, so the control panel shows
       # it but reports that it cannot write it; edit the file and reload
-      # (SIGHUP, or the panel's Reload). To edit in the panel instead, keep the
-      # configuration in this volume at /data/unladen/config.jsonc and leave
-      # the mount out.
+      # (SIGHUP, or the panel's Reload).
       - unladen-state:/data
 
     # Nothing in the image needs a capability or a set-uid helper.
