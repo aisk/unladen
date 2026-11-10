@@ -1,7 +1,8 @@
 {
-  // Mounted as a secret at /data/unladen/config.jsonc. `chmod 0644` it, or the
-  // gateway's uid 65532 cannot read it.
-  "listen": "0.0.0.0:4141",
+  // Copied to config/config.jsonc, which compose mounts read-only at
+  // /config/unladen/config.jsonc. `chmod 0644` it, or the container's uid 65532
+  // cannot read it. The image passes --host/--port, so a `listen` here would be
+  // overridden.
   // At least 16 characters; the gateway refuses a shorter one.
   "panel": { "token": "replace-with-a-panel-token" },
   "accounts": {

@@ -1,14 +1,17 @@
 # Compose Spec: read by `podman-compose` and `docker compose` alike.
 #
 # Secrets stay out of the environment and out of this file: the configuration
-# is mounted as a secret, and it holds the upstream keys and the client keys.
-# Only what outlives a restart is a volume, and only non-secret settings are
-# environment variables.
+# is mounted, and it holds the upstream keys and the client keys. Only what
+# outlives a restart is a volume, and only non-secret settings are environment
+# variables.
 
 services:
   unladen:
-    build: .
-    image: ${UNLADEN_IMAGE:-ghcr.io/aisk/unladen:local}
+    build:
+      context: .
+      # `docker compose` looks for `Dockerfile` unless the file is named here.
+      dockerfile: Containerfile
+    image: unladen:local
     container_name: unladen
     restart: unless-stopped
 
@@ -19,24 +22,24 @@ services:
       - "127.0.0.1:4141:4141"
 
     environment:
-      # Not a secret: the zone the usage log is bucketed by, and the log level.
+      # Not a secret: the zone the usage log is bucketed by.
       TZ: ${TZ:-UTC}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-
-    secrets:
-      # The file holds `accounts`, `models`, `clients` and `panel`, with the
-      # keys written out (or as ${VAR} references if you prefer environment).
-      # podman-compose mounts it as a bind, so it must be readable by uid 65532
-      # (chmod 0644); docker compose mounts it root-owned 0444.
-      - source: configuration
-        target: /data/unladen/config.jsonc
 
     volumes:
+      # $XDG_CONFIG_HOME is /config in the image, so this is
+      # /config/unladen/config.jsonc. The directory is mounted, not the file:
+      # editors save by writing a new file and renaming it over the old one, and
+      # a file mount keeps pointing at the old inode, so a reload after an edit
+      # would read the contents as they were before it. It holds `accounts`,
+      # `models`, `clients` and `panel`, and uid 65532 must be able to read it
+      # (chmod 0644).
+      - ./config:/config/unladen:ro
       # Sign-ins (logins.json) and the usage log (usage-YYYY-MM.jsonl). The
-      # configuration beside them is the read-only secret above, so the control
-      # panel shows it but reports that it cannot write it; edit the file and
-      # reload (SIGHUP, or the panel's Reload). To edit in the panel instead,
-      # keep the configuration in this volume and leave the secret out.
+      # configuration is the read-only mount above, so the control panel shows
+      # it but reports that it cannot write it; edit the file and reload
+      # (SIGHUP, or the panel's Reload). To edit in the panel instead, keep the
+      # configuration in this volume at /data/unladen/config.jsonc and leave
+      # the mount out.
       - unladen-state:/data
 
     # Nothing in the image needs a capability or a set-uid helper.
@@ -44,10 +47,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-
-secrets:
-  configuration:
-    file: ./unladen.jsonc
 
 volumes:
   unladen-state:

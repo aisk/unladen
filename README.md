@@ -104,39 +104,56 @@ An account of provider `antigravity` signs in with Google and uses an Antigravit
 
 ## Container
 
-`Containerfile`, `.containerignore` and `compose.yaml` sit at the root, so any
-OCI builder and either Compose implementation work. `make image` builds and
-tags it as `ghcr.io/aisk/unladen` — the name this project would publish under —
-at `<git describe>` for a fixed reference and at `local` for the working copy:
+`Containerfile`, `.containerignore` and `compose.yaml` sit at the root, so
+`podman` with `podman-compose`, or `docker` with `docker compose`, both work.
+(`.dockerignore` is a symlink to `.containerignore`, because docker reads only
+the former.)
 
 ```sh
-make image                    # podman build; ENGINE=docker for docker
-cp unladen.example.jsonc unladen.jsonc
-chmod 0644 unladen.jsonc     # the image runs as uid 65532 and must read it
-$EDITOR unladen.jsonc        # accounts, models, clients, panel token (16+ characters)
+podman build -f Containerfile -t unladen:local .
+# or: docker build -f Containerfile -t unladen:local .
+
+mkdir -p config
+cp unladen.example.jsonc config/config.jsonc
+chmod 0644 config/config.jsonc   # the container runs as uid 65532 and must read it
+$EDITOR config/config.jsonc      # accounts, models, clients, panel token (16+ characters)
 podman-compose up -d
 # or: docker compose up -d
 ```
 
-`make image TAG=0.1.0` gives a release tag and `make image-push TAG=0.1.0` sends
-it to the registry the name points at; `make image IMAGE=…` builds under a
-different name.
+`unladen:local` is the tag `compose.yaml` uses, so a build and
+`podman-compose up` agree. A release tags what the registry expects and stamps
+the OCI labels with `--build-arg VERSION=$(git describe --tags --always --dirty)`
+and `--build-arg REVISION=$(git rev-parse HEAD)`; `podman push` sends the tag.
 
-The configuration is mounted as a secret at `/data/unladen/config.jsonc`, and
-one volume over `/data` keeps everything that outlives a restart:
+The configuration directory is mounted read-only at `/config/unladen`, and one
+volume over `/data` keeps everything that outlives a restart:
 
 | Path | What |
 | --- | --- |
-| `/data/unladen/config.jsonc` | The configuration (mounted read-only) |
+| `config/config.jsonc` → `/config/unladen/config.jsonc` | The configuration (mounted read-only) |
 | `/data/unladen/logins.json` | Tokens of accounts that signed in (ChatGPT, Antigravity) |
 | `/data/unladen/usage-YYYY-MM.jsonl` | One line per finished request |
+
+The directory is mounted rather than the file because editors save by writing a
+new file and renaming it over the old one: a file mount keeps pointing at the
+old inode, and a reload after an edit would read the file as it was before it.
 
 Keys belong in that file rather than in the environment: `podman inspect` and
 `/proc/<pid>/environ` show environment variables to anyone who can reach the
 container runtime, and the control panel at `/admin` only exists once
-`panel.token` is set in the configuration. A read-only configuration means the
-panel can show the file but not save it — edit it and send `SIGHUP`
-(`podman kill -s HUP unladen`), or use the panel's Reload.
+`panel.token` is set in the configuration. `chmod 0644` is what lets uid 65532
+read the file on a Linux host, where a bind mount keeps the owner and mode it
+has there. The gateway would rather a configuration with plain-text keys were
+`0600`; inside a container the users who can read `0644` are the host users who
+can already open the file, and the mount is read-only either way.
+
+A read-only configuration means the panel can show the file but not save it —
+PUTting one answers `cannot write /config/unladen/.config.jsonc.1.saving:
+Read-only file system` (`Device or resource busy` on a Linux host): edit it and
+send `SIGHUP` (`podman kill -s HUP unladen`), or use the panel's Reload. To
+edit from the panel instead, keep the configuration in the volume at
+`/data/unladen/config.jsonc` and leave the directory mount out.
 
 Environment variables still work for a quick try, without a configuration file:
 
@@ -145,14 +162,16 @@ podman run -d --name unladen -p 4141:4141 \
   -e UNLADEN_ANTHROPIC_API_KEY -e UNLADEN_DEEPSEEK_API_KEY \
   -e UNLADEN_API_KEY=<the key your clients present> \
   -v unladen-data:/data \
-  unladen
+  unladen:local
 ```
 
 Either way the image listens on `0.0.0.0:4141` as uid 65532, with `HOME`,
-`XDG_CONFIG_HOME` and `XDG_STATE_HOME` pointing into `/data`, and `/health`
-answers `ok` without authentication, which suits a liveness and readiness
-probe. Signing in from the control panel works from a browser on any machine;
-`unladen sign-in` on the command line needs `podman run -it`.
+`XDG_CONFIG_HOME` and `XDG_STATE_HOME` pointing at `/data` and `/config`, and
+`/health` answers `ok` without authentication, which suits a liveness and
+readiness probe. The `CMD` passes `--host` and `--port`, and those take
+precedence over `listen` in a configuration file, so a different host port goes
+in `ports:`. Signing in from the control panel works from a browser on any
+machine; `unladen sign-in` on the command line needs `podman run -it`.
 
 ## Tests
 

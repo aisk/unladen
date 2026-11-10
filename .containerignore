@@ -1,5 +1,9 @@
+# What no build stage needs, and what must never be sent to one.
 .git
 .gitignore
 .build
 .github
 .DS_Store
+# The configuration holds the upstream and client keys, whatever it is called
+# and wherever it is copied; the example is no use to the image either.
+**/*.jsonc
