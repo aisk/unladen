@@ -1,8 +1,8 @@
 // What accounts' plans have left in each of their windows (five hours, a
 // week, a month), as the providers report it: Antigravity through Code
 // Assist, GLM Coding Plan keys of Zhipu (open.bigmodel.cn) and Z.ai through
-// their monitor API, Kimi Code and MiniMax plan keys through their usage
-// queries. A ChatGPT plan used through OpenAI's API reports none:
+// their monitor API, Kimi Code, MiniMax, OpenCode Go, Command Code and
+// Ollama Cloud plan keys through their usage queries. A ChatGPT plan used through OpenAI's API reports none:
 // OpenAI shows it only on chatgpt.com. Read when the panel asks, at most
 // once a minute per account.
 
@@ -130,6 +130,14 @@ final class QuotaReader: Sendable {
         /// A MiniMax key: a plan's is told its windows, a pay-as-you-go
         /// one is not, and shows nothing.
         case miniMax(host: String)
+        /// An OpenCode Go key, told its 5-hour, weekly and monthly windows.
+        case openCodeGo
+        /// A Command Code key: a plan's is told its 5-hour and weekly
+        /// windows, a pay-as-you-go one none, and shows nothing.
+        case commandCode
+        /// An Ollama Cloud key: a plan's included allowance this period; a
+        /// key with none shows nothing.
+        case ollamaCloud
 
         static let glmHosts: Set<String> = ["open.bigmodel.cn", "api.z.ai"]
         static let kimiHosts: Set<String> = ["api.kimi.com", "api.kimi.ai"]
@@ -150,6 +158,9 @@ final class QuotaReader: Sendable {
                     return .kimiCode(base: root + "/v1")
                 }
                 if miniMaxHosts.contains(host) { return .miniMax(host: host) }
+                if host == "opencode.ai", base.contains("/go/") { return .openCodeGo }
+                if host == "api.commandcode.ai" { return .commandCode }
+                if host == "ollama.com" { return .ollamaCloud }
             }
             return nil
         }
@@ -199,6 +210,18 @@ final class QuotaReader: Sendable {
                     quota.windows = try MiniMaxQuota.parse(reply, status: status)
                 } catch is QuotaReader.Failure {
                     // A pay-as-you-go key, told it has no plan, shows nothing.
+                } catch {
+                    quota.error = "\(error)"
+                }
+            case .openCodeGo, .commandCode, .ollamaCloud:
+                let (address, parse): (String, (JSONValue, Int) throws -> (String?, [QuotaWindow])) = switch self {
+                case .openCodeGo: (OpenCodeGoQuota.address, { (nil, try OpenCodeGoQuota.parse($0, status: $1)) })
+                case .commandCode: (CommandCodeQuota.address, CommandCodeQuota.parse)
+                default: (OllamaCloudQuota.address, { (nil, try OllamaCloudQuota.parse($0, status: $1)) })
+                }
+                do {
+                    let (status, reply) = try await QuotaReader.get(address, bearer: key.secret, transport: gateway.transport)
+                    (quota.plan, quota.windows) = try parse(reply, status)
                 } catch {
                     quota.error = "\(error)"
                 }
@@ -511,5 +534,121 @@ enum MiniMaxQuota {
             }
         }
         return windows
+    }
+}
+
+// MARK: - OpenCode Go
+
+enum OpenCodeGoQuota {
+    static let address = "https://opencode.ai/inference/go/v1/usage"
+
+    /// Reads
+    ///
+    ///     {"usage": {"rolling": {"status": "ok", "percent": 37, "resetsAt": "2026-08-26T14:12:03.000Z"},
+    ///                "weekly": {…}, "monthly": {"status": "rate-limited", "percent": 100, …}}}
+    ///
+    /// A window at 0% gives now plus its length as `resetsAt`, a time
+    /// nothing happens at, so it is left out.
+    static func parse(_ reply: JSONValue, status: Int) throws -> [QuotaWindow] {
+        guard status == 200 else {
+            throw QuotaReader.Failure(description: reply["error"]?["message"]?.stringValue ?? "HTTP \(status)")
+        }
+        var windows: [QuotaWindow] = []
+        for (key, name) in [("rolling", "5 hours"), ("weekly", "7 days"), ("monthly", "Month")] {
+            guard let window = reply["usage"]?[key], let percent = QuotaReader.number(window["percent"]) else { continue }
+            let used = min(max(percent, 0), 100)
+            windows.append(QuotaWindow(
+                name: name, used: used, resetsAt: used > 0 ? QuotaReader.milliseconds(window["resetsAt"]) : nil,
+            ))
+        }
+        guard !windows.isEmpty else { throw QuotaReader.Failure(description: "no usage in the reply") }
+        return windows
+    }
+}
+
+// MARK: - Command Code
+
+enum CommandCodeQuota {
+    static let address = "https://api.commandcode.ai/alpha/billing/credits"
+
+    /// Plans by the start of their id, longest first.
+    static let plans: [(id: String, name: String)] = [
+        ("individual-provider", "Provider"), ("individual-pro-v1", "Pro"), ("individual-goat", "GOAT"),
+        ("individual-ultra", "Ultra"), ("individual-max", "Max"), ("individual-pro", "Pro"), ("individual-go", "Go"),
+        ("teams-pro", "Teams Pro"),
+    ]
+
+    /// Reads
+    ///
+    ///     {"credits": {"planId": "individual-goat-monthly", "monthlyCredits": 41.2, …},
+    ///      "windowLimits": {"limited": true,
+    ///        "fiveHour": {"used": 3.1, "cap": 10, "resetAt": 1790000000000},
+    ///        "weekly": {"used": 12, "cap": 40, "resetAt": 1790400000000}}}
+    ///
+    /// A window without a cap is not limited, and not shown.
+    static func parse(_ reply: JSONValue, status: Int) throws -> (String?, [QuotaWindow]) {
+        guard status == 200 else {
+            throw QuotaReader.Failure(description: reply["error"]?["message"]?.stringValue ?? "HTTP \(status)")
+        }
+        let id = (reply["credits"]?["planId"]?.stringValue ?? "").lowercased().replacing("_", with: "-")
+        let plan = plans.first { id.hasPrefix($0.id) }?.name
+        var windows: [QuotaWindow] = []
+        for (key, name) in [("fiveHour", "5 hours"), ("weekly", "7 days")] {
+            guard let window = reply["windowLimits"]?[key], let used = QuotaReader.number(window["used"]),
+                  let cap = QuotaReader.number(window["cap"]), cap > 0
+            else { continue }
+            windows.append(QuotaWindow(
+                name: name, used: min(max(used / cap * 100, 0), 100), resetsAt: QuotaReader.milliseconds(window["resetAt"]),
+            ))
+        }
+        return (plan, windows)
+    }
+}
+
+// MARK: - Ollama Cloud
+
+enum OllamaCloudQuota {
+    static let address = "https://ollama.com/api/balance"
+
+    /// Reads
+    ///
+    ///     {"included": {"balance_usd": 72.5, "allowance_usd": 100,
+    ///        "period": {"from": "2026-09-15T09:30:00Z", "until": "2026-10-15T09:30:00Z"}},
+    ///      "purchased": {"balance_usd": 25.0}}
+    ///
+    /// or, on an early plan, limits as what is left of them:
+    ///
+    ///     {"included": {"session": {"remaining_percent": 75, "resets_at": "…"},
+    ///                   "weekly": {"remaining_percent": 40, "resets_at": "…"}}}
+    ///
+    /// Credits bought on top are spent once the allowance is.
+    static func parse(_ reply: JSONValue, status: Int) throws -> [QuotaWindow] {
+        guard status == 200 else {
+            throw QuotaReader.Failure(description: reply["error"]?.stringValue ?? reply["error"]?["message"]?.stringValue ?? "HTTP \(status)")
+        }
+        guard let included = reply["included"], included.objectValue != nil else { return [] }
+        var windows: [QuotaWindow] = []
+        for (key, name) in [("session", "Session"), ("weekly", "7 days")] {
+            guard let limit = included[key], let left = QuotaReader.number(limit["remaining_percent"]) else { continue }
+            windows.append(QuotaWindow(name: name, used: min(max(100 - left, 0), 100), resetsAt: QuotaReader.milliseconds(limit["resets_at"])))
+        }
+        if let allowance = QuotaReader.number(included["allowance_usd"]), allowance > 0,
+           let left = QuotaReader.number(included["balance_usd"]) {
+            let used = min(max(allowance - left, 0), allowance)
+            let from = QuotaReader.milliseconds(included["period"]?["from"])
+            let until = QuotaReader.milliseconds(included["period"]?["until"])
+            windows.append(QuotaWindow(
+                name: from.flatMap { f in until.map { QuotaReader.name(minutes: Int(($0 - f) / 60000)) } } ?? "Allowance",
+                used: used / allowance * 100, resetsAt: until, detail: "$\(dollars(used)) / $\(dollars(allowance))",
+            ))
+        }
+        return windows
+    }
+
+    /// Two decimals: 27.5 → "27.50".
+    static func dollars(_ value: Double) -> String {
+        let cents = Int((value * 100).rounded())
+        let rest = cents % 100
+        return "\(cents / 100)." + (rest < 10 ? "0" : "") + "\(rest)"
     }
 }

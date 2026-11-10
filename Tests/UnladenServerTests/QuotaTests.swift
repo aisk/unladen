@@ -195,3 +195,66 @@ import Testing
         #expect(quotas.map(\.error) == ["connection refused"])
     }
 }
+
+@Suite struct PlanQuotaTests {
+    private func parsed(_ text: String) throws -> JSONValue { try JSONValue(parsing: Array(text.utf8)) }
+
+    @Test func openCodeGoWindows() throws {
+        let windows = try OpenCodeGoQuota.parse(parsed("""
+            {"usage": {"rolling": {"status": "ok", "percent": 37, "resetsAt": "2026-08-26T14:12:03.000Z"},
+                       "weekly": {"status": "ok", "percent": 0, "resetsAt": "2026-08-30T00:00:00.000Z"},
+                       "monthly": {"status": "rate-limited", "percent": 100, "resetsAt": "2026-09-01T00:00:00Z"}}}
+            """), status: 200)
+        #expect(windows.map(\.name) == ["5 hours", "7 days", "Month"])
+        #expect(windows.map(\.used) == [37, 0, 100])
+        // A window at 0% has no reset time worth showing.
+        #expect(windows[1].resetsAt == nil && windows[0].resetsAt != nil)
+    }
+
+    @Test func commandCodePlanAndWindows() throws {
+        let (plan, windows) = try CommandCodeQuota.parse(parsed("""
+            {"credits": {"planId": "individual_goat_monthly", "monthlyCredits": 41.2},
+             "windowLimits": {"limited": true, "fiveHour": {"used": 3, "cap": 10, "resetAt": 1790000000000},
+                              "weekly": {"used": 12, "cap": 0}}}
+            """), status: 200)
+        #expect(plan == "GOAT")
+        #expect(windows.map(\.name) == ["5 hours"])
+        #expect(windows.first?.used == 30)
+        #expect(windows.first?.resetsAt == 1_790_000_000_000)
+    }
+
+    @Test func ollamaCloudAllowance() throws {
+        let windows = try OllamaCloudQuota.parse(parsed("""
+            {"included": {"balance_usd": 72.5, "allowance_usd": 100,
+               "period": {"from": "2026-09-15T09:30:00Z", "until": "2026-10-15T09:30:00Z"}},
+             "purchased": {"balance_usd": 25.0}}
+            """), status: 200)
+        #expect(windows.map(\.name) == ["Month"])
+        #expect(abs((windows.first?.used ?? 0) - 27.5) < 0.001)
+        #expect(windows.first?.detail == "$27.50 / $100.00")
+        let early = try OllamaCloudQuota.parse(parsed("""
+            {"included": {"session": {"remaining_percent": 75, "resets_at": "2026-10-01T07:00:00Z"},
+                          "weekly": {"remaining_percent": 40}}}
+            """), status: 200)
+        #expect(early.map(\.name) == ["Session", "7 days"])
+        #expect(early.map(\.used) == [25, 60])
+        #expect(try OllamaCloudQuota.parse(parsed(#"{"purchased": {"balance_usd": 5}}"#), status: 200).isEmpty)
+    }
+
+    @Test func aKeyWithoutAPlanShowsNothing() async throws {
+        let loaded = try ConfigFile.parse(#"{"accounts": {"commandcode": "ck", "opencode-go": "ok"}}"#, file: "c.jsonc") { _ in nil }
+        let upstream = MockUpstream { request in
+            if request.request.authority == "api.commandcode.ai" {
+                #expect(request.request.path == "/alpha/billing/credits")
+                #expect(request.request.headerFields[.authorization] == "Bearer ck")
+                return reply(#"{"credits": {"planId": null}, "windowLimits": {"limited": false}}"#)
+            }
+            #expect(request.request.authority == "opencode.ai")
+            #expect(request.request.path == "/inference/go/v1/usage")
+            return reply(#"{"usage": {"rolling": {"percent": 5, "resetsAt": "2026-11-10T08:00:00Z"}}}"#)
+        }
+        let gateway = Gateway(configuration: loaded.gateway, transport: upstream.transport)
+        let quotas = await gateway.quotas.read(gateway: gateway, refresh: false)
+        #expect(quotas.map(\.provider) == ["opencode-go"])
+    }
+}
