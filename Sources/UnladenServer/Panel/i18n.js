@@ -69,6 +69,7 @@ const TRANSLATIONS = {
       'OpenAI-compatible': 'OpenAI 兼容',
       'Claude Code speaks the Anthropic protocol; the gateway answers it with any model you set up.': 'Claude Code 使用 Anthropic 协议；网关可以用你配置的任何模型来回答。',
       'Codex speaks the Responses protocol.': 'Codex 使用 Responses 协议。',
+      'Gemini CLI speaks the Gemini protocol. If it asks how to sign in, choose the Gemini API key; -m names the model to ask for.': 'Gemini CLI 使用 Gemini 协议。如果它问怎么登录，选 Gemini API key；-m 指定要请求的模型。',
       'Goes in ~/.config/opencode/opencode.json, or opencode.json in a project. List the models OpenCode may ask for under models, then choose one with /models.': '写入 ~/.config/opencode/opencode.json，或项目里的 opencode.json。把 OpenCode 可以请求的模型列在 models 里，再用 /models 选择。',
       'Goes in ~/.pi/agent/models.json. List the models pi may ask for under models, then choose one with /model.': '写入 ~/.pi/agent/models.json。把 pi 可以请求的模型列在 models 里，再用 /model 选择。',
       'For any tool that takes an OpenAI base URL and key. Anthropic and Gemini clients use the same address without /v1.':

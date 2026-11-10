@@ -182,10 +182,10 @@
             </div>
 
             <div class="row row-cards">
-              <div class="col-lg-7">
+              <div class="col-lg-8">
                 <div class="card">
                   <div class="card-header">
-                    <ul class="nav nav-tabs card-header-tabs">
+                    <ul class="nav nav-tabs card-header-tabs flex-nowrap text-nowrap overflow-auto">
                       <template x-for="a in apps" :key="a.id">
                         <li class="nav-item"><a class="nav-link" href="#" :class="app === a.id && 'active'" @click.prevent="app = a.id" x-text="a.label"></a></li>
                       </template>
@@ -207,7 +207,7 @@
                   </div>
                 </div>
               </div>
-              <div class="col-lg-5">
+              <div class="col-lg-4">
                 <div class="card">
                   <div class="card-header">
                     <h3 class="card-title"><i class="ti ti-wallet me-2"></i>Accounts</h3>
