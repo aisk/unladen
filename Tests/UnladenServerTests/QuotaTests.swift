@@ -211,16 +211,48 @@ import Testing
         #expect(windows[1].resetsAt == nil && windows[0].resetsAt != nil)
     }
 
-    @Test func commandCodePlanAndWindows() throws {
-        let (plan, windows) = try CommandCodeQuota.parse(parsed("""
-            {"credits": {"planId": "individual_goat_monthly", "monthlyCredits": 41.2},
+    @Test func commandCodePlanWindowsAndCredits() throws {
+        let reply = try parsed("""
+            {"credits": {"planId": "individual_goat_monthly", "monthlyCredits": 41.2, "purchasedCredits": 5},
              "windowLimits": {"limited": true, "fiveHour": {"used": 3, "cap": 10, "resetAt": 1790000000000},
                               "weekly": {"used": 12, "cap": 0}}}
-            """), status: 200)
-        #expect(plan == "GOAT")
-        #expect(windows.map(\.name) == ["5 hours"])
-        #expect(windows.first?.used == 30)
-        #expect(windows.first?.resetsAt == 1_790_000_000_000)
+            """)
+        var quota = AccountQuota(provider: "commandcode", account: "c", readAt: 0)
+        try CommandCodeQuota.parse(into: &quota, reply, status: 200, planID: "individual_goat_monthly", until: nil)
+        #expect(quota.plan == "GOAT")
+        #expect(quota.windows.map(\.name) == ["5 hours", "Credits"])
+        #expect(quota.windows.first?.used == 30)
+        #expect(quota.windows.first?.resetsAt == 1_790_000_000_000)
+        // GOAT's credits are units, not dollars: 70 a month, 41.2 left.
+        #expect(quota.windows.last?.detail == "28.80 / 70.00 credits + $5.00 extra")
+        #expect(quota.balance == nil)
+
+        // On Max they are dollars, the bought ones in the same pool.
+        var max = AccountQuota(provider: "commandcode", account: "c", readAt: 0)
+        try CommandCodeQuota.parse(into: &max, reply, status: 200, planID: "individual-max", until: nil)
+        #expect(max.windows.last?.detail == "$108.80 / $155.00")
+    }
+
+    @Test func aPayAsYouGoCommandCodeKeyShowsItsDollars() throws {
+        var quota = AccountQuota(provider: "commandcode", account: "c", readAt: 0)
+        try CommandCodeQuota.parse(into: &quota, parsed(#"{"credits": {"purchasedCredits": 12.5, "freeCredits": -1}}"#), status: 200, planID: nil, until: nil)
+        #expect(quota.windows.isEmpty)
+        #expect(quota.balance == "$12.50")
+    }
+
+    @Test func aKeyWithoutTheCreditsPlanAsksItsSubscription() async throws {
+        let loaded = try ConfigFile.parse(#"{"accounts": {"commandcode": "ck"}}"#, file: "c.jsonc") { _ in nil }
+        let upstream = MockUpstream { request in
+            if request.request.path == "/alpha/billing/subscriptions" {
+                return reply(#"{"success": true, "data": {"planId": "individual-go-monthly", "status": "active"}}"#)
+            }
+            #expect(request.request.path == "/alpha/billing/credits")
+            return reply(#"{"credits": {"monthlyCredits": 4}, "windowLimits": {"fiveHour": {"used": 1, "cap": 4}}}"#)
+        }
+        let gateway = Gateway(configuration: loaded.gateway, transport: upstream.transport)
+        let quotas = await gateway.quotas.read(gateway: gateway, refresh: false)
+        #expect(quotas.first?.plan == "Go")
+        #expect(quotas.first?.windows.last?.detail == "6.00 / 10.00 credits")
     }
 
     @Test func ollamaCloudAllowance() throws {
@@ -242,15 +274,16 @@ import Testing
     }
 
     @Test func aKeyWithoutAPlanShowsNothing() async throws {
-        let loaded = try ConfigFile.parse(#"{"accounts": {"commandcode": "ck", "opencode-go": "ok"}}"#, file: "c.jsonc") { _ in nil }
+        let loaded = try ConfigFile.parse(#"{"accounts": {"ollama-cloud": "ck", "opencode-go": "ok"}}"#, file: "c.jsonc") { _ in nil }
         let upstream = MockUpstream { request in
-            if request.request.authority == "api.commandcode.ai" {
-                #expect(request.request.path == "/alpha/billing/credits")
+            if request.request.authority == "ollama.com" {
+                #expect(request.request.path == "/api/balance")
                 #expect(request.request.headerFields[.authorization] == "Bearer ck")
-                return reply(#"{"credits": {"planId": null}, "windowLimits": {"limited": false}}"#)
+                return reply(#"{"included": {}}"#)
             }
             #expect(request.request.authority == "opencode.ai")
             #expect(request.request.path == "/inference/go/v1/usage")
+            #expect(request.request.headerFields[HTTPField.Name("x-opencode-session")!] != nil)
             return reply(#"{"usage": {"rolling": {"percent": 5, "resetsAt": "2026-11-10T08:00:00Z"}}}"#)
         }
         let gateway = Gateway(configuration: loaded.gateway, transport: upstream.transport)
@@ -297,8 +330,12 @@ import Testing
         #expect(quotas.first?.windows.isEmpty == true)
     }
 
-    @Test func commandCodeAndOllamaTellCreditsBesideTheirWindows() throws {
-        #expect(CommandCodeQuota.balance(try parsed(#"{"credits": {"monthlyCredits": 41.2, "purchasedCredits": 5, "freeCredits": -1}}"#)) == "$46.20")
+    @Test func kimiBoosterAndOllamaCreditsBesideTheirWindows() throws {
+        #expect(KimiCodeQuota.booster(try parsed("""
+            {"booster_wallet": {"balance": {"type": "BOOSTER", "amount": "17500000000", "amountLeft": "9000000000"},
+                                "monthlyChargeLimit": {"currency": "CNY", "priceInCents": "10000"}}}
+            """)) == "¥90.00")
+        #expect(KimiCodeQuota.booster(try parsed(#"{"booster_wallet": {"balance": {"type": "GIFT", "amount": "5"}}}"#)) == nil)
         #expect(OllamaCloudQuota.balance(try parsed(#"{"purchased": {"balance_usd": 25}}"#)) == "$25.00")
         #expect(OllamaCloudQuota.balance(try parsed(#"{"included": {}}"#)) == nil)
     }

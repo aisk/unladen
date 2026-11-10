@@ -128,7 +128,7 @@ final class QuotaReader: Sendable {
 
     // MARK: Readers
 
-    enum Reader: Sendable {
+    enum Reader: Sendable, Equatable {
         case antigravity
         case chatGPT
         /// A Zhipu or Z.ai key; `coding`: its endpoints are the Coding
@@ -211,6 +211,7 @@ final class QuotaReader: Sendable {
                 do {
                     let (status, reply) = try await QuotaReader.get(base + "/usages", bearer: key.secret, transport: gateway.transport)
                     quota.windows = try KimiCodeQuota.parse(reply, status: status)
+                    quota.balance = KimiCodeQuota.booster(reply)
                 } catch {
                     quota.error = "\(error)"
                 }
@@ -233,11 +234,12 @@ final class QuotaReader: Sendable {
                     address = OpenCodeGoQuota.address
                     parse = { quota, reply, status in quota.windows = try OpenCodeGoQuota.parse(reply, status: status) }
                 case .commandCode:
-                    address = CommandCodeQuota.address
-                    parse = { quota, reply, status in
-                        (quota.plan, quota.windows) = try CommandCodeQuota.parse(reply, status: status)
-                        quota.balance = CommandCodeQuota.balance(reply)
+                    do {
+                        try await CommandCodeQuota.read(into: &quota, key: key.secret, transport: gateway.transport)
+                    } catch {
+                        quota.error = "\(error)"
                     }
+                    return quota
                 case .ollamaCloud:
                     address = OllamaCloudQuota.address
                     parse = { quota, reply, status in
@@ -251,7 +253,9 @@ final class QuotaReader: Sendable {
                     return quota
                 }
                 do {
-                    let (status, reply) = try await QuotaReader.get(address, bearer: key.secret, transport: gateway.transport)
+                    // OpenCode's gateway refuses a request that names no conversation.
+                    let headers = self == .openCodeGo ? ["x-opencode-session": OpenCodeGoQuota.session()] : [:]
+                    let (status, reply) = try await QuotaReader.get(address, bearer: key.secret, headers: headers, transport: gateway.transport)
                     try parse(&quota, reply, status)
                 } catch {
                     quota.error = "\(error)"
@@ -262,12 +266,17 @@ final class QuotaReader: Sendable {
     }
 
     /// `GET` of an address, with `bearer` as the key or, when `nil`, `key`
-    /// bare: the reply's status and its JSON.
-    static func get(_ address: String, bearer: String? = nil, key: String? = nil, transport: any HTTPTransport) async throws -> (Int, JSONValue) {
+    /// bare, and `headers`: the reply's status and its JSON.
+    static func get(
+        _ address: String, bearer: String? = nil, key: String? = nil, headers: [String: String] = [:], transport: any HTTPTransport,
+    ) async throws -> (Int, JSONValue) {
         guard let url = BaseURL(address) else { throw Failure(description: "not an address: \(address)") }
         var request = HTTPRequest(method: .get, scheme: url.scheme, authority: url.authority, path: url.path.isEmpty ? "/" : url.path)
         request.headerFields[.authorization] = bearer.map { "Bearer " + $0 } ?? key
         request.headerFields[.accept] = "application/json"
+        for (name, value) in headers {
+            if let field = HTTPField.Name(name) { request.headerFields[field] = value }
+        }
         let sent = request
         let (status, bytes) = try await within(timeout) {
             let response = try await transport.send(sent, body: nil)
@@ -518,6 +527,24 @@ enum KimiCodeQuota {
     }
 }
 
+extension KimiCodeQuota {
+    /// The booster wallet (加油包), spent once the plan's windows are:
+    ///
+    ///     "booster_wallet": {"balance": {"type": "BOOSTER", "amount": "17500000000", "amountLeft": "9000000000"},
+    ///                        "monthlyChargeLimit": {"currency": "CNY", …}}
+    ///
+    /// Amounts are cents times 10^6; no `amountLeft` is none left. `nil`
+    /// when the key has no booster.
+    static func booster(_ reply: JSONValue) -> String? {
+        guard let wallet = reply["booster_wallet"] ?? reply["boosterWallet"], let balance = wallet["balance"],
+              balance["type"]?.stringValue == "BOOSTER", let amount = QuotaReader.number(balance["amount"]), amount > 0
+        else { return nil }
+        let left = max(QuotaReader.number(balance["amountLeft"]) ?? 0, 0) / 1e8
+        let currency = ["monthlyChargeLimit", "monthlyUsed"].lazy.compactMap { wallet[$0]?["currency"]?.stringValue }.first ?? "USD"
+        return BalanceQuota.money(BalanceQuota.sign(currency.uppercased()), left)
+    }
+}
+
 // MARK: - MiniMax
 
 enum MiniMaxQuota {
@@ -573,6 +600,11 @@ enum MiniMaxQuota {
 enum OpenCodeGoQuota {
     static let address = "https://opencode.ai/inference/go/v1/usage"
 
+    /// A session of its own for the read, which is no conversation's.
+    static func session() -> String {
+        "unladen-usage-" + String(UInt64.random(in: 0...UInt64.max), radix: 16)
+    }
+
     /// Reads
     ///
     ///     {"usage": {"rolling": {"status": "ok", "percent": 37, "resetsAt": "2026-08-26T14:12:03.000Z"},
@@ -601,28 +633,101 @@ enum OpenCodeGoQuota {
 
 enum CommandCodeQuota {
     static let address = "https://api.commandcode.ai/alpha/billing/credits"
+    static let subscriptions = "https://api.commandcode.ai/alpha/billing/subscriptions"
 
-    /// Plans by the start of their id, longest first.
-    static let plans: [(id: String, name: String)] = [
-        ("individual-provider", "Provider"), ("individual-pro-v1", "Pro"), ("individual-goat", "GOAT"),
-        ("individual-ultra", "Ultra"), ("individual-max", "Max"), ("individual-pro", "Pro"), ("individual-go", "Go"),
-        ("teams-pro", "Teams Pro"),
+    /// Plans by the start of their id, longest first, with the credits
+    /// each gives a month, and whether those are usage-value units (Go,
+    /// GOAT, Pro) rather than dollars.
+    static let plans: [(id: String, name: String, monthly: Double, units: Bool)] = [
+        ("individual-provider", "Provider", 0, false), ("individual-pro-v1", "Pro", 80, true), ("individual-goat", "GOAT", 70, true),
+        ("individual-ultra", "Ultra", 300, false), ("individual-max", "Max", 150, false), ("individual-pro", "Pro", 30, true),
+        ("individual-go", "Go", 10, true), ("teams-pro", "Teams Pro", 40, false),
     ]
+
+    static func plan(_ id: String?) -> (id: String, name: String, monthly: Double, units: Bool)? {
+        let id = (id ?? "").lowercased().replacing("_", with: "-")
+        return id.isEmpty ? nil : plans.first { id.hasPrefix($0.id) }
+    }
+
+    /// A key's subscription (its plan id and the end of its period), which
+    /// the credits reply leaves out for a key: asked at most every ten
+    /// minutes, as it can take many seconds.
+    private static let seen = NIOLockedValueBox([String: (plan: String?, until: Int64?, at: Int64)]())
+
+    /// The plan's windows and its month of credits, for a plan's key; the
+    /// dollars left, for a pay-as-you-go one.
+    static func read(into quota: inout AccountQuota, key: String, transport: any HTTPTransport) async throws {
+        let (status, reply) = try await QuotaReader.get(address, bearer: key, transport: transport)
+        var planID = reply["credits"]?["planId"]?.stringValue
+        var until: Int64?
+        if (planID ?? "").isEmpty, !windows(reply, status: status).isEmpty {
+            (planID, until) = await subscription(key: key, transport: transport)
+        }
+        try parse(into: &quota, reply, status: status, planID: planID, until: until)
+    }
+
+    static func subscription(key: String, transport: any HTTPTransport) async -> (String?, Int64?) {
+        let now = LocalDay.nowMilliseconds()
+        let kept = seen.withLockedValue { $0[key] }
+        if let kept, now - kept.at < 10 * 60 * 1000 { return (kept.plan, kept.until) }
+        guard let (status, reply) = try? await QuotaReader.get(subscriptions, bearer: key, transport: transport),
+              status == 200, reply["success"]?.boolValue != false
+        else { return (kept?.plan, kept?.until) }
+        let data = reply["data"]
+        let state = data?["status"]?.stringValue
+        let id = state == "canceled" || state == "incomplete_expired" ? nil : data?["planId"]?.stringValue
+        let until = QuotaReader.milliseconds(data?["currentPeriodEnd"])
+        seen.withLockedValue { $0[key] = (id, until, now) }
+        return (id, until)
+    }
 
     /// Reads
     ///
-    ///     {"credits": {"planId": "individual-goat-monthly", "monthlyCredits": 41.2, …},
+    ///     {"credits": {"planId": "individual-goat-monthly", "monthlyCredits": 41.2,
+    ///                  "purchasedCredits": 5, "freeCredits": 0},
     ///      "windowLimits": {"limited": true,
     ///        "fiveHour": {"used": 3.1, "cap": 10, "resetAt": 1790000000000},
     ///        "weekly": {"used": 12, "cap": 40, "resetAt": 1790400000000}}}
     ///
-    /// A window without a cap is not limited, and not shown.
-    static func parse(_ reply: JSONValue, status: Int) throws -> (String?, [QuotaWindow]) {
+    /// A key with windows is a plan's: they show, and the month's credits as
+    /// one more: in credits on a plan of usage-value units, the bought and
+    /// free dollars beside them; in dollars, all together, on the others.
+    /// A key with none is pay as you go: the dollars left show.
+    static func parse(into quota: inout AccountQuota, _ reply: JSONValue, status: Int, planID: String?, until: Int64?) throws {
+        let windows = windows(reply, status: status)
         guard status == 200 else {
             throw QuotaReader.Failure(description: reply["error"]?["message"]?.stringValue ?? "HTTP \(status)")
         }
-        let id = (reply["credits"]?["planId"]?.stringValue ?? "").lowercased().replacing("_", with: "-")
-        let plan = plans.first { id.hasPrefix($0.id) }?.name
+        let amounts = ["monthlyCredits", "purchasedCredits", "freeCredits"].map { QuotaReader.number(reply["credits"]?[$0]).map { max($0, 0) } }
+        let known = amounts.contains { $0 != nil }
+        let monthly = amounts[0] ?? 0
+        let left = amounts.compactMap { $0 }.reduce(0, +)
+        guard !windows.isEmpty else {
+            if known { quota.balance = BalanceQuota.money("$", left) }
+            return
+        }
+        quota.windows = windows
+        let plan = plan(planID)
+        quota.plan = plan?.name
+        guard let plan, plan.monthly > 0, known else { return }
+        let resets = until.flatMap { $0 > LocalDay.nowMilliseconds() ? $0 : nil }
+        if plan.units {
+            let pool = max(plan.monthly, monthly)
+            var detail = "\(BalanceQuota.decimals(pool - monthly)) / \(BalanceQuota.decimals(pool)) credits"
+            if left - monthly > 0 { detail += " + \(BalanceQuota.money("$", left - monthly)) extra" }
+            quota.windows.append(QuotaWindow(name: "Credits", used: min(100, (pool - monthly) / pool * 100), resetsAt: resets, detail: detail))
+        } else {
+            let pool = max(plan.monthly, monthly) + left - monthly
+            quota.windows.append(QuotaWindow(
+                name: "Credits", used: min(100, (pool - left) / pool * 100), resetsAt: resets,
+                detail: "\(BalanceQuota.money("$", pool - left)) / \(BalanceQuota.money("$", pool))",
+            ))
+        }
+    }
+
+    /// The 5-hour and weekly windows the reply gives a cap.
+    static func windows(_ reply: JSONValue, status: Int) -> [QuotaWindow] {
+        guard status == 200 else { return [] }
         var windows: [QuotaWindow] = []
         for (key, name) in [("fiveHour", "5 hours"), ("weekly", "7 days")] {
             guard let window = reply["windowLimits"]?[key], let used = QuotaReader.number(window["used"]),
@@ -632,13 +737,7 @@ enum CommandCodeQuota {
                 name: name, used: min(max(used / cap * 100, 0), 100), resetsAt: QuotaReader.milliseconds(window["resetAt"]),
             ))
         }
-        return (plan, windows)
-    }
-
-    /// The dollars left: the month's credits and the bought and free ones.
-    static func balance(_ reply: JSONValue) -> String? {
-        let amounts = ["monthlyCredits", "purchasedCredits", "freeCredits"].compactMap { QuotaReader.number(reply["credits"]?[$0]) }
-        return amounts.isEmpty ? nil : BalanceQuota.money("$", amounts.reduce(0) { $0 + max($1, 0) })
+        return windows
     }
 }
 

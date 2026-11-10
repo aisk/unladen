@@ -107,6 +107,7 @@ const TRANSLATIONS = {
       'Plan allowances': '套餐额度',
       'Plans and balances': '套餐与余额',
       'Balance': '余额',
+      'Credits': '月度点数',
       'This key has no limit; AiHubMix tells a key only what is left on it.': '这个 key 没有设上限，而 AiHubMix 只告诉 key 它自己还剩多少。',
       'As the providers report them, read at most once a minute.': '由提供方报告，每分钟最多读取一次。',
       'Refresh': '刷新',
@@ -233,6 +234,8 @@ const TRANSLATIONS = {
     patterns: [
       [/^(\d+) days$/, '$1 天'],
       [/^granted (\S+) · topped up (\S+)$/, '赠送 $1 · 充值 $2'],
+      [/^(\S+) \/ (\S+) credits \+ (\S+) extra$/, '$1 / $2 点 + 额外 $3'],
+      [/^(\S+) \/ (\S+) credits$/, '$1 / $2 点'],
       [/^(\d+) hours$/, '$1 小时'],
       [/^(\d+) minutes$/, '$1 分钟'],
       [/^(\d+) months$/, '$1 个月'],
