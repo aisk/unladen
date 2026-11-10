@@ -254,7 +254,7 @@ public enum Presets {
         var defaults = Profile(transforms: base)
         if apiProtocol == .chatCompletions { defaults.maxTokensField = .maxTokens }
         return Endpoint(
-            system: system, apiProtocol: apiProtocol, baseURL: address, auth: apiProtocol == .anthropicMessages ? .anthropic() : .bearer,
+            system: system, apiProtocol: apiProtocol, baseURL: address, auth: apiProtocol == .anthropicMessages ? .anthropic() : apiProtocol == .gemini ? .googleAPIKey : .bearer,
             headers: headers, defaults: profile.merged(over: defaults), sessionHeader: sessionHeader,
         )
     }
@@ -360,21 +360,38 @@ public enum Presets {
 
     /// OpenCode Zen, pay as you go with an OpenCode key. Its free models
     /// are for OpenCode alone, and are turned away from other clients.
-    public static let openCodeZen = openCode("opencode-zen", root: "https://opencode.ai/inference")
+    public static let openCodeZen = openCode("opencode-zen", root: "https://opencode.ai/inference", messages: [
+        .exact("qwen3.5-plus"), .exact("qwen3.6-plus"), .exact("qwen3.8-flash"),
+    ])
 
     /// OpenCode Go, a subscription to open coding models, for coding
     /// agents that name themselves and each conversation.
-    public static let openCodeGo = openCode("opencode-go", root: "https://opencode.ai/inference/go")
+    public static let openCodeGo = openCode("opencode-go", root: "https://opencode.ai/inference/go", messages: [
+        .prefix("qwen"), .exact("minimax-m3"),
+    ])
 
     /// OpenCode's gateway: it routes and caches by the conversation named
-    /// in `x-opencode-session`, and Go refuses a request without one.
-    static func openCode(_ id: String, root: String) -> Provider {
+    /// in `x-opencode-session`, and refuses a request without one.
+    ///
+    /// It serves each model on one API and turns it away on the others, as
+    /// its model list (`/openai/v1/models`) says under each model's `api`:
+    /// Claude and the `messages` models on Anthropic's, GPT, Grok and Muse
+    /// on Responses, Gemini on generateContent, the rest on Chat.
+    static func openCode(_ id: String, root: String, messages: [ModelMatch]) -> Provider {
         func at(_ apiProtocol: APIProtocol, _ address: String) -> Endpoint {
             endpoint("opencode", apiProtocol, address, headers: ["user-agent": "unladen"], sessionHeader: "x-opencode-session")
         }
+        func on(_ apiProtocol: APIProtocol, _ profile: Profile = Profile()) -> Profile {
+            Profile(forcedProtocol: apiProtocol).merged(over: profile)
+        }
+        let responses = openAIRules(prefix: "").map { ModelRule($0.match, on(.responses, $0.profile)) }
+            + ["gpt-", "grok-", "muse-"].map { ModelRule(.prefix($0), on(.responses)) }
         return vendor(id, [
-            at(.chatCompletions, root + "/openai/v1"), at(.responses, root + "/openai/v1"), at(.anthropicMessages, root + "/anthropic"),
-        ])
+            at(.chatCompletions, root + "/openai/v1"), at(.responses, root + "/openai/v1"),
+            at(.anthropicMessages, root + "/anthropic"), at(.gemini, root + "/google"),
+        ], models: claudeRules(prefix: "", forcing: .anthropicMessages) + responses
+            + messages.map { ModelRule($0, on(.anthropicMessages)) }
+            + [ModelRule(.prefix("gemini-"), on(.gemini)), ModelRule(.pattern("*"), on(.chatCompletions))])
     }
 
     /// Kilo Code's gateway, OpenRouter's API: its free models (`…:free`,
@@ -423,10 +440,12 @@ public enum Presets {
     ])
 
     /// ModelScope's API-Inference, with a ModelScope access token: a
-    /// number of free calls a day.
+    /// number of free calls a day. Responses comes first: its replies say
+    /// what was read from the cache and what the model reasoned, which the
+    /// same models' Chat replies leave out.
     public static let modelScope = vendor("modelscope", environment: ["MODELSCOPE_API_KEY"], [
-        endpoint("modelscope", .chatCompletions, "https://api-inference.modelscope.cn/v1"),
         endpoint("modelscope", .responses, "https://api-inference.modelscope.cn/v1"),
+        endpoint("modelscope", .chatCompletions, "https://api-inference.modelscope.cn/v1"),
     ])
 
     /// SiliconFlow, China and international: separate accounts and keys,

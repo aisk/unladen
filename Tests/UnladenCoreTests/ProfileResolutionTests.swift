@@ -120,8 +120,24 @@ import Testing
         #expect(try url("minimax-cn/MiniMax-M2", .responses) == "https://api.minimaxi.com/anthropic")
         #expect(try url("ark-coding/ark-code-latest", .responses) == "https://ark.cn-beijing.volces.com/api/coding/v3")
         #expect(try ProviderRegistry.builtIn.resolve("zai-coding/glm-4.6").profile.reasoningControl == .uncontrolled)
-        #expect(try url("opencode-go/kimi-k2.6", .anthropicMessages) == "https://opencode.ai/inference/go/anthropic")
-        #expect(try url("opencode-zen/claude-sonnet-4-6", .responses) == "https://opencode.ai/inference/openai/v1")
+        // OpenCode serves each model on one API, whatever the client speaks.
+        func openCode(_ reference: String, _ preferred: APIProtocol) throws -> (APIProtocol, String) {
+            let endpoint = try ProviderRegistry.builtIn.resolve(reference, preferring: preferred).endpoint
+            return (endpoint.apiProtocol, endpoint.baseURL)
+        }
+        #expect(try openCode("opencode-go/kimi-k3", .anthropicMessages) == (.chatCompletions, "https://opencode.ai/inference/go/openai/v1"))
+        #expect(try openCode("opencode-go/minimax-m3", .chatCompletions) == (.anthropicMessages, "https://opencode.ai/inference/go/anthropic"))
+        #expect(try openCode("opencode-go/qwen3.8-max", .responses) == (.anthropicMessages, "https://opencode.ai/inference/go/anthropic"))
+        #expect(try openCode("opencode-go/gemini-4-argon", .chatCompletions) == (.gemini, "https://opencode.ai/inference/go/google"))
+        #expect(try openCode("opencode-zen/claude-sonnet-4-6", .responses) == (.anthropicMessages, "https://opencode.ai/inference/anthropic"))
+        #expect(try openCode("opencode-zen/gpt-5.4", .anthropicMessages) == (.responses, "https://opencode.ai/inference/openai/v1"))
+        #expect(try openCode("opencode-zen/grok-4.7", .chatCompletions) == (.responses, "https://opencode.ai/inference/openai/v1"))
+        #expect(try openCode("opencode-zen/minimax-m3", .anthropicMessages) == (.chatCompletions, "https://opencode.ai/inference/openai/v1"))
+        #expect(try openCode("opencode-zen/qwen3.8-max", .anthropicMessages) == (.chatCompletions, "https://opencode.ai/inference/openai/v1"))
+        #expect(try openCode("opencode-zen/qwen3.8-flash", .chatCompletions) == (.anthropicMessages, "https://opencode.ai/inference/anthropic"))
+        #expect(try ProviderRegistry.builtIn.resolve("opencode-zen/gpt-5.4").profile.reasoningControl == .effort)
+        #expect(try url("modelscope/Qwen/Qwen3-Coder", .anthropicMessages) == "https://api-inference.modelscope.cn/v1")
+        #expect(try ProviderRegistry.builtIn.resolve("modelscope/x", preferring: .anthropicMessages).endpoint.apiProtocol == .responses)
         // Vendors' Chat APIs take `max_tokens`; OpenAI's wants the new name.
         for reference in ["step-plan/step-3", "ark-coding/doubao-seed", "nvidia/x", "siliconflow/x", "kilo/x"] {
             #expect(try ProviderRegistry.builtIn.resolve(reference, preferring: .chatCompletions).profile.maxTokensField == .maxTokens)
