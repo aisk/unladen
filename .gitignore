@@ -8,3 +8,6 @@ DerivedData/
 .netrc
 /.claude/worktrees/
 /.claude/settings.local.json
+
+# The configuration made by `make image` / compose docs, with keys in it.
+unladen.jsonc
