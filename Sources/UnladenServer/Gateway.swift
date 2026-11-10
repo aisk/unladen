@@ -59,7 +59,14 @@ struct Gateway: Sendable {
         if !changed.isEmpty { health.forget { changed.contains($0) } }
         health.enableDisabledKeys()
         models.forget()
-        quotas.forget()
+        // An account as it was keeps what was read of its allowance: a
+        // save of something else does not ask its provider again.
+        var same: Set<String> = []
+        for (provider, pool) in configuration.keyPools {
+            let before = old.keyPools[provider]?.keys ?? []
+            for key in pool.keys where before.contains(key) { same.insert(provider + "/" + key.name) }
+        }
+        quotas.forget(keeping: same)
     }
 
     // MARK: Handling

@@ -52,7 +52,7 @@ import Testing
         #expect(quotas.map(\.provider) == ["zai"])
         #expect(quotas.first?.plan == "Pro")
         #expect(quotas.first?.windows.count == 3)
-        // Kept a minute.
+        // Kept three minutes.
         _ = await gateway.quotas.read(gateway: gateway, refresh: false)
         #expect(upstream.requests.count == 1)
     }
@@ -328,6 +328,23 @@ import Testing
         let quotas = await gateway.quotas.read(gateway: gateway, refresh: false)
         #expect(quotas.map(\.balance) == ["¥5.00"])
         #expect(quotas.first?.windows.isEmpty == true)
+    }
+
+    @Test func aChangedConfigurationAsksOnlyTheAccountsItChanged() async throws {
+        func configuration(_ text: String) throws -> GatewayConfiguration { try ConfigFile.parse(text, file: "c.jsonc") { _ in nil }.gateway }
+        let upstream = MockUpstream { _ in reply(#"{"balance_infos": [{"currency": "CNY", "total_balance": "5.00"}]}"#) }
+        let gateway = Gateway(
+            configuration: try configuration(#"{"accounts": {"deepseek": "dk"}}"#), transport: upstream.transport,
+        )
+        _ = await gateway.quotas.read(gateway: gateway, refresh: false)
+        // A model is added: the account is as it was.
+        gateway.replace(try configuration(#"{"accounts": {"deepseek": "dk"}, "models": {"fast": "deepseek"}}"#))
+        _ = await gateway.quotas.read(gateway: gateway, refresh: false)
+        #expect(upstream.requests.count == 1)
+        // Its key changes.
+        gateway.replace(try configuration(#"{"accounts": {"deepseek": "dk2"}}"#))
+        _ = await gateway.quotas.read(gateway: gateway, refresh: false)
+        #expect(upstream.requests.count == 2)
     }
 
     @Test func kimiBoosterAndOllamaCreditsBesideTheirWindows() throws {

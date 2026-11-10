@@ -119,7 +119,7 @@ const TRANSLATIONS = {
       'Open the usage page': '打开用量页面',
       'from the environment': '来自环境变量',
       'The key comes from an environment variable, not from the configuration file.': 'key 来自环境变量，不在配置文件里。',
-      'Plans and balances are as the providers report them, read at most once a minute.': '套餐和余额由服务商报告，每分钟最多读取一次。',
+      'Plans and balances are as the providers report them, read at most once in three minutes.': '套餐和余额由服务商报告，每三分钟最多读取一次。',
       'Refresh': '刷新',
       "Add a provider's API key, or sign in to a subscription, and the gateway can answer your tools with it.":
         '添加服务商的 API key，或者登录一个订阅，网关就能用它来回答你的工具。',

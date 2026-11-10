@@ -74,10 +74,12 @@ struct AccountQuota: Sendable, Equatable {
     }
 }
 
-/// Accounts' allowances, read when asked and kept a minute: the providers'
-/// usage endpoints are rate limited.
+/// Accounts' allowances, read when asked and kept three minutes: the
+/// providers' usage endpoints are rate limited.
 final class QuotaReader: Sendable {
-    static let lifetime: Int64 = 60 * 1000
+    /// 181 seconds, a prime: the reads do not fall in step with anything
+    /// else that runs by the minute.
+    static let lifetime: Int64 = 181 * 1000
     /// How soon a refresh asked for by hand may read an account again.
     static let refreshGap: Int64 = 10 * 1000
     static let timeout: Duration = .seconds(20)
@@ -87,9 +89,10 @@ final class QuotaReader: Sendable {
 
     init() {}
 
-    /// Forgets what was read (the configuration changed).
-    func forget() {
-        entries.withLockedValue { $0 = [:] }
+    /// Forgets what was read of every account but those of `kept`
+    /// (`provider/account`): the configuration changed, and they did not.
+    func forget(keeping kept: Set<String> = []) {
+        entries.withLockedValue { entries in entries = entries.filter { kept.contains($0.key) } }
     }
 
     /// The allowance of every account that reports one, in the order of
