@@ -131,8 +131,7 @@ final class ConfigManager: Sendable {
     /// a symlink to its target), keeping its permissions; 0600 for a new one.
     static func write(_ text: String, to path: String) throws(ConfigError) {
         let target = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-        let attributes = try? FileManager.default.attributesOfItem(atPath: target.path)
-        let permissions = (attributes?[.posixPermissions] as? Int).map { mode_t($0 & 0o777) } ?? 0o600
+        let permissions = FileManager.default.permissions(atPath: target.path).map { mode_t($0 & 0o777) } ?? 0o600
         let temporary = target.deletingLastPathComponent()
             .appendingPathComponent(".\(target.lastPathComponent).\(getpid()).saving").path
         let descriptor = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0o600)

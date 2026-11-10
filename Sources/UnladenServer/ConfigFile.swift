@@ -78,7 +78,7 @@ enum ConfigLoader {
         var loaded = try ConfigFile.parse(text, file: file ?? "", overrides: overrides, environment: environment)
         loaded.path = file
         if let file, loaded.hasLiteralSecrets,
-           let permissions = (try? FileManager.default.attributesOfItem(atPath: file))?[.posixPermissions] as? Int,
+           let permissions = FileManager.default.permissions(atPath: file),
            permissions & 0o077 != 0
         {
             loaded.warnings.append(
@@ -86,6 +86,18 @@ enum ConfigLoader {
             )
         }
         return loaded
+    }
+}
+
+extension FileManager {
+    /// The file's permission bits. FoundationEssentials stores them as `UInt`
+    /// and Foundation as `Int`; casting the one to the other gives nil.
+    func permissions(atPath path: String) -> Int? {
+        switch (try? attributesOfItem(atPath: path))?[.posixPermissions] {
+        case let value as Int: value
+        case let value as UInt: Int(value)
+        default: nil
+        }
     }
 }
 
