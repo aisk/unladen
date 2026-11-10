@@ -258,3 +258,48 @@ import Testing
         #expect(quotas.map(\.provider) == ["opencode-go"])
     }
 }
+
+@Suite struct BalanceQuotaTests {
+    private func parsed(_ text: String) throws -> JSONValue { try JSONValue(parsing: Array(text.utf8)) }
+
+    @Test func deepSeekCurrenciesInAFixedOrder() throws {
+        let (balance, detail) = try BalanceQuota.deepSeek(parsed("""
+            {"is_available": true, "balance_infos": [
+              {"currency": "USD", "total_balance": "0.00", "granted_balance": "0.00", "topped_up_balance": "0.00"},
+              {"currency": "CNY", "total_balance": "110.00", "granted_balance": "10.00", "topped_up_balance": "100.00"}]}
+            """))
+        #expect(balance == "¥110.00 · $0.00")
+        #expect(detail == "granted ¥10.00 · topped up ¥100.00")
+    }
+
+    @Test func eachSourceReadsItsReply() throws {
+        func read(_ source: BalanceQuota.Source, _ text: String) throws -> String { try source.parse(parsed(text), status: 200).balance }
+        #expect(try read(.moonshot(host: "api.moonshot.cn", sign: "¥"), #"{"code": 0, "data": {"available_balance": 49.58}}"#) == "¥49.58")
+        #expect(try read(.openRouter, #"{"data": {"total_credits": 20, "total_usage": 3.5}}"#) == "$16.50")
+        #expect(try read(.stepFun(host: "api.stepfun.ai", sign: "$"), #"{"object": "account", "balance": 26}"#) == "$26.00")
+        #expect(try read(.modelScope, #"{"success": true, "data": {"total_balance": 1500, "available_balance": 1300}}"#) == "1300 魔粒")
+        #expect(try read(.aiHubMix, #"{"object": "list", "total_usage": 12.5}"#) == "$12.50")
+        #expect(throws: QuotaReader.Failure.self) { try read(.aiHubMix, #"{"object": "list", "total_usage": -1}"#) }
+        #expect(BalanceQuota.money("$", -0.5) == "-$0.50")
+    }
+
+    @Test func aDeepSeekAccountShowsItsBalance() async throws {
+        let loaded = try ConfigFile.parse(#"{"accounts": {"deepseek": "dk"}}"#, file: "c.jsonc") { _ in nil }
+        let upstream = MockUpstream { request in
+            #expect(request.request.authority == "api.deepseek.com")
+            #expect(request.request.path == "/user/balance")
+            #expect(request.request.headerFields[.authorization] == "Bearer dk")
+            return reply(#"{"balance_infos": [{"currency": "CNY", "total_balance": "5.00"}]}"#)
+        }
+        let gateway = Gateway(configuration: loaded.gateway, transport: upstream.transport)
+        let quotas = await gateway.quotas.read(gateway: gateway, refresh: false)
+        #expect(quotas.map(\.balance) == ["¥5.00"])
+        #expect(quotas.first?.windows.isEmpty == true)
+    }
+
+    @Test func commandCodeAndOllamaTellCreditsBesideTheirWindows() throws {
+        #expect(CommandCodeQuota.balance(try parsed(#"{"credits": {"monthlyCredits": 41.2, "purchasedCredits": 5, "freeCredits": -1}}"#)) == "$46.20")
+        #expect(OllamaCloudQuota.balance(try parsed(#"{"purchased": {"balance_usd": 25}}"#)) == "$25.00")
+        #expect(OllamaCloudQuota.balance(try parsed(#"{"included": {}}"#)) == nil)
+    }
+}

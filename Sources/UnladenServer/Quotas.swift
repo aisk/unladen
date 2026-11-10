@@ -2,7 +2,10 @@
 // week, a month), as the providers report it: Antigravity through Code
 // Assist, GLM Coding Plan keys of Zhipu (open.bigmodel.cn) and Z.ai through
 // their monitor API, Kimi Code, MiniMax, OpenCode Go, Command Code and
-// Ollama Cloud plan keys through their usage queries. A ChatGPT plan used through OpenAI's API reports none:
+// Ollama Cloud plan keys through their usage queries; and what is left to
+// spend on pay-as-you-go accounts that tell a key their balance (DeepSeek,
+// Kimi's API, OpenRouter, StepFun, ModelScope, AiHubMix, and the credits of
+// Command Code and Ollama Cloud). A ChatGPT plan used through OpenAI's API reports none:
 // OpenAI shows it only on chatgpt.com. Read when the panel asks, at most
 // once a minute per account.
 
@@ -46,6 +49,10 @@ struct AccountQuota: Sendable, Equatable {
     var account: String
     var plan: String?
     var windows: [QuotaWindow] = []
+    /// What is left to spend, with its currency: "¥110.00".
+    var balance: String?
+    /// What the balance is made of: "granted ¥10.00 · topped up ¥100.00".
+    var balanceDetail: String?
     var error: String?
     /// Where the provider shows what the gateway cannot read.
     var seeAt: String?
@@ -58,6 +65,8 @@ struct AccountQuota: Sendable, Equatable {
             "account": .string(account),
             "plan": plan.map(JSONValue.string) ?? .null,
             "windows": .array(windows.map(\.json)),
+            "balance": balance.map(JSONValue.string) ?? .null,
+            "balance_detail": balanceDetail.map(JSONValue.string) ?? .null,
             "error": error.map(JSONValue.string) ?? .null,
             "see_at": seeAt.map(JSONValue.string) ?? .null,
             "read_at": .number(JSONNumber(readAt)),
@@ -113,7 +122,7 @@ final class QuotaReader: Sendable {
             var results = [AccountQuota?](repeating: nil, count: accounts.count)
             for await (index, quota) in group { results[index] = quota }
             // A key with no plan, on endpoints not the plan's, shows nothing.
-            return results.compactMap { $0 }.filter { !$0.windows.isEmpty || $0.error != nil }
+            return results.compactMap { $0 }.filter { !$0.windows.isEmpty || $0.balance != nil || $0.error != nil }
         }
     }
 
@@ -138,6 +147,8 @@ final class QuotaReader: Sendable {
         /// An Ollama Cloud key: a plan's included allowance this period; a
         /// key with none shows nothing.
         case ollamaCloud
+        /// A pay-as-you-go account that tells a key its balance.
+        case balance(BalanceQuota.Source)
 
         static let glmHosts: Set<String> = ["open.bigmodel.cn", "api.z.ai"]
         static let kimiHosts: Set<String> = ["api.kimi.com", "api.kimi.ai"]
@@ -161,6 +172,7 @@ final class QuotaReader: Sendable {
                 if host == "opencode.ai", base.contains("/go/") { return .openCodeGo }
                 if host == "api.commandcode.ai" { return .commandCode }
                 if host == "ollama.com" { return .ollamaCloud }
+                if let source = BalanceQuota.Source.of(host: host) { return .balance(source) }
             }
             return nil
         }
@@ -213,15 +225,34 @@ final class QuotaReader: Sendable {
                 } catch {
                     quota.error = "\(error)"
                 }
-            case .openCodeGo, .commandCode, .ollamaCloud:
-                let (address, parse): (String, (JSONValue, Int) throws -> (String?, [QuotaWindow])) = switch self {
-                case .openCodeGo: (OpenCodeGoQuota.address, { (nil, try OpenCodeGoQuota.parse($0, status: $1)) })
-                case .commandCode: (CommandCodeQuota.address, CommandCodeQuota.parse)
-                default: (OllamaCloudQuota.address, { (nil, try OllamaCloudQuota.parse($0, status: $1)) })
+            case .openCodeGo, .commandCode, .ollamaCloud, .balance:
+                let address: String
+                let parse: (inout AccountQuota, JSONValue, Int) throws -> Void
+                switch self {
+                case .openCodeGo:
+                    address = OpenCodeGoQuota.address
+                    parse = { quota, reply, status in quota.windows = try OpenCodeGoQuota.parse(reply, status: status) }
+                case .commandCode:
+                    address = CommandCodeQuota.address
+                    parse = { quota, reply, status in
+                        (quota.plan, quota.windows) = try CommandCodeQuota.parse(reply, status: status)
+                        quota.balance = CommandCodeQuota.balance(reply)
+                    }
+                case .ollamaCloud:
+                    address = OllamaCloudQuota.address
+                    parse = { quota, reply, status in
+                        quota.windows = try OllamaCloudQuota.parse(reply, status: status)
+                        quota.balance = OllamaCloudQuota.balance(reply)
+                    }
+                case .balance(let source):
+                    address = source.address
+                    parse = { quota, reply, status in (quota.balance, quota.balanceDetail) = try source.parse(reply, status: status) }
+                default:
+                    return quota
                 }
                 do {
                     let (status, reply) = try await QuotaReader.get(address, bearer: key.secret, transport: gateway.transport)
-                    (quota.plan, quota.windows) = try parse(reply, status)
+                    try parse(&quota, reply, status)
                 } catch {
                     quota.error = "\(error)"
                 }
@@ -603,6 +634,12 @@ enum CommandCodeQuota {
         }
         return (plan, windows)
     }
+
+    /// The dollars left: the month's credits and the bought and free ones.
+    static func balance(_ reply: JSONValue) -> String? {
+        let amounts = ["monthlyCredits", "purchasedCredits", "freeCredits"].compactMap { QuotaReader.number(reply["credits"]?[$0]) }
+        return amounts.isEmpty ? nil : BalanceQuota.money("$", amounts.reduce(0) { $0 + max($1, 0) })
+    }
 }
 
 // MARK: - Ollama Cloud
@@ -645,10 +682,136 @@ enum OllamaCloudQuota {
         return windows
     }
 
-    /// Two decimals: 27.5 → "27.50".
-    static func dollars(_ value: Double) -> String {
+    static func dollars(_ value: Double) -> String { BalanceQuota.decimals(value) }
+
+    /// The credits bought on top of the plan, spent once its allowance is.
+    static func balance(_ reply: JSONValue) -> String? {
+        QuotaReader.number(reply["purchased"]?["balance_usd"]).map { BalanceQuota.money("$", $0) }
+    }
+}
+
+// MARK: - Balances
+
+enum BalanceQuota {
+    /// Where a pay-as-you-go account's balance is asked, with the key as a
+    /// Bearer, and how its reply reads.
+    enum Source: Sendable, Equatable {
+        case deepSeek
+        /// Kimi's API: China's in yuan, the international one in dollars.
+        case moonshot(host: String, sign: String)
+        case openRouter
+        /// StepFun, pay as you go or a Step Plan's key (what it spends past
+        /// the plan).
+        case stepFun(host: String, sign: String)
+        case modelScope
+        case aiHubMix
+
+        static func of(host: String) -> Source? {
+            switch host {
+            case "api.deepseek.com": .deepSeek
+            case "api.moonshot.cn": .moonshot(host: host, sign: "¥")
+            case "api.moonshot.ai": .moonshot(host: host, sign: "$")
+            case "openrouter.ai": .openRouter
+            case "api.stepfun.com": .stepFun(host: host, sign: "¥")
+            case "api.stepfun.ai": .stepFun(host: host, sign: "$")
+            case "api-inference.modelscope.cn": .modelScope
+            case "aihubmix.com": .aiHubMix
+            default: nil
+            }
+        }
+
+        var address: String {
+            switch self {
+            case .deepSeek: "https://api.deepseek.com/user/balance"
+            case .moonshot(let host, _): "https://\(host)/v1/users/me/balance"
+            case .openRouter: "https://openrouter.ai/api/v1/credits"
+            case .stepFun(let host, _): "https://\(host)/v1/accounts"
+            case .modelScope: "https://modelscope.cn/openapi/v1/magicubes/balance"
+            case .aiHubMix: "https://aihubmix.com/dashboard/billing/remain"
+            }
+        }
+
+        func parse(_ reply: JSONValue, status: Int) throws -> (balance: String, detail: String?) {
+            guard status == 200 else { throw QuotaReader.Failure(description: BalanceQuota.message(reply) ?? "HTTP \(status)") }
+            func amount(_ value: JSONValue?) throws -> Double {
+                guard let value = QuotaReader.number(value) else {
+                    throw QuotaReader.Failure(description: BalanceQuota.message(reply) ?? "no balance in the reply")
+                }
+                return value
+            }
+            switch self {
+            case .deepSeek:
+                return try BalanceQuota.deepSeek(reply)
+            case .moonshot(_, let sign):
+                return (money(sign, try amount(reply["data"]?["available_balance"])), nil)
+            case .openRouter:
+                let left = try amount(reply["data"]?["total_credits"]) - (QuotaReader.number(reply["data"]?["total_usage"]) ?? 0)
+                return (money("$", left), nil)
+            case .stepFun(_, let sign):
+                return (money(sign, try amount(reply["balance"])), nil)
+            case .modelScope:
+                // What running tasks have frozen is not available.
+                return (BalanceQuota.decimals(try amount(reply["data"]?["available_balance"]), places: 0) + " 魔粒", nil)
+            case .aiHubMix:
+                // What is left on the key, despite the name; -1: the key
+                // has no limit, and the account's balance is not told to a key.
+                let left = try amount(reply["total_usage"])
+                guard left >= 0 else {
+                    throw QuotaReader.Failure(description: "This key has no limit; AiHubMix tells a key only what is left on it.")
+                }
+                return (money("$", left), nil)
+            }
+        }
+
+        private func money(_ sign: String, _ value: Double) -> String { BalanceQuota.money(sign, value) }
+    }
+
+    /// Reads
+    ///
+    ///     {"is_available": true, "balance_infos": [{"currency": "CNY", "total_balance": "110.00",
+    ///       "granted_balance": "10.00", "topped_up_balance": "100.00"}]}
+    ///
+    /// The currencies come in no fixed order: those with money left go
+    /// first, then by code, so a card does not swap them between reads.
+    static func deepSeek(_ reply: JSONValue) throws -> (balance: String, detail: String?) {
+        var amounts: [(code: String, total: Double, granted: Double?, topped: Double?)] = []
+        for info in reply["balance_infos"]?.arrayValue ?? [] {
+            guard let total = QuotaReader.number(info["total_balance"]) else { continue }
+            amounts.append(((info["currency"]?.stringValue ?? "").uppercased(), total,
+                            QuotaReader.number(info["granted_balance"]), QuotaReader.number(info["topped_up_balance"])))
+        }
+        guard !amounts.isEmpty else { throw QuotaReader.Failure(description: message(reply) ?? "no balance in the reply") }
+        amounts.sort { ($0.total > 0) != ($1.total > 0) ? $0.total > 0 : $0.code < $1.code }
+        let balance = amounts.map { money(sign($0.code), $0.total) }.joined(separator: " · ")
+        let parts = amounts.compactMap { a -> String? in
+            guard let granted = a.granted, granted != 0, let topped = a.topped else { return nil }
+            return "granted \(money(sign(a.code), granted)) · topped up \(money(sign(a.code), topped))"
+        }
+        return (balance, parts.isEmpty ? nil : parts.joined(separator: " · "))
+    }
+
+    static func sign(_ code: String) -> String {
+        switch code {
+        case "CNY", "RMB": "¥"
+        case "USD": "$"
+        case "": ""
+        default: code + " "
+        }
+    }
+
+    static func money(_ sign: String, _ value: Double) -> String {
+        (value < 0 ? "-" : "") + sign + decimals(abs(value))
+    }
+
+    /// `value` with `places` decimals (0 or 2): 27.5 → "27.50".
+    static func decimals(_ value: Double, places: Int = 2) -> String {
+        guard places > 0 else { return "\(Int(value.rounded()))" }
         let cents = Int((value * 100).rounded())
         let rest = cents % 100
         return "\(cents / 100)." + (rest < 10 ? "0" : "") + "\(rest)"
+    }
+
+    static func message(_ reply: JSONValue) -> String? {
+        reply["error"]?["message"]?.stringValue ?? reply["error"]?.stringValue ?? reply["message"]?.stringValue
     }
 }

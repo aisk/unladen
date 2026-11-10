@@ -258,7 +258,7 @@
             <template x-if="quotas && quotas.length">
             <div class="mb-4">
               <div class="d-flex mb-2 align-items-center">
-                <h3 class="mb-0 me-2">Plan allowances</h3>
+                <h3 class="mb-0 me-2">Plans and balances</h3>
                 <div class="text-secondary small me-auto">As the providers report them, read at most once a minute.</div>
                 <button class="btn btn-sm" :disabled="quotasBusy" @click="refreshQuotas(true)"><i class="ti ti-refresh me-1"></i>Refresh</button>
               </div>
@@ -283,6 +283,15 @@
                             <div class="progress-bar" :class="quotaBarClass(w.used)" :style="'width: ' + (100 - w.used) + '%'"></div>
                           </div>
                           <div class="small text-secondary" x-show="w.resets_at" :title="w.resets_at && new Date(w.resets_at).toLocaleString()" x-text="resetsIn(w.resets_at)"></div>
+                        </div>
+                      </template>
+                      <template x-if="q.balance">
+                        <div class="mt-2">
+                          <div class="d-flex small">
+                            <span>Balance</span>
+                            <span class="ms-auto fw-bold" x-text="q.balance"></span>
+                          </div>
+                          <div class="small text-secondary" x-show="q.balance_detail" x-text="q.balance_detail"></div>
                         </div>
                       </template>
                       <div class="small text-danger" x-show="q.error && !q.see_at" x-text="q.error"></div>

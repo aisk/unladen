@@ -105,6 +105,9 @@ const TRANSLATIONS = {
       'No request in this period.': '这段时间没有请求。',
       'No client key': '无客户端 key',
       'Plan allowances': '套餐额度',
+      'Plans and balances': '套餐与余额',
+      'Balance': '余额',
+      'This key has no limit; AiHubMix tells a key only what is left on it.': '这个 key 没有设上限，而 AiHubMix 只告诉 key 它自己还剩多少。',
       'As the providers report them, read at most once a minute.': '由提供方报告，每分钟最多读取一次。',
       'Refresh': '刷新',
       'Month': '每月',
@@ -229,6 +232,7 @@ const TRANSLATIONS = {
     // parts it captured ($1…), themselves translated when they can be.
     patterns: [
       [/^(\d+) days$/, '$1 天'],
+      [/^granted (\S+) · topped up (\S+)$/, '赠送 $1 · 充值 $2'],
       [/^(\d+) hours$/, '$1 小时'],
       [/^(\d+) minutes$/, '$1 分钟'],
       [/^(\d+) months$/, '$1 个月'],
