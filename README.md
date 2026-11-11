@@ -2,73 +2,18 @@
 
 [![CI](https://github.com/aisk/unladen/actions/workflows/ci.yml/badge.svg)](https://github.com/aisk/unladen/actions/workflows/ci.yml)
 
-Unladen is a Swift library for calling large language models from many providers through one API. It speaks the OpenAI Chat Completions, OpenAI Responses, Anthropic Messages and Gemini protocols. Built-in providers are OpenAI, Anthropic, Gemini, DeepSeek, Moonshot, OpenRouter, Groq, Mistral, xAI, Together and Ollama.
+Unladen is a local LLM gateway written in Swift. Point your clients at one endpoint and speak the OpenAI Chat Completions, OpenAI Responses, Anthropic Messages or Gemini protocol. Unladen translates each request to the protocol of the upstream that serves the model, and translates the reply back. Built-in providers are OpenAI, Anthropic, Gemini, DeepSeek, Moonshot, OpenRouter, Groq, Mistral, xAI, Together and Ollama.
 
-You address a model as `"provider/model"`. Requests and replies, including streams, tool calls, reasoning and prompt caching, are translated to and from that provider's protocol. A conversation history can move from one provider to another; replay data the new provider can't verify, such as thinking signatures, is left out automatically.
+Its routing and account design draws on ideas from [claude-code-router](https://github.com/musistudio/claude-code-router), [cc-switch](https://github.com/farion1231/cc-switch) and [magpie](https://github.com/yetone/magpie).
 
-The `unladen` executable is a gateway built on the library: clients speak any of the four protocols to it, and it translates each request for the upstream that serves the model. It is early work; see [Gateway](#gateway).
-
-## Installation
-
-Unladen needs Swift 6.4 or later. Add it to `Package.swift`:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/aisk/unladen.git", branch: "main"),
-],
-targets: [
-    .target(name: "MyApp", dependencies: [
-        .product(name: "Unladen", package: "unladen"),
-        // Linux only: an HTTP transport built on AsyncHTTPClient.
-        .product(name: "UnladenAsyncHTTPClient", package: "unladen"),
-    ]),
-]
-```
-
-On Apple platforms, Unladen uses `URLSession` by default. On Linux, add `UnladenAsyncHTTPClient` and pass `transport: AsyncHTTPClientTransport()` to `ModelClient`.
-
-## Usage
-
-```swift
-import Unladen
-
-// Keys come from `apiKeys` or the provider's environment variable (e.g. ANTHROPIC_API_KEY).
-let client = ModelClient()
-let model = try client.model("anthropic/claude-sonnet-4-6")
-
-// One call.
-let response = try await model.generate("Write a haiku about Swift.")
-print(response.text)
-
-// Streaming.
-for try await part in model.stream("Tell me a short story.") {
-    if case .textDelta(_, let delta) = part { print(delta, terminator: "") }
-}
-
-// Tools, then the same history continued on another provider.
-let weather = Tool(
-    name: "get_weather",
-    description: "Current weather for a city",
-    inputSchema: ["type": "object", "properties": ["city": ["type": "string"]], "required": ["city"]],
-)
-var history: [Message] = [.user("Weather in Paris?")]
-let reply = try await model.generate(history, tools: [weather])
-history.append(reply.message)
-for call in reply.toolCalls {
-    history.append(.tool(ToolResult(call: call, output: "18°C, sunny")))
-}
-let answer = try await client.model("openai/gpt-5.2").generate(history, tools: [weather])
-print(answer.text)
-```
-
-## Gateway
+## The server
 
 ```sh
 swift build -c release --product unladen --static-swift-stdlib
 .build/release/unladen --config config.jsonc
 ```
 
-The configuration is JSON with comments and trailing commas, read from `--config` or `~/.config/unladen/config.jsonc`:
+The configuration is JSON with comments and trailing commas, read from `--config` or `~/.config/unladen/config.jsonc`.
 
 ```jsonc
 {
@@ -76,7 +21,7 @@ The configuration is JSON with comments and trailing commas, read from `--config
   // Opens the control panel at /admin.
   "panel": { "token": "${UNLADEN_ADMIN_TOKEN}" },
   // The accounts the gateway pays with. Accounts of one provider form a
-  // pool: the next one is tried when one fails.
+  // pool; the next one is tried when one fails.
   "accounts": {
     "anthropic": "${ANTHROPIC_API_KEY}",
     "deepseek": "${DEEPSEEK_KEY_1}",
@@ -96,18 +41,21 @@ The configuration is JSON with comments and trailing commas, read from `--config
 }
 ```
 
-An account of provider `chatgpt` may hold an OpenAI API key, or none: then it signs in with a ChatGPT account ("Sign in with ChatGPT") and uses that plan through OpenAI's Responses API, for your own use only. Write it as `"chatgpt": {}`, then sign in from the control panel (when adding the account, or later) or with `unladen sign-in chatgpt`; the tokens are kept in `~/.local/state/unladen/logins.json` and refreshed as needed.
+**What you get**
 
-An account of provider `antigravity` signs in with Google and uses an Antigravity subscription through Google's Code Assist backend. Google does not offer this to other apps and may suspend an account it sees used outside Antigravity: use one you can afford to lose, at your own risk.
+- **Four client protocols over one port.** A Claude Code or OpenCode client, a Gemini CLI and a plain OpenAI SDK can all talk to the same gateway, each in its own protocol, and share the accounts and model names configured there.
+- **Model mapping.** `models` maps the names clients ask for to the account that answers. A name can pass through to its own provider, point at a fixed upstream model, or fall back to another mapping.
+- **Account pools.** Accounts of one provider form a pool; when one fails, the next one is tried.
+- **Client keys.** Clients present a key from `clients`, and a client can be limited to a subset of the model names.
+- **A control panel at `/admin`**, in English or Chinese, once `panel.token` is set, showing requests in flight, recent requests and sessions, token usage by account, client and model, and editing the configuration itself. Every finished request is appended to `~/.local/state/unladen/usage-YYYY-MM.jsonl` (or under `$XDG_STATE_HOME`).
+- **Subscription accounts.** A `chatgpt` account may hold an OpenAI API key, or none. Then it signs in with a ChatGPT account ("Sign in with ChatGPT") and uses that plan through OpenAI's Responses API, for your own use only. An `antigravity` account signs in with Google and uses an Antigravity subscription through Google's Code Assist backend; Google does not offer this to other apps and may suspend an account it sees used outside Antigravity, so use one you can afford to lose. Sign in from the control panel or with `unladen sign-in <provider>`; tokens are kept in `~/.local/state/unladen/logins.json` and refreshed as needed.
+- **Operational niceties.** `unladen check-config` checks a configuration without serving it. The server reloads its configuration on `SIGHUP` and when it is saved from the panel. `/health` answers `ok` without authentication, which suits a liveness and readiness probe.
 
-`unladen check-config` checks a configuration without serving it. The gateway reloads its configuration on `SIGHUP` and when it is saved from the control panel. The control panel, in English or Chinese, also shows requests in flight, recent requests and sessions, and token usage by account, client and model; each finished request is appended to `~/.local/state/unladen/usage-YYYY-MM.jsonl` (or under `$XDG_STATE_HOME`).
+It is early work; the routing topology beyond forwarding and pools is still growing.
 
 ## Container
 
-`Containerfile`, `.containerignore` and `compose.yaml` sit at the root, so
-`podman` with `podman-compose`, or `docker` with `docker compose`, both work.
-(`.dockerignore` is a symlink to `.containerignore`, because docker reads only
-the former.)
+`Containerfile`, `.containerignore` and `compose.yaml` sit at the root, so `podman` with `podman-compose`, or `docker` with `docker compose`, both work (`docker` reads only `.dockerignore`, a symlink to `.containerignore`).
 
 ```sh
 podman build -f Containerfile -t unladen:local .
@@ -121,55 +69,45 @@ podman-compose up -d
 # or: docker compose up -d
 ```
 
-`unladen:local` is the tag `compose.yaml` uses, so a build and
-`podman-compose up` agree. A release tags what the registry expects and stamps
-the OCI labels with `--build-arg VERSION=$(git describe --tags --always --dirty)`
-and `--build-arg REVISION=$(git rev-parse HEAD)`; `podman push` sends the tag.
+The configuration directory is mounted read-only at `/config/unladen`, and one volume over `/data` keeps everything that outlives a restart (sign-in tokens, usage logs). Keys belong in the configuration file rather than in the environment, because anyone who can reach the container runtime can read the environment, while the panel at `/admin` exists only once `panel.token` is set. A read-only mount means the panel can show the file but not save it, so edit it and send `SIGHUP` (`podman kill -s HUP unladen`), or use the panel's Reload. The image listens on `0.0.0.0:4141` as uid 65532. For a quick try without a configuration file, `UNLADEN_ANTHROPIC_API_KEY`-style environment variables work too.
 
-The configuration directory is mounted read-only at `/config/unladen`, and one
-volume over `/data` keeps everything that outlives a restart:
+## The library
 
-| Path | What |
-| --- | --- |
-| `config/config.jsonc` → `/config/unladen/config.jsonc` | The configuration (mounted read-only) |
-| `/data/unladen/logins.json` | Tokens of accounts that signed in (ChatGPT, Antigravity) |
-| `/data/unladen/usage-YYYY-MM.jsonl` | One line per finished request |
+Unladen is also a Swift library for calling large language models from many providers through one API; the server above is built on it. You address a model as `"provider/model"`, and requests and replies, including streams, tool calls, reasoning and prompt caching, are translated to and from that provider's protocol. A conversation history can move from one provider to another; replay data the new provider cannot verify, such as thinking signatures, is left out automatically.
 
-The directory is mounted rather than the file because editors save by writing a
-new file and renaming it over the old one: a file mount keeps pointing at the
-old inode, and a reload after an edit would read the file as it was before it.
+Unladen needs Swift 6.4 or later. Add it to `Package.swift`.
 
-Keys belong in that file rather than in the environment: `podman inspect` and
-`/proc/<pid>/environ` show environment variables to anyone who can reach the
-container runtime, and the control panel at `/admin` only exists once
-`panel.token` is set in the configuration. `chmod 0644` is what lets uid 65532
-read the file on a Linux host, where a bind mount keeps the owner and mode it
-has there. The gateway would rather a configuration with plain-text keys were
-`0600`; inside a container the users who can read `0644` are the host users who
-can already open the file, and the mount is read-only either way.
-
-A read-only configuration means the panel can show the file but not save it —
-PUTting one answers `cannot write /config/unladen/.config.jsonc.1.saving:
-Read-only file system` (`Device or resource busy` on a Linux host): edit it and
-send `SIGHUP` (`podman kill -s HUP unladen`), or use the panel's Reload.
-
-Environment variables still work for a quick try, without a configuration file:
-
-```sh
-podman run -d --name unladen -p 4141:4141 \
-  -e UNLADEN_ANTHROPIC_API_KEY -e UNLADEN_DEEPSEEK_API_KEY \
-  -e UNLADEN_API_KEY=<the key your clients present> \
-  -v unladen-data:/data \
-  unladen:local
+```swift
+dependencies: [
+    .package(url: "https://github.com/aisk/unladen.git", branch: "main"),
+],
+targets: [
+    .target(name: "MyApp", dependencies: [
+        .product(name: "Unladen", package: "unladen"),
+        // Linux only. An HTTP transport built on AsyncHTTPClient.
+        .product(name: "UnladenAsyncHTTPClient", package: "unladen"),
+    ]),
+]
 ```
 
-Either way the image listens on `0.0.0.0:4141` as uid 65532, with `HOME`,
-`XDG_CONFIG_HOME` and `XDG_STATE_HOME` pointing at `/data` and `/config`, and
-`/health` answers `ok` without authentication, which suits a liveness and
-readiness probe. The `CMD` passes `--host` and `--port`, and those take
-precedence over `listen` in a configuration file, so a different host port goes
-in `ports:`. Signing in from the control panel works from a browser on any
-machine; `unladen sign-in` on the command line needs `podman run -it`.
+On Apple platforms, Unladen uses `URLSession` by default. On Linux, add `UnladenAsyncHTTPClient` and pass `transport: AsyncHTTPClientTransport()` to `ModelClient`.
+
+```swift
+import Unladen
+
+// Keys come from `apiKeys` or the provider's environment variable (e.g. ANTHROPIC_API_KEY).
+let client = ModelClient()
+let model = try client.model("anthropic/claude-sonnet-4-6")
+
+// One call.
+let response = try await model.generate("Write a haiku about Swift.")
+print(response.text)
+
+// Streaming.
+for try await part in model.stream("Tell me a short story.") {
+    if case .textDelta(_, let delta) = part { print(delta, terminator: "") }
+}
+```
 
 ## Tests
 
