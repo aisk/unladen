@@ -204,6 +204,11 @@ public struct UpstreamHTTPError: Error, Hashable, Sendable, CustomStringConverti
         guard let base = BaseURL(endpoint.baseURL) else { throw .invalidBaseURL(endpoint.baseURL) }
         var http = HTTPRequest(method: .post, scheme: base.scheme, authority: base.authority, path: base.path + suffix)
         http.headerFields = headers(clientHeaders: clientHeaders, streams: streams)
+        if let key = request.promptCacheKey, !key.isEmpty {
+            for name in endpoint.cacheKeyHeaders {
+                if let field = HTTPField.Name(name) { http.headerFields[field] = key }
+            }
+        }
         return UpstreamRequest(
             http: http, body: encoded.body, streams: streams, wire: request,
             warnings: outcome.warnings + encoded.warnings, customTools: outcome.customTools,

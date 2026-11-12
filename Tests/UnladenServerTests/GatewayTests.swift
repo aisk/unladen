@@ -669,6 +669,26 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         #expect(sessions[0] != nil && sessions[0] == sessions[1])
     }
 
+    /// OpenAI caches a ChatGPT sign-in's prompt only by the session
+    /// headers, so they carry the conversation's prompt_cache_key.
+    @Test func aChatGPTConversationIsNamedInItsSessionHeaders() async throws {
+        let upstream = MockUpstream { _ in reply(fixture("Responses/streams/text.sse")) }
+        let gateway = makeGateway(upstream, model: "chatgpt/gpt-6.1-sol")
+        try await makeApp(gateway).test(.router) { client in
+            for _ in 0..<2 { _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "anything")) }
+            _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "anything", extra: #","prompt_cache_key":"thread-1""#))
+        }
+        let hits = upstream.requests
+        #expect(hits.count == 3)
+        let key = try #require(hits[0].json["prompt_cache_key"]?.stringValue)
+        for hit in hits[..<2] {
+            #expect(hit.header("session-id") == key)
+            #expect(hit.header("thread-id") == key)
+        }
+        #expect(hits[2].header("session-id") == "thread-1")
+        #expect(hits[2].header("thread-id") == "thread-1")
+    }
+
     @Test func kiloListsItsModelsWithoutAnAccount() async throws {
         let upstream = MockUpstream { _ in reply(#"{"data": [{"id": "kilo-auto/free"}]}"#) }
         let routes = [Route(name: "kilo-*", targets: [RouteTarget(model: "kilo/$model")])]
@@ -687,6 +707,8 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         try await makeApp(makeGateway(upstream)).test(.router) { client in
             _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "openai/gpt-4o"))
         }
-        #expect(try #require(upstream.requests.first).header("x-opencode-session") == nil)
+        let hit = try #require(upstream.requests.first)
+        #expect(hit.header("x-opencode-session") == nil)
+        #expect(hit.header("session-id") == nil)
     }
 }

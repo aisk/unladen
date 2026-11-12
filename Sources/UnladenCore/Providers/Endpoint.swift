@@ -85,6 +85,10 @@ public struct Endpoint: Hashable, Sendable {
     /// routing and prompt caching: the caller's session id
     /// (``UpstreamCall/session``) goes in it.
     public var sessionHeader: String?
+    /// Headers the upstream routes its prompt cache by, each sent the
+    /// request's `prompt_cache_key` (OpenAI with a ChatGPT sign-in caches
+    /// nothing without them, whatever the body's key says).
+    public var cacheKeyHeaders: [String]
 
     public init(
         system: String,
@@ -96,6 +100,7 @@ public struct Endpoint: Hashable, Sendable {
         trustedOrigins: Set<String>? = nil,
         defaults: Profile = Profile(),
         sessionHeader: String? = nil,
+        cacheKeyHeaders: [String] = [],
     ) {
         self.system = system
         self.apiProtocol = apiProtocol
@@ -106,5 +111,6 @@ public struct Endpoint: Hashable, Sendable {
         self.trustedOrigins = trustedOrigins ?? [system]
         self.defaults = defaults
         self.sessionHeader = sessionHeader
+        self.cacheKeyHeaders = cacheKeyHeaders
     }
 }

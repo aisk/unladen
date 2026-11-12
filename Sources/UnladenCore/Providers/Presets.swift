@@ -159,7 +159,8 @@ public enum Presets {
         endpoints: [
             Endpoint(system: "openai", apiProtocol: .responses, baseURL: "https://api.openai.com/v1",
                      defaults: Profile(unsupportedParameters: [.temperature, .topP, .user], streaming: .always,
-                                       transforms: base + [.chatgptSubscription])),
+                                       transforms: base + [.chatgptSubscription]),
+                     cacheKeyHeaders: ["session-id", "thread-id"]),
         ],
         models: openAIRules(prefix: ""),
     ))
