@@ -130,7 +130,7 @@ extension Gateway {
             status: summary.disconnected ? 499 : 200, note: note, tokens: TokenCounts(summary.usage),
             warnings: warnings.count + summary.warnings.count, failed: summary.failure != nil && !summary.disconnected,
         )
-        if !summary.disconnected { try await writer.finish(nil) }
+        if !summary.disconnected, !summary.closedAfterEnd { try await writer.finish(nil) }
     }
 
     /// What the record says of a failed request: its note and its
@@ -191,6 +191,11 @@ extension Gateway {
         var warnings: [WireWarning] = []
         var failure: String?
         var disconnected = false
+        /// The client was sent its stream's end (the finish event), so
+        /// its leaving after that is no disconnect.
+        var ended = false
+        /// The client closed its connection after the stream's end.
+        var closedAfterEnd = false
         /// The usage the stream reported last.
         var usage: WireUsage?
     }
@@ -292,13 +297,16 @@ extension Gateway {
                     lastEvent = .now
                 }
             case .stopped:
-                summary.disconnected = true
+                // Chat clients close on `[DONE]`, which goes with the
+                // finish event, while the upstream may still be ending.
+                if summary.ended { summary.closedAfterEnd = true } else { summary.disconnected = true }
                 break loop
             }
             if !out.isEmpty {
                 try await writer.write(Self.frames(out))
                 if out.contains(where: { if case .event = $0 { true } else { false } }) { lastEvent = .now }
             }
+            if case .event(.finish) = signal { summary.ended = true }
             if done { break loop }
         }
         summary.warnings += encoder.warnings

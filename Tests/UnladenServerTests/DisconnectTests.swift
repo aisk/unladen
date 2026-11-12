@@ -73,6 +73,35 @@ private struct RawConnection {
         }
     }
 
+    /// A Chat client closes its connection once it has `[DONE]`, which
+    /// goes with the upstream's finish while the upstream stream may still
+    /// be open: the request was answered, not abandoned.
+    @Test func leavingAfterTheEndIsNoDisconnect() async throws {
+        let streaming = Flag()
+        let upstream = MockUpstream { _ in
+            reply(streaming: AsyncStream { continuation in
+                continuation.yield(fixture("Responses/streams/text.sse"))
+                streaming.set()
+            })
+        }
+        let gateway = makeGateway(upstream, model: "chatgpt/gpt-6.1-sol")
+        try await makeApp(gateway).test(.live) { client in
+            let connection = try await RawConnection.open(port: try #require(client.port))
+            try await connection.send("/v1/chat/completions", ClientRequest.chat(model: "x", stream: true))
+            #expect(await streaming.wait())
+            try await Task.sleep(for: .milliseconds(200))
+            try await connection.hangUp()
+            var record = gateway.activity.snapshot().recent.first
+            for _ in 0..<50 where record == nil {
+                try await Task.sleep(for: .milliseconds(20))
+                record = gateway.activity.snapshot().recent.first
+            }
+            let finished = try #require(record)
+            #expect(finished.status == 200)
+            #expect(finished.tokens?.input == 12)
+        }
+    }
+
     /// The same request without a hang-up completes normally (the monitor
     /// does not fire on a healthy keep-alive connection).
     @Test func healthyConnectionsAreNotCancelled() async throws {
