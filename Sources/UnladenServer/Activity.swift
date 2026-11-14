@@ -268,6 +268,9 @@ struct RequestRecord: Sendable {
     var warnings = 0
     /// It ended in an error: an error status, or a stream that broke off.
     var failed = false
+    /// Read back from the usage log: it stayed on one target (``kept``
+    /// is not kept there).
+    var keptLogged = false
 
     /// As the usage log keeps it: no attempts beyond their count.
     var logged: JSONValue {
@@ -288,6 +291,7 @@ struct RequestRecord: Sendable {
         if let value = account { object["account"] = .string(value) }
         if let value = served { object["served"] = .string(value) }
         if let value = route { object["route"] = .string(value) }
+        if kept != nil { object["kept"] = true }
         if let target { object["target"] = .number(JSONNumber(target)) }
         if let value = firstContentMilliseconds { object["first_content_ms"] = .number(JSONNumber(value)) }
         if let value = milliseconds { object["ms"] = .number(JSONNumber(value)) }
@@ -341,6 +345,7 @@ struct RequestRecord: Sendable {
         account = value["account"]?.stringValue
         served = value["served"]?.stringValue
         route = value["route"]?.stringValue
+        keptLogged = value["kept"]?.boolValue ?? false
         // The served model stands in for the list at its place.
         if let served, let target = value["target"]?.numberValue?.int, target >= 1 {
             targets = Array(repeating: "", count: target - 1) + [served]
@@ -384,8 +389,35 @@ struct SessionSummary: Sendable {
     /// The model names asked for, in order.
     var models: [String] = []
     var lastModel: String
+    /// Its latest requests, oldest first, at most ``turnLimit``.
+    var turns: [Turn] = []
+
+    static let turnLimit = 300
+
+    /// One request of the session, as its timeline shows it.
+    struct Turn: Sendable, Equatable {
+        var t: Int64
+        var subagent: String?
+        /// The model name asked for.
+        var model: String
+        /// What answered: `provider/model`, and the account.
+        var served: String?
+        var account: String?
+        /// Which of its route's targets answered, from 1.
+        var target: Int?
+        var tokens: TokenCounts?
+        var failed: Bool
+        /// It stayed on one target, past `fallback_max_context`.
+        var kept: Bool
+    }
 
     mutating func add(_ record: RequestRecord) {
+        turns.append(Turn(
+            t: record.started, subagent: record.origin.subagent, model: record.model, served: record.served,
+            account: record.account, target: record.target, tokens: record.tokens, failed: record.failed,
+            kept: record.kept != nil || record.keptLogged,
+        ))
+        if turns.count > Self.turnLimit { turns.removeFirst(turns.count - Self.turnLimit) }
         requests += 1
         last = max(last, record.started)
         if record.failed { failures += 1 }
@@ -414,6 +446,12 @@ struct UsageBucket: Sendable {
         /// What served it, `provider/model`; the name asked for when
         /// nothing did.
         var model: String
+        /// The local hour it started in, 0–23.
+        var hour = 0
+        /// The route its model name matched; empty for none.
+        var route = ""
+        /// Which of the route's targets answered, from 1; 0 for none.
+        var target = 0
     }
 
     var requests = 0
@@ -482,6 +520,7 @@ struct LocalDay: Sendable, Hashable {
     var year: Int
     var month0: Int
     var day: Int
+    var hour: Int
     var milliseconds: Int64
 
     init(milliseconds: Int64) {
@@ -491,6 +530,7 @@ struct LocalDay: Sendable, Hashable {
         year = Int(parts.tm_year) + 1900
         month0 = Int(parts.tm_mon)
         day = Int(parts.tm_mday)
+        hour = Int(parts.tm_hour)
         self.milliseconds = milliseconds
     }
 
@@ -599,6 +639,7 @@ final class Activity: Sendable {
         let key = UsageBucket.Key(
             day: LocalDay(milliseconds: record.started).key, provider: record.provider ?? "", account: record.account ?? "",
             client: record.origin.client ?? "", program: record.origin.program, model: record.served ?? record.model,
+            hour: LocalDay(milliseconds: record.started).hour, route: record.route ?? "", target: record.target ?? 0,
         )
         var bucket = buckets[key] ?? UsageBucket()
         bucket.requests += 1
@@ -653,6 +694,11 @@ final class Activity: Sendable {
                 sessions: state.sessions.values.sorted { $0.last > $1.last },
             )
         }
+    }
+
+    /// The session `id`, when it is kept.
+    func session(_ id: String) -> SessionSummary? {
+        state.withLockedValue { $0.sessions[id] }
     }
 
     /// Requests of a session, newest first, from those still kept in memory.

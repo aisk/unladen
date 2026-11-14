@@ -309,39 +309,143 @@ enum AdminActivity {
         ]
     }
 
-    /// Usage summed by account, client, program and model, and in all.
-    static func usage(_ buckets: [UsageBucket.Key: UsageBucket], days: Int) -> JSONValue {
-        func group(_ key: (UsageBucket.Key) -> String) -> JSONValue {
-            var sums: [String: UsageBucket] = [:]
-            for (bucketKey, bucket) in buckets {
-                var sum = sums[key(bucketKey)] ?? UsageBucket()
-                sum.requests += bucket.requests
-                sum.failures += bucket.failures
-                sum.tokens += bucket.tokens
-                sums[key(bucketKey)] = sum
-            }
-            let rows = sums.sorted { a, b in
-                let (ta, tb) = (a.value.tokens.input + a.value.tokens.output, b.value.tokens.input + b.value.tokens.output)
-                return ta != tb ? ta > tb : a.key < b.key
-            }
-            return .array(rows.map { name, sum in
-                ["name": .string(name), "requests": .number(JSONNumber(sum.requests)), "failures": .number(JSONNumber(sum.failures)),
-                 "tokens": sum.tokens.json]
+    /// A session: its summary, its turns, where each of its conversations
+    /// was last answered, and its requests still kept in memory.
+    static func session(_ id: String, gateway: Gateway) -> JSONValue {
+        var object: JSONObject = [
+            "requests": .array(gateway.activity.requests(ofSession: id).map(json)),
+        ]
+        if let session = gateway.activity.session(id) {
+            object["session"] = json(session)
+            object["turns"] = .array(session.turns.map { turn in
+                var value: JSONObject = ["t": .number(JSONNumber(turn.t)), "model": .string(turn.model)]
+                if let subagent = turn.subagent { value["subagent"] = .string(subagent) }
+                if let served = turn.served { value["served"] = .string(served) }
+                if let account = turn.account { value["account"] = .string(account) }
+                if let target = turn.target { value["target"] = .number(JSONNumber(target)) }
+                if let tokens = turn.tokens { value["tokens"] = tokens.json }
+                if turn.failed { value["failed"] = true }
+                if turn.kept { value["kept"] = true }
+                return .object(value)
             })
         }
-        var total = UsageBucket()
-        for bucket in buckets.values {
+        let now = ContinuousClock.now
+        let wall = LocalDay.nowMilliseconds()
+        func milliseconds(_ duration: Duration) -> Int64 {
+            duration.components.seconds * 1000 + duration.components.attoseconds / 1_000_000_000_000_000
+        }
+        object["placements"] = .array(gateway.placements.placements(ofSession: id).map { subagent, model, placement in
+            let at = wall - milliseconds(now - placement.at)
+            var value: JSONObject = [
+                "model": .string(model), "reference": .string(placement.reference),
+                "at": .number(JSONNumber(at)), "cache_until": .number(JSONNumber(at + milliseconds(placement.lifetime))),
+            ]
+            if let subagent { value["subagent"] = .string(subagent) }
+            if let input = placement.reportedInput { value["reported_input"] = .number(JSONNumber(input)) }
+            return .object(value)
+        })
+        return .object(object)
+    }
+
+    /// Usage summed by account, client, program, model and route, and in
+    /// all; and each grouping's tokens and requests over time: by hour for
+    /// one day, else by day.
+    static func usage(
+        _ buckets: [UsageBucket.Key: UsageBucket], days: Int, now: Int64 = LocalDay.nowMilliseconds(),
+    ) -> JSONValue {
+        let groupings: [(String, (UsageBucket.Key) -> String)] = [
+            ("accounts", { $0.provider.isEmpty ? "(none)" : $0.provider + "/" + ($0.account.isEmpty ? "-" : $0.account) }),
+            ("clients", { $0.client.isEmpty ? "(no key)" : $0.client }),
+            ("programs", \.program),
+            ("models", \.model),
+            ("routes", { $0.route.isEmpty ? "(none)" : $0.route }),
+        ]
+        // The time slots: hours of the day, or days oldest first.
+        let slots: [Int] = days == 1
+            ? Array(0..<24)
+            : (0..<days).reversed().map { LocalDay(milliseconds: now - Int64($0) * 86_400_000).key }
+        let slotIndex = Dictionary(slots.enumerated().map { ($0.element, $0.offset) }) { first, _ in first }
+        func slot(_ key: UsageBucket.Key) -> Int? { slotIndex[days == 1 ? key.hour : key.day] }
+
+        func sum(_ bucket: UsageBucket, into total: inout UsageBucket) {
             total.requests += bucket.requests
             total.failures += bucket.failures
             total.tokens += bucket.tokens
         }
+        func row(_ name: String, _ sum: UsageBucket) -> JSONObject {
+            ["name": .string(name), "requests": .number(JSONNumber(sum.requests)), "failures": .number(JSONNumber(sum.failures)),
+             "tokens": sum.tokens.json]
+        }
+        func ordered(_ sums: [String: UsageBucket]) -> [(key: String, value: UsageBucket)] {
+            sums.sorted { a, b in
+                let (ta, tb) = (a.value.tokens.input + a.value.tokens.output, b.value.tokens.input + b.value.tokens.output)
+                return ta != tb ? ta > tb : a.key < b.key
+            }
+        }
+
+        var object: JSONObject = ["days": .number(JSONNumber(days))]
+        var trend: JSONObject = ["slots": .array(slots.map { .number(JSONNumber($0)) })]
+        for (grouping, name) in groupings {
+            var sums: [String: UsageBucket] = [:]
+            var series: [String: (tokens: [Int], requests: [Int])] = [:]
+            for (key, bucket) in buckets {
+                sum(bucket, into: &sums[name(key), default: UsageBucket()])
+                guard let at = slot(key) else { continue }
+                var line = series[name(key)] ?? (Array(repeating: 0, count: slots.count), Array(repeating: 0, count: slots.count))
+                line.tokens[at] += bucket.tokens.input + bucket.tokens.output
+                line.requests[at] += bucket.requests
+                series[name(key)] = line
+            }
+            let rows = ordered(sums)
+            object[grouping] = .array(rows.map { name, sum in
+                var value = row(name, sum)
+                if grouping == "routes" { for (key, detail) in routeDetail(name, buckets: buckets) { value[key] = detail } }
+                return .object(value)
+            })
+            trend[grouping] = .array(rows.compactMap { name, _ in
+                series[name].map { line in
+                    ["name": .string(name), "tokens": .array(line.tokens.map { .number(JSONNumber($0)) }),
+                     "requests": .array(line.requests.map { .number(JSONNumber($0)) })]
+                }
+            })
+        }
+        var total = UsageBucket()
+        for bucket in buckets.values { sum(bucket, into: &total) }
+        var totalRow = row("", total)
+        totalRow["name"] = nil
+        object["total"] = .object(totalRow)
+        object["trend"] = .object(trend)
+        return .object(object)
+    }
+
+    /// A route's targets, by their place, and how many requests fell back.
+    private static func routeDetail(_ route: String, buckets: [UsageBucket.Key: UsageBucket]) -> JSONObject {
+        let routeName = route == "(none)" ? "" : route
+        // By place and model: a place may have held another model before
+        // the route was changed.
+        struct Place: Hashable { var position: Int; var model: String }
+        var targets: [Place: UsageBucket] = [:]
+        var fallbacks = 0
+        var unknown = 0
+        for (key, bucket) in buckets where key.route == routeName {
+            if key.target > 1 { fallbacks += bucket.requests }
+            if key.target == 0 { unknown += bucket.requests; continue }
+            var sum = targets[Place(position: key.target, model: key.model)] ?? UsageBucket()
+            sum.requests += bucket.requests
+            sum.failures += bucket.failures
+            sum.tokens += bucket.tokens
+            targets[Place(position: key.target, model: key.model)] = sum
+        }
         return [
-            "days": .number(JSONNumber(days)),
-            "total": ["requests": .number(JSONNumber(total.requests)), "failures": .number(JSONNumber(total.failures)), "tokens": total.tokens.json],
-            "accounts": group { $0.provider.isEmpty ? "(none)" : $0.provider + "/" + ($0.account.isEmpty ? "-" : $0.account) },
-            "clients": group { $0.client.isEmpty ? "(no key)" : $0.client },
-            "programs": group(\.program),
-            "models": group(\.model),
+            "fallbacks": .number(JSONNumber(fallbacks)),
+            "unplaced": .number(JSONNumber(unknown)),
+            "targets": .array(targets.sorted {
+                $0.key.position != $1.key.position ? $0.key.position < $1.key.position : $0.value.requests > $1.value.requests
+            }.map { place, sum in
+                ["position": .number(JSONNumber(place.position)), "model": .string(place.model),
+                 "requests": .number(JSONNumber(sum.requests)), "failures": .number(JSONNumber(sum.failures)),
+                 "tokens": sum.tokens.json]
+            }),
         ]
     }
 }
@@ -416,7 +520,7 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
     router.get("/admin/api/sessions/:id") { request, context in
         if let denied = adminDenied(request, gateway: gateway) { return denied }
         let id = context.parameters.get("id") ?? ""
-        return adminJSON(200, ["requests": .array(gateway.activity.requests(ofSession: id).map(AdminActivity.json))])
+        return adminJSON(200, AdminActivity.session(id, gateway: gateway))
     }
 
     router.get("/admin/api/usage") { request, _ in

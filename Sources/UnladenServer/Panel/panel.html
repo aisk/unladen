@@ -25,6 +25,27 @@
   .brand { background: #fff; color: #49566c; }
   .brand img { width: 62%; height: 62%; object-fit: contain; }
   .ti { font-size: 1.25em; vertical-align: -.15em; }
+  /* Charts: series colors by slot, for light and dark. */
+  :root {
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4;
+    --series-other: #a8a7a0;
+  }
+  [data-bs-theme="dark"] {
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181;
+    --series-other: #6b6a64;
+  }
+  .chart { width: 100%; height: auto; display: block; }
+  .chart-grid { stroke: var(--tblr-border-color); stroke-width: 1; }
+  .chart-base { stroke: var(--tblr-secondary); stroke-width: 1; }
+  .chart-axis { fill: var(--tblr-secondary); font-size: 11px; }
+  .chart-marker { stroke: var(--tblr-body-color); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .chart-failed { fill: #d03b3b; stroke: var(--tblr-bg-surface); stroke-width: 2; }
+  .chart-wrap { position: relative; }
+  .chart-tip { position: absolute; z-index: 5; pointer-events: none; min-width: 12rem; max-width: 22rem; }
+  .swatch { display: inline-block; width: .75rem; height: .75rem; border-radius: 2px; vertical-align: -.05em; }
+  .share { height: 4px; border-radius: 2px; background: var(--series-1); }
+  .shares { display: flex; gap: 2px; height: 8px; min-width: 8rem; }
+  .shares > div { border-radius: 2px; }
 </style>
 </head>
 <body>
@@ -506,10 +527,73 @@
               </div>
               <div class="card-body text-secondary" x-show="!(activity?.sessions || []).length">No session yet.</div>
             </div>
+            <template x-if="session && sessionDetail">
+            <div class="card mb-3">
+              <div class="card-header">
+                <h3 class="card-title"><i class="ti ti-message-circle me-2"></i><span x-text="'Session ' + short(session.id)"></span></h3>
+                <div class="card-actions"><button class="btn btn-sm" @click="closeSession()">Close</button></div>
+              </div>
+              <div class="card-body">
+                <template x-if="sessionDetail.session">
+                  <div class="d-flex flex-wrap gap-4 mb-3">
+                    <div><div class="text-secondary small">Client</div><div><span x-text="sessionDetail.session.client || sessionDetail.session.program"></span> <span class="text-secondary" x-show="sessionDetail.session.client" x-text="'(' + sessionDetail.session.program + ')'"></span></div></div>
+                    <div><div class="text-secondary small">Started</div><div x-text="clock(sessionDetail.session.first)"></div></div>
+                    <div><div class="text-secondary small">Last active</div><div x-text="ago(sessionDetail.session.last)"></div></div>
+                    <div><div class="text-secondary small">Requests</div><div><span x-text="sessionDetail.session.requests"></span><span class="text-danger" x-show="sessionDetail.session.failures" x-text="' (' + sessionDetail.session.failures + ' failed)'"></span></div></div>
+                    <div><div class="text-secondary small">Tokens</div><div><span x-text="count(sessionDetail.session.tokens.input)"></span> <span class="text-secondary">in</span> · <span x-text="count(sessionDetail.session.tokens.output)"></span> <span class="text-secondary">out</span> · <span x-text="cacheShare(sessionDetail.session.tokens) || '0%'"></span> <span class="text-secondary">cached</span></div></div>
+                  </div>
+                </template>
+                <div class="btn-group flex-wrap mb-3" x-show="conversations().length > 1">
+                  <template x-for="c in conversations()" :key="c.key">
+                    <button class="btn btn-sm" :class="conversation === c.key && 'active'" @click="conversation = c.key">
+                      <span class="mono" x-text="conversationLabel(c)"></span><span class="badge bg-secondary-lt ms-2" x-text="c.turns.length"></span>
+                    </button>
+                  </template>
+                </div>
+                <template x-if="shownConversation()">
+                  <div x-data="{ get c() { return shownConversation() }, get st() { return conversationState(shownConversation()) } }">
+                    <div class="d-flex flex-wrap gap-4 mb-3">
+                      <div><div class="text-secondary small">Answered last by</div><div class="mono" x-text="st.on ? who(st.on, st.account) : '–'"></div></div>
+                      <div><div class="text-secondary small">Context, last turn</div><div x-text="st.context != null ? count(st.context) + ' tokens' : '–'"></div></div>
+                      <div><div class="text-secondary small">Read from cache, last turn</div><div x-text="st.cacheHit || '–'"></div></div>
+                      <div>
+                        <div class="text-secondary small">Prompt cache</div>
+                        <div x-show="st.cache"><i class="ti me-1" :class="st.cache?.warm ? 'ti-flame text-orange' : 'ti-snowflake text-azure'"></i><span x-text="st.cache?.text"></span></div>
+                        <div class="text-secondary" x-show="!st.cache">Not known</div>
+                      </div>
+                      <div><div class="text-secondary small">Target changes</div><div><span x-text="st.switches"></span><span class="text-danger" x-show="st.failed" x-text="' · ' + st.failed + ' failed'"></span></div></div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 small mb-1">
+                      <template x-for="l in sessionLayers">
+                        <span><span class="swatch me-1" :style="'background: var(' + l.color + ')'"></span><span x-text="l.label"></span></span>
+                      </template>
+                      <span><span class="me-1" style="border-left: 1.5px dashed var(--tblr-body-color); display: inline-block; height: .8rem; vertical-align: -.1em"></span>Another target answered</span>
+                      <span><span class="swatch me-1" style="background: #d03b3b; border-radius: 50%"></span>Failed</span>
+                    </div>
+                    <div class="chart-wrap" @mousemove="chartHover($event)" @mouseleave="hover = null">
+                      <div x-html="sessionChart(c)"></div>
+                      <template x-if="hover?.chart === 'session' && sessionTip(c, hover.i)">
+                        <div class="card card-sm chart-tip shadow" :style="tooltipStyle()">
+                          <div class="card-body p-2 small" x-data="{ get tip() { return sessionTip(c, hover.i) } }">
+                            <div class="fw-bold" x-text="tip.title"></div>
+                            <div class="mono text-secondary" x-show="tip.who" x-text="tip.who"></div>
+                            <template x-for="row in tip.rows"><div class="d-flex justify-content-between gap-3"><span class="text-secondary" x-text="row[0]"></span><span x-text="row[1]"></span></div></template>
+                            <template x-for="note in tip.notes"><div class="text-orange" x-text="note"></div></template>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                    <div class="text-secondary small mt-1">Each column is one request, oldest first, numbered from the oldest kept. Read from cache is cheap; a column mostly not cached after another target answered is the cost of moving the conversation.</div>
+                  </div>
+                </template>
+                <div class="text-secondary" x-show="!conversations().length">No turn of this session is kept.</div>
+              </div>
+            </div>
+            </template>
             <div class="card mb-3">
               <div class="card-header">
                 <h3 class="card-title"><i class="ti ti-list-details me-2"></i><span x-text="session ? 'Requests of session ' + short(session.id) : 'Recent requests'"></span></h3>
-                <div class="card-actions" x-show="session"><button class="btn btn-sm" @click="session = null; sessionRequests = []">Show all recent</button></div>
+                <div class="card-actions" x-show="session"><button class="btn btn-sm" @click="closeSession()">Show all recent</button></div>
               </div>
               <div class="table-responsive" x-show="shownRequests().length">
               <table class="table card-table table-sm table-vcenter">
@@ -612,14 +696,46 @@
                 </div>
               </template>
             </div>
+            <div class="card mb-3" x-show="(usage?.trend?.[usageBy] || []).length">
+              <div class="card-header">
+                <h3 class="card-title" x-text="(usageMetric === 'tokens' ? 'Tokens' : 'Requests') + (usage?.days === 1 ? ' by hour' : ' by day')"></h3>
+                <div class="card-actions btn-group">
+                  <button class="btn btn-sm" :class="usageMetric === 'tokens' && 'active'" @click="usageMetric = 'tokens'">Tokens</button>
+                  <button class="btn btn-sm" :class="usageMetric === 'requests' && 'active'" @click="usageMetric = 'requests'">Requests</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="d-flex flex-wrap gap-3 small mb-2">
+                  <template x-for="s in usageSeries()" :key="s.name">
+                    <span><span class="swatch me-1" :style="'background: var(' + s.color + ')'"></span><span :class="!s.other && 'mono'" x-text="s.name"></span></span>
+                  </template>
+                </div>
+                <div class="chart-wrap" @mousemove="chartHover($event)" @mouseleave="hover = null">
+                  <div x-html="usageChart()"></div>
+                  <template x-if="hover?.chart === 'usage' && usageTip(hover.i)">
+                    <div class="card card-sm chart-tip shadow" :style="tooltipStyle()">
+                      <div class="card-body p-2 small" x-data="{ get tip() { return usageTip(hover.i) } }">
+                        <div class="fw-bold" x-text="tip.title"></div>
+                        <template x-for="row in tip.rows">
+                          <div class="d-flex justify-content-between gap-3"><span><span class="swatch me-1" :style="'background: var(' + row[2] + ')'"></span><span class="mono" x-text="row[0]"></span></span><span x-text="row[1]"></span></div>
+                        </template>
+                        <div class="d-flex justify-content-between gap-3 border-top mt-1 pt-1"><span class="text-secondary">Total</span><span x-text="tip.total"></span></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+                <div class="text-secondary small mt-1" x-show="usageMetric === 'tokens'">Input and output tokens; input includes what was read from cache.</div>
+              </div>
+            </div>
             <div class="card mb-3">
-              <div class="table-responsive" x-show="(usage?.[usageBy] || []).length">
+              <div class="table-responsive" x-show="usageBy !== 'routes' && (usage?.[usageBy] || []).length">
               <table class="table card-table table-sm">
-                <thead><tr><th x-text="usageGroups.find(g => g.id === usageBy).label"></th><th class="text-end">Requests</th><th class="text-end">Failed</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache read</th><th class="text-end">Cache write</th><th class="text-end">Cache hit</th></tr></thead>
+                <thead><tr><th x-text="usageGroups.find(g => g.id === usageBy).label"></th><th class="text-end">Share</th><th class="text-end">Requests</th><th class="text-end">Failed</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache read</th><th class="text-end">Cache write</th><th class="text-end">Cache hit</th></tr></thead>
                 <tbody>
                   <template x-for="row in usage?.[usageBy] || []" :key="row.name">
                     <tr>
-                      <td class="mono" x-text="row.name"></td>
+                      <td><div class="mono" x-text="row.name"></div><div class="share mt-1" :style="'width: ' + Math.max(shareOf(row), 0.5) + '%'"></div></td>
+                      <td class="text-end" x-text="shareOf(row).toFixed(1) + '%'"></td>
                       <td class="text-end" x-text="row.requests"></td>
                       <td class="text-end" :class="row.failures && 'text-danger'" x-text="row.failures"></td>
                       <td class="text-end" x-text="count(row.tokens.input)"></td>
@@ -627,6 +743,32 @@
                       <td class="text-end" x-text="count(row.tokens.cache_read)"></td>
                       <td class="text-end" x-text="count(row.tokens.cache_write)"></td>
                       <td class="text-end" x-text="cacheShare(row.tokens)"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              </div>
+              <div class="table-responsive" x-show="usageBy === 'routes' && (usage?.routes || []).length">
+              <table class="table card-table table-sm table-vcenter">
+                <thead><tr><th>Route</th><th class="text-end">Requests</th><th class="text-end">Fell back</th><th>Answered by</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cache hit</th></tr></thead>
+                <tbody>
+                  <template x-for="row in usage?.routes || []" :key="row.name">
+                    <tr>
+                      <td class="align-top"><span class="mono" x-text="row.name"></span><div class="text-secondary small" x-show="row.name === '(none)'">Before routes were recorded, or a model named directly</div></td>
+                      <td class="align-top text-end"><span x-text="row.requests"></span><span class="text-danger" x-show="row.failures" x-text="' (' + row.failures + ' failed)'"></span></td>
+                      <td class="align-top text-end" :class="row.fallbacks && 'text-orange'" x-text="row.requests ? row.fallbacks + ' (' + Math.round(100 * row.fallbacks / row.requests) + '%)' : ''"></td>
+                      <td class="align-top">
+                        <div class="shares mb-1" x-show="(row.targets || []).length">
+                          <template x-for="t in targetShares(row)"><div :style="'width: ' + t.share + '%; background: var(' + t.color + ')'" :title="t.model"></div></template>
+                        </div>
+                        <template x-for="t in targetShares(row)">
+                          <div class="small"><span class="swatch me-1" :style="'background: var(' + t.color + ')'"></span><span class="text-secondary" x-text="'#' + t.position"></span> <span class="mono" x-text="t.model"></span> <span class="text-secondary" x-text="t.requests + ' · ' + Math.round(t.share) + '%'"></span></div>
+                        </template>
+                        <div class="small text-secondary" x-show="row.unplaced" x-text="row.unplaced + ' not answered by any target'"></div>
+                      </td>
+                      <td class="align-top text-end" x-text="count(row.tokens.input)"></td>
+                      <td class="align-top text-end" x-text="count(row.tokens.output)"></td>
+                      <td class="align-top text-end" x-text="cacheShare(row.tokens)"></td>
                     </tr>
                   </template>
                 </tbody>

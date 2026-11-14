@@ -27,6 +27,9 @@ struct Placement: Sendable, Equatable {
     var reportedInput: Int?
     /// The request it answered (``Placements/Ticket/request``).
     var request = 0
+    /// How long its prompt cache lives unread
+    /// (``ConversationContext/cacheLifetime(_:provider:)``).
+    var lifetime: Duration = .seconds(300)
 }
 
 /// The target that last answered each conversation.
@@ -78,12 +81,29 @@ final class Placements: Sendable {
         }
     }
 
+    /// The conversations of `session` and where each was last answered,
+    /// within ``retention``.
+    func placements(ofSession session: String) -> [(subagent: String?, model: String, placement: Placement)] {
+        let now = ContinuousClock.now
+        let prefix = session + "\u{0}"
+        return state.withLockedValue { state in
+            state.placements.compactMap { key, placement in
+                guard key.hasPrefix(prefix), placement.at + Self.retention > now else { return nil }
+                let parts = key.dropFirst(prefix.count).split(separator: "\u{0}", omittingEmptySubsequences: false)
+                guard parts.count == 2 else { return nil }
+                return (parts[0].isEmpty ? nil : String(parts[0]), String(parts[1]), placement)
+            }
+        }
+    }
+
     /// `reference` has begun answering `ticket`'s request, estimated at
-    /// `estimate` tokens.
-    func answering(_ reference: String, estimate: Int?, for ticket: Ticket) {
+    /// `estimate` tokens; its prompt cache lives `lifetime` unread.
+    func answering(_ reference: String, estimate: Int?, lifetime: Duration = .seconds(300), for ticket: Ticket) {
         let now = ContinuousClock.now
         state.withLockedValue { state in
-            state.placements[ticket.conversation] = Placement(reference: reference, at: now, estimate: estimate, request: ticket.request)
+            state.placements[ticket.conversation] = Placement(
+                reference: reference, at: now, estimate: estimate, request: ticket.request, lifetime: lifetime,
+            )
             guard state.placements.count > Self.limit else { return }
             state.placements = state.placements.filter { $0.value.at + Self.retention > now }
             if state.placements.count > Self.limit {

@@ -1,6 +1,9 @@
 const TOKEN_KEY = 'unladen.adminToken';
 const THEME_KEY = 'unladen.theme';
 const HIDDEN = /^<hidden (key-[0-9a-f]{8})>$/;
+// Each usage grouping's names and their color slot, kept while the panel
+// is open; outside the panel's state, as charts assign them as they draw.
+const SERIES_SLOTS = {};
 // The sections the forms edit. `listen` and `panel` are set in the file
 // alone and carried back as they are.
 const SECTIONS = ['accounts', 'models', 'clients', 'advanced'];
@@ -125,6 +128,13 @@ function panel() {
     activity: null,
     session: null,
     sessionRequests: [],
+    // The open session's summary, turns and placements.
+    sessionDetail: null,
+    // The conversation of the session the chart shows: `subagent\0model`.
+    conversation: null,
+    // What the mouse is over in a chart: {chart, i, x, y}.
+    hover: null,
+    usageMetric: 'tokens',
     expanded: {},
     usage: null,
     today: null,
@@ -135,6 +145,7 @@ function panel() {
     usageGroups: [
       { id: 'accounts', label: 'Account' }, { id: 'clients', label: 'Client' },
       { id: 'programs', label: 'Program' }, { id: 'models', label: 'Model' },
+      { id: 'routes', label: 'Route' },
     ],
 
     async start() {
@@ -180,6 +191,8 @@ function panel() {
       if (session !== (this.session?.id ?? null)) {
         this.session = session ? { id: session } : null;
         this.sessionRequests = [];
+        this.sessionDetail = null;
+        this.conversation = null;
         if (this.model && this.tab === 'activity') this.refreshActivity();
       }
     },
@@ -209,14 +222,263 @@ function panel() {
       if (result.status === 200) this.activity = result.json;
       if (this.session) {
         const requests = await this.api('GET', 'sessions/' + encodeURIComponent(this.session.id));
-        if (requests.status === 200) this.sessionRequests = requests.json.requests || [];
+        if (requests.status === 200) {
+          this.sessionRequests = requests.json.requests || [];
+          this.sessionDetail = requests.json;
+          const keys = this.conversations().map(c => c.key);
+          if (!keys.includes(this.conversation)) this.conversation = keys[0] ?? null;
+        }
       }
     },
 
     async openSession(s) {
       this.session = s;
       this.sessionRequests = [];
+      this.sessionDetail = null;
+      this.conversation = null;
       await this.refreshActivity();
+    },
+
+    closeSession() {
+      this.session = null;
+      this.sessionRequests = [];
+      this.sessionDetail = null;
+      this.conversation = null;
+    },
+
+    // The open session's conversations: its main one and its subagents',
+    // each per model name asked for; the busiest first.
+    conversations() {
+      const groups = new Map();
+      for (const turn of this.sessionDetail?.turns || []) {
+        const key = (turn.subagent || '') + '\u0000' + turn.model;
+        if (!groups.has(key)) groups.set(key, { key, subagent: turn.subagent || null, model: turn.model, turns: [] });
+        groups.get(key).turns.push(turn);
+      }
+      for (const g of groups.values()) {
+        g.placement = (this.sessionDetail?.placements || []).find(p => (p.subagent || null) === g.subagent && p.model === g.model.toLowerCase()) || null;
+      }
+      return [...groups.values()].sort((a, b) => b.turns.length - a.turns.length);
+    },
+    conversationLabel(c) { return (c.subagent ? 'subagent ' + this.short(c.subagent) : 'main') + ' · ' + c.model; },
+    shownConversation() { return this.conversations().find(c => c.key === this.conversation) || null; },
+    // Where the conversation stands: what answered it last, how much context
+    // it carries, and whether its prompt cache is likely still warm.
+    conversationState(c) {
+      const last = [...c.turns].reverse().find(t => t.served) || null;
+      const lastTokens = [...c.turns].reverse().find(t => t.tokens)?.tokens || null;
+      const now = this.activity?.now || Date.now();
+      let cache = null;
+      if (c.placement) {
+        const left = c.placement.cache_until - now;
+        cache = left > 0
+          ? { warm: true, text: 'Likely warm, about ' + this.minutes(left) + ' left' }
+          : { warm: false, text: 'Likely cold: last answered ' + this.ago(c.placement.at, now) };
+      }
+      return {
+        on: c.placement ? c.placement.reference : last?.served || '',
+        account: last?.account || '',
+        context: c.placement?.reported_input ?? lastTokens?.input ?? null,
+        cacheHit: lastTokens ? this.cacheShare(lastTokens) : '',
+        cache,
+        switches: this.switchesOf(c.turns).length,
+        failed: c.turns.filter(t => t.failed).length,
+      };
+    },
+    minutes(ms) { const m = Math.max(1, Math.round(ms / 60000)); return m < 60 ? m + ' min' : Math.floor(m / 60) + 'h ' + (m % 60) + 'min'; },
+    // The turns answered by another target than the turn before them.
+    switchesOf(turns) {
+      const at = [];
+      let before = null;
+      turns.forEach((t, i) => {
+        if (!t.served) return;
+        const who = t.served + '@' + (t.account || '');
+        if (before && before !== who) at.push(i);
+        before = who;
+      });
+      return at;
+    },
+
+    // Charts
+
+    // A stacked column chart as SVG. `columns` holds each column's values,
+    // one per layer, bottom first; `colors` each layer's color; `labels`
+    // the axis label under each column ('' for none); `markers` the
+    // columns to mark with a line, and `failed` those to mark at the base.
+    stackChart(chart, columns, colors, labels, markers = [], failed = []) {
+      const W = 760, H = 200, left = 46, right = 8, top = 14, bottom = 22;
+      const plotW = W - left - right, plotH = H - top - bottom;
+      const totals = columns.map(c => c.reduce((a, b) => a + b, 0));
+      const max = this.niceMax(Math.max(1, ...totals));
+      const n = Math.max(columns.length, 1);
+      const band = plotW / n;
+      const barW = Math.max(2, Math.min(band - 2, 28));
+      const y = v => top + plotH - (v / max) * plotH;
+      const parts = [];
+      for (const f of [0, 0.5, 1]) {
+        const v = max * f, yy = y(v).toFixed(1);
+        parts.push(`<line x1="${left}" x2="${W - right}" y1="${yy}" y2="${yy}" class="chart-grid"/>`);
+        parts.push(`<text x="${left - 6}" y="${yy}" dy="0.32em" text-anchor="end" class="chart-axis">${this.count(Math.round(v))}</text>`);
+      }
+      columns.forEach((values, i) => {
+        const x = left + i * band + (band - barW) / 2;
+        if (markers.includes(i)) {
+          const mx = (left + i * band).toFixed(1);
+          parts.push(`<line x1="${mx}" x2="${mx}" y1="${top - 6}" y2="${top + plotH}" class="chart-marker"/>`);
+        }
+        let base = 0;
+        const shown = values.map((v, layer) => [v, layer]).filter(([v]) => v > 0);
+        shown.forEach(([v, layer], k) => {
+          const y0 = y(base), y1 = y(base + v);
+          base += v;
+          const gap = k > 0 ? 2 : 0;
+          const h = Math.max(y0 - y1 - gap, 0.5);
+          const isTop = k === shown.length - 1;
+          parts.push(`<path d="${this.barPath(x, y1, barW, h, isTop ? Math.min(4, barW / 2, h) : 0)}" fill="var(${colors[layer]})"/>`);
+        });
+        if (failed.includes(i)) {
+          const cx = (x + barW / 2).toFixed(1);
+          parts.push(`<circle cx="${cx}" cy="${top + plotH - 5}" r="4" class="chart-failed"/>`);
+        }
+        if (labels[i]) {
+          parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="chart-axis">${labels[i]}</text>`);
+        }
+        parts.push(`<rect x="${(left + i * band).toFixed(1)}" y="${top}" width="${band.toFixed(1)}" height="${plotH}" fill="transparent" data-chart="${chart}" data-i="${i}"/>`);
+      });
+      parts.push(`<line x1="${left}" x2="${W - right}" y1="${top + plotH}" y2="${top + plotH}" class="chart-base"/>`);
+      return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">${parts.join('')}</svg>`;
+    },
+    // A bar whose top corners are rounded by `r`, anchored at its base.
+    barPath(x, y, w, h, r) {
+      if (!r) return `M${x},${y}h${w}v${h}h${-w}Z`;
+      return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+    },
+    niceMax(v) {
+      const p = Math.pow(10, Math.floor(Math.log10(v)));
+      for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
+      return 10 * p;
+    },
+    chartHover(e) {
+      const el = e.target.closest('[data-chart]');
+      if (!el) { this.hover = null; return; }
+      const box = e.currentTarget.getBoundingClientRect();
+      this.hover = { chart: el.dataset.chart, i: Number(el.dataset.i), x: e.clientX - box.left, y: e.clientY - box.top, width: box.width };
+    },
+    tooltipStyle() {
+      if (!this.hover) return '';
+      const flip = this.hover.x > this.hover.width / 2;
+      return `top: ${this.hover.y + 12}px; ` + (flip ? `right: ${this.hover.width - this.hover.x + 12}px` : `left: ${this.hover.x + 12}px`);
+    },
+
+    // The session chart: each turn's input, split into what was read from
+    // the prompt cache, written to it, and neither.
+    sessionLayers: [
+      { label: 'Read from cache', color: '--series-1' },
+      { label: 'Written to cache', color: '--series-3' },
+      { label: 'Not cached', color: '--series-2' },
+    ],
+    sessionChart(c) {
+      const columns = c.turns.map(t => {
+        const k = t.tokens;
+        if (!k) return [0, 0, 0];
+        return [k.cache_read, k.cache_write, Math.max(k.input - k.cache_read - k.cache_write, 0)];
+      });
+      const step = Math.max(1, Math.ceil(c.turns.length / 10));
+      const labels = c.turns.map((t, i) => (i % step === 0 ? String(i + 1) : ''));
+      const failed = c.turns.map((t, i) => (t.failed ? i : -1)).filter(i => i >= 0);
+      return this.stackChart('session', columns, this.sessionLayers.map(l => l.color), labels, this.switchesOf(c.turns), failed);
+    },
+    sessionTip(c, i) {
+      const t = c?.turns[i];
+      if (!t) return null;
+      const k = t.tokens;
+      const rows = k ? [
+        ['Read from cache', this.count(k.cache_read)],
+        ['Written to cache', this.count(k.cache_write)],
+        ['Not cached', this.count(Math.max(k.input - k.cache_read - k.cache_write, 0))],
+        ['Output', this.count(k.output)],
+      ] : [];
+      const notes = [];
+      if (this.switchesOf(c.turns).includes(i)) notes.push('Answered by another target than the turn before');
+      if (t.target > 1) notes.push('Fell back to target ' + t.target);
+      if (t.kept) notes.push('Kept on its target: long context');
+      if (t.failed) notes.push('Failed');
+      return { title: 'Turn ' + (i + 1) + ' · ' + this.clock(t.t), who: t.served ? this.who(t.served, t.account) : '', rows, notes };
+    },
+
+    // The usage chart: the shown grouping's largest five, the rest as one.
+    usageSeries() {
+      const trend = this.usage?.trend;
+      const lines = trend?.[this.usageBy] || [];
+      const metric = this.usageMetric;
+      const top = lines.slice(0, 5), rest = lines.slice(5);
+      const slots = this.slotsFor(this.usageBy, top.map(l => l.name));
+      const series = top.map(l => ({ name: l.name, values: l[metric], color: '--series-' + (slots[l.name] + 1) }));
+      if (rest.length) {
+        series.push({
+          name: rest.length === 1 ? rest[0].name : rest.length + ' others', other: true, color: '--series-other',
+          values: (trend.slots || []).map((_, i) => rest.reduce((sum, l) => sum + l[metric][i], 0)),
+        });
+      }
+      return series;
+    },
+    // A color slot for each of `names` that keeps the slot it had, so
+    // a name keeps its color as the period changes.
+    slotsFor(grouping, names) {
+      const held = SERIES_SLOTS[grouping] || {};
+      const kept = {};
+      for (const name of names) if (held[name] != null) kept[name] = held[name];
+      const used = new Set(Object.values(kept));
+      for (const name of names) {
+        if (kept[name] != null) continue;
+        let slot = 0;
+        while (used.has(slot)) slot++;
+        kept[name] = slot;
+        used.add(slot);
+      }
+      SERIES_SLOTS[grouping] = { ...held, ...kept };
+      for (const [name, slot] of Object.entries(held)) {
+        if (kept[name] == null && Object.values(kept).includes(slot)) delete SERIES_SLOTS[grouping][name];
+      }
+      return kept;
+    },
+    slotLabel(slot) {
+      if (this.usage?.days === 1) return String(slot).padStart(2, '0') + ':00';
+      const s = String(slot);
+      return Number(s.slice(4, 6)) + '/' + Number(s.slice(6, 8));
+    },
+    usageChart() {
+      const slots = this.usage?.trend?.slots || [];
+      const series = this.usageSeries();
+      const columns = slots.map((_, i) => series.map(s => s.values[i] || 0));
+      const step = this.usage?.days === 1 ? 3 : Math.max(1, Math.ceil(slots.length / 8));
+      const labels = slots.map((slot, i) => (i % step === 0 ? this.slotLabel(slot) : ''));
+      return this.stackChart('usage', columns, series.map(s => s.color), labels);
+    },
+    usageTip(i) {
+      const slot = this.usage?.trend?.slots?.[i];
+      if (slot == null) return null;
+      const series = this.usageSeries();
+      const value = v => (this.usageMetric === 'tokens' ? this.count(v) : String(v));
+      const rows = series.filter(s => s.values[i]).map(s => [s.name, value(s.values[i]), s.color]).reverse();
+      const total = series.reduce((sum, s) => sum + (s.values[i] || 0), 0);
+      return {
+        title: this.usage.days === 1 ? this.slotLabel(slot) + '–' + String((slot + 1) % 24).padStart(2, '0') + ':00' : this.slotLabel(slot),
+        rows, total: value(total),
+      };
+    },
+    // A row's share of the period's tokens, in percent.
+    shareOf(row) {
+      const t = this.usage?.total?.tokens;
+      const all = t ? t.input + t.output : 0;
+      return all ? (100 * (row.tokens.input + row.tokens.output)) / all : 0;
+    },
+    // A route's targets' shares of its requests, with their colors by place.
+    targetShares(row) {
+      const total = (row.targets || []).reduce((sum, t) => sum + t.requests, 0);
+      return (row.targets || []).map(t => ({
+        ...t, share: total ? (100 * t.requests) / total : 0, color: '--series-' + Math.min(t.position, 5),
+      }));
     },
 
     shownRequests() {
