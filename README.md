@@ -9,7 +9,7 @@ Its routing and account design draws on ideas from [claude-code-router](https://
 ## The server
 
 ```sh
-swift build -c release --product unladen --static-swift-stdlib
+swift build -c release --product unladen --static-swift-stdlib -Xswiftc -gnone -Xcc -g0 -Xlinker -s
 .build/release/unladen --config config.jsonc
 ```
 

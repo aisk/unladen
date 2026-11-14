@@ -4,7 +4,7 @@ Git 提交信息必须以直接书写的 gitmoji emoji 开头（例如 `🎉 Ini
 
 # 依赖
 
-Linux 上只依赖 FoundationEssentials，不引入完整的 Foundation：完整 Foundation 会把 ICU 静态链接进二进制（约 44 MiB），而项目不需要国际化。需要 Foundation 类型时写成 `#if canImport(FoundationEssentials) import FoundationEssentials #else import Foundation #endif`；新增依赖前确认它在 Linux 上不会 import 完整 Foundation（Hummingbird 以 `traits: []` 引入就是为此）。改动依赖后，用 `nm` 检查 release 二进制里没有 `icudt` 符号。
+Linux 上只依赖 FoundationEssentials，不引入完整的 Foundation：完整 Foundation 会把 ICU 静态链接进二进制（约 44 MiB），而项目不需要国际化。需要 Foundation 类型时写成 `#if canImport(FoundationEssentials) import FoundationEssentials #else import Foundation #endif`；新增依赖前确认它在 Linux 上不会 import 完整 Foundation（Hummingbird 以 `traits: []` 引入就是为此）。改动依赖后，检查 release 二进制里没有 ICU 数据：它链接时去掉了符号表，`nm` 看不到符号，改用 `strings .build/release/unladen | grep -c icudt`，结果应为 0。
 
 # 控制面板
 

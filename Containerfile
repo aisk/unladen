@@ -11,8 +11,9 @@ WORKDIR /src
 COPY Package.swift Package.resolved ./
 RUN swift package resolve
 COPY . .
-RUN swift build -c release --product unladen --static-swift-stdlib \
- && strip .build/release/unladen
+# No debug information is made (-gnone, -g0), and the linker leaves out the
+# symbol table (-s).
+RUN swift build -c release --product unladen --static-swift-stdlib -Xswiftc -gnone -Xcc -g0 -Xlinker -s
 
 FROM ubuntu:26.04
 ARG VERSION=dev
