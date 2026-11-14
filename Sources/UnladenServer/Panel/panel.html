@@ -919,7 +919,7 @@
                               <span class="form-selectgroup-label"><i class="ti ti-corner-down-right me-1"></i>Another route</span>
                             </label>
                           </div>
-                          <div class="form-hint mt-0 mb-2" x-show="!aliasNames().length">Another route can be chosen once there is one without a star: a name with a star passes on the name the client asked for, and cannot stand for another.</div>
+                          <div class="form-hint mt-0 mb-2" x-show="!aliasNames().length">Another route can be chosen once there is one without a star besides this one: a name with a star passes on the name the client asked for, and cannot stand for another.</div>
                           <div x-show="target.kind === 'provider'">
                             <select class="form-select mb-2" x-model="target.provider">
                               <template x-for="id in targetProviders()" :key="id">

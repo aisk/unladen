@@ -206,8 +206,8 @@ const TRANSLATIONS = {
       'Give the length in tokens, such as 64000 or 64k, or off.': '请填写 token 数，如 64000 或 64k，或者 off。',
       'A provider': '服务商',
       'Another route': '另一条路由',
-      'Another route can be chosen once there is one without a star: a name with a star passes on the name the client asked for, and cannot stand for another.':
-        '有了不带星号的路由之后才能选择另一条路由：带星号的名字会把客户端请求的名字原样转过去，不能被别的路由引用。',
+      'Another route can be chosen once there is one without a star besides this one: a name with a star passes on the name the client asked for, and cannot stand for another.':
+        '有了除这条以外、不带星号的路由之后，才能选择另一条路由：带星号的名字会把客户端请求的名字原样转过去，不能被别的路由引用。',
       'Model the provider is asked for': '向服务商请求的模型',
       'Leave it empty to pass on the name the client asked for.': '留空则把客户端请求的名字原样转过去。',
       'Asking for this name is the same as asking for that one.': '请求这个名字等同于请求那个名字。',
