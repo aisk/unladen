@@ -35,6 +35,7 @@ extension Gateway {
     ) -> Response {
         let fields: HTTPFields = [.contentType: "text/event-stream", .cacheControl: "no-cache"]
         let every = heldStreams.commentEvery
+        tracker.heldHeaders()
         return Response(status: .ok, headers: fields, body: ResponseBody { writer in
             defer { monitor.uninstall() }
             var result: Result<AttemptOutcome, any Error>?
@@ -73,7 +74,6 @@ extension Gateway {
                 try await self.forward(
                     served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
                     ticket: ticket, monitor: monitor, writer: &writer, log: log, tracker: tracker,
-                    note: "headers sent before the first content",
                 )
             }
         })
@@ -120,7 +120,7 @@ extension Gateway {
         // An upstream that breaks off mid-stream cools down; a client that
         // leaves says nothing about it.
         if summary.failure != nil, !summary.disconnected {
-            health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
+            health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "stream broke off")
         }
         for warning in summary.warnings { log.emit("warning: \(warning)") }
         var note = note
@@ -132,7 +132,8 @@ extension Gateway {
         let tokens = TokenCounts(summary.usage)
         tracker.finish(
             status: summary.disconnected ? 499 : 200, note: note, tokens: tokens,
-            warnings: warnings.count + summary.warnings.count, failed: summary.failure != nil && !summary.disconnected,
+            warnings: served.requestWarnings, replyWarnings: served.responseWarnings + summary.warnings,
+            failed: summary.failure != nil && !summary.disconnected,
         )
         if let ticket { placements.answered(ticket, input: tokens?.input) }
         if !summary.disconnected, !summary.closedAfterEnd { try await writer.finish(nil) }
@@ -140,14 +141,14 @@ extension Gateway {
 
     /// What the record says of a failed request: its note and its
     /// warnings count.
-    static func note(_ failure: AttemptFailure, decodeWarnings: [WireWarning]) -> (String?, Int) {
+    static func note(_ failure: AttemptFailure, decodeWarnings: [WireWarning]) -> (String?, [WireWarning]) {
         switch failure {
         case .upstream(_, let error):
-            ("upstream \(error.status.code): \(redactingSecrets(ErrorShape.upstreamMessage(error.body)))", decodeWarnings.count)
+            ("upstream \(error.status.code): \(redactingSecrets(ErrorShape.upstreamMessage(error.body)))", decodeWarnings)
         case .gateway(_, let message, _):
-            (message, decodeWarnings.count)
+            (message, decodeWarnings)
         case .strict(let warnings):
-            (nil, decodeWarnings.count + warnings.count)
+            (nil, decodeWarnings + warnings)
         }
     }
 

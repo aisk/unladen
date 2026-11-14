@@ -119,6 +119,8 @@ struct HealthSnapshot: Sendable {
     var now: ContinuousClock.Instant
     var cooldowns: [HealthScope: ContinuousClock.Instant]
     var disabled: Set<HealthScope> = []
+    /// What started each cooldown (`429`, `unreachable`…).
+    var reasons: [HealthScope: String] = [:]
 
     func isCooling(_ scope: HealthScope) -> Bool {
         guard let until = cooldowns[scope] else { return false }
@@ -127,6 +129,14 @@ struct HealthSnapshot: Sendable {
 
     func isCooling(_ candidate: Candidate) -> Bool {
         candidate.scopes.contains { isCooling($0) }
+    }
+
+    /// The longest cooldown keeping `candidate` back: until when, and why.
+    func cooldown(of candidate: Candidate) -> (until: ContinuousClock.Instant, reason: String)? {
+        candidate.scopes.compactMap { scope -> (ContinuousClock.Instant, String)? in
+            guard let until = cooldowns[scope], until > now else { return nil }
+            return (until, reasons[scope] ?? "")
+        }.max { $0.0 < $1.0 }
     }
 
     /// A key refused again and again: not tried until the configuration
@@ -143,6 +153,8 @@ final class HealthStore: Sendable {
         var until: ContinuousClock.Instant
         /// Failures since the last success, for the doubling.
         var failures: Int
+        /// What the last failure was.
+        var reason = ""
     }
 
     struct State: Sendable {
@@ -169,18 +181,19 @@ final class HealthStore: Sendable {
     func snapshot() -> HealthSnapshot {
         let now = ContinuousClock.now
         return state.withLockedValue { state in
-            HealthSnapshot(
-                now: now,
-                cooldowns: state.entries.filter { $0.value.until > now }.mapValues(\.until),
-                disabled: state.disabled,
+            let cooling = state.entries.filter { $0.value.until > now }
+            return HealthSnapshot(
+                now: now, cooldowns: cooling.mapValues(\.until), disabled: state.disabled,
+                reasons: cooling.mapValues(\.reason),
             )
         }
     }
 
     /// Cools `scope`: `base` for a first failure, doubled for each one
     /// after it (up to ``maxCooldown``, or `base` when longer); a
-    /// `retryAfter` the upstream sent replaces the doubling.
-    func recordFailure(_ scope: HealthScope, base: Duration, retryAfter: Duration? = nil) {
+    /// `retryAfter` the upstream sent replaces the doubling. `reason` says
+    /// what failed, for the panel.
+    func recordFailure(_ scope: HealthScope, base: Duration, retryAfter: Duration? = nil, reason: String = "") {
         let now = ContinuousClock.now
         state.withLockedValue { state in
             var entry = state.entries[scope] ?? Entry(until: now, failures: 0)
@@ -195,6 +208,7 @@ final class HealthStore: Sendable {
                 cooldown = min(base * (1 << min(entry.failures - 1, 16)), cap)
             }
             entry.until = max(entry.until, now + cooldown)
+            entry.reason = reason
             state.entries[scope] = entry
         }
     }
@@ -265,6 +279,8 @@ struct CandidatePlanner: Sendable {
     struct Plan: Sendable, Equatable {
         /// The model references to try, in order, without repeats.
         var references: [String]
+        /// The route's name; `nil` for a reference passed through.
+        var route: String?
         /// The route's ``Route/fallbackMaxContext``; `nil` for a reference
         /// passed through.
         var fallbackMaxContext: Int?
@@ -284,7 +300,7 @@ struct CandidatePlanner: Sendable {
                 let reference = target.reference(for: name)
                 if !references.contains(reference) { references.append(reference) }
             }
-            return Plan(references: references, fallbackMaxContext: route.fallbackMaxContext)
+            return Plan(references: references, route: route.name, fallbackMaxContext: route.fallbackMaxContext)
         }
         if let route = routes.named(name) {
             guard access.mayUse(name) else { throw Self.notAllowed(clientModel) }

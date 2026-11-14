@@ -236,6 +236,55 @@ private let session: HTTPFields = [HTTPField.Name("x-session-id")!: "s-1"]
         #expect(placements.placement(for: "c")?.reportedInput == 5200)
     }
 
+    @Test func theRecordSaysWhyATargetWasPassedOver() async throws {
+        let upstream = primaryRateLimited()
+        let gateway = fallbackGateway(upstream)
+        try await makeApp(gateway).test(.router) { client in
+            // Tried and refused: an attempt.
+            var response = try await client.post("/v1/chat/completions", chat("Go on"))
+            #expect(response.status == .ok)
+            // Cooling down now: passed over without a try.
+            response = try await client.post("/v1/chat/completions", chat("Go on, please"))
+            #expect(response.status == .ok)
+            // Long: kept on the primary, the secondary left out.
+            response = try await client.post("/v1/chat/completions", chat(long), headers: [HTTPField.Name("x-session-id")!: "s-9"])
+            #expect(response.status == .tooManyRequests)
+        }
+        let records = gateway.activity.snapshot().recent.sorted { $0.id < $1.id }
+        try #require(records.count == 3)
+        #expect(records[0].route == "m")
+        #expect(records[0].targets == [primary, secondary])
+        #expect(records[0].target == 2)
+        #expect(records[0].attempts.map(\.outcome) == ["429", "ok"])
+        #expect(records[0].passedOver.isEmpty)
+
+        #expect(records[1].attempts.map(\.model) == [secondary])
+        let passed = try #require(records[1].passedOver.first)
+        #expect(passed.reference == primary && passed.why == "cooling" && passed.last == "429")
+        #expect((passed.seconds ?? 0) > 0)
+
+        #expect(records[2].kept?.reference == primary)
+        // The primary was tried; the secondary, left out, came after it.
+        #expect(records[2].passedOver.map(\.why) == ["kept"])
+        let json = AdminActivity.json(records[2])
+        #expect(json["kept"]?["limit"]?.numberValue?.int == 1000)
+        #expect(json["passed_over"]?[0]?["why"]?.stringValue == "kept")
+    }
+
+    @Test func changesAreGroupedByKindAndPlace() {
+        let changes = RequestRecord.Change.summary(
+            request: [
+                WireWarning(.droppedField, "reasoning_content cannot be carried", path: "messages[1].reasoning_content"),
+                WireWarning(.droppedField, "reasoning_content cannot be carried", path: "messages[3].reasoning_content"),
+                WireWarning(.adjusted, "clamped", path: "max_tokens"),
+            ],
+            reply: [WireWarning(.droppedField, "x", path: "choices[0].logprobs")],
+        )
+        #expect(changes.map(\.path) == ["messages[*].reasoning_content", "max_tokens", "choices[*].logprobs"])
+        #expect(changes.map(\.count) == [2, 1, 1])
+        #expect(changes.map(\.side) == ["request", "request", "reply"])
+    }
+
     @Test func contextEstimates() {
         #expect(ConversationContext.estimatedTokens("abcdefgh") == 2)
         #expect(ConversationContext.estimatedTokens("你好世界") == 4)

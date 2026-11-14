@@ -184,7 +184,7 @@ private func chatStream(_ chunks: [String]) -> HTTPTransportResponse {
             RequestRecord(started: 0, origin: RequestOrigin(program: "Codex"), clientProtocol: "chat", model: "x", stream: false),
             log: RequestLog { line in lines.withLockedValue { $0.append(line) } },
         )
-        tracker.finish(status: 400, note: "bad", warnings: 2)
+        tracker.finish(status: 400, note: "bad", warnings: [WireWarning(.droppedField, "a"), WireWarning(.droppedField, "b")])
         tracker.finish(status: 500)
         let logged = lines.withLockedValue { $0 }
         #expect(logged.count == 1)

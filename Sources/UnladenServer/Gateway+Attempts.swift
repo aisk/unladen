@@ -121,7 +121,7 @@ extension Gateway {
                     // Not signed in stays so until someone signs in; a
                     // failed refresh may pass.
                     if !error.needsSignIn, let scope = candidate.keyScope {
-                        health.recordFailure(scope, base: HealthStore.failureCooldown)
+                        health.recordFailure(scope, base: HealthStore.failureCooldown, reason: "token refresh failed")
                     }
                     last = .gateway(status: error.needsSignIn ? 401 : 502, message: error.message, candidate: candidate)
                     outcome = error.needsSignIn ? "not signed in" : "token refresh failed"
@@ -163,7 +163,7 @@ extension Gateway {
                 case (.events, .ready(let events)?):
                     body = .events(events)
                 case (.events, .failed(let message)?):
-                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
+                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "failed before any content")
                     last = .gateway(status: 502, message: "\(candidate.reference) failed before any content: \(message)", candidate: candidate)
                     outcome = "failed before any content: \(message)"
                     continue
@@ -197,11 +197,11 @@ extension Gateway {
                     recordFailure(status: status, retryAfter: http.retryAfter, of: candidate, log: log)
                     last = .upstream(candidate, http)
                 case .decoding(let decoding, _):
-                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
+                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "reply cannot be decoded")
                     last = .gateway(status: 502, message: "\(candidate.reference) sent a reply that cannot be decoded: \(decoding)", candidate: candidate)
                     outcome = "reply cannot be decoded"
                 case .stream(let streamError):
-                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
+                    health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "failed before any content")
                     last = .gateway(status: 502, message: "\(candidate.reference) failed: \(streamError.message)", candidate: candidate)
                     outcome = "error: \(streamError.message)"
                 case .invalidBaseURL(let url):
@@ -209,7 +209,7 @@ extension Gateway {
                     outcome = "invalid base URL"
                 }
             } catch let error as HTTPResponseBodyTooLargeError {
-                health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown)
+                health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "reply too large")
                 last = .gateway(
                     status: 502, message: "\(candidate.reference) sent a reply larger than \(error.maxBytes) bytes", candidate: candidate,
                 )
@@ -220,7 +220,7 @@ extension Gateway {
                     throw CancellationError()
                 }
                 outcome = "unreachable"
-                health.recordFailure(candidate.endpointScope, base: HealthStore.failureCooldown)
+                health.recordFailure(candidate.endpointScope, base: HealthStore.failureCooldown, reason: "unreachable")
                 unreachable.insert(candidate.endpointID)
                 last = .gateway(status: 502, message: "\(candidate.reference) is unreachable: \(error)", candidate: candidate)
             }
@@ -243,6 +243,7 @@ extension Gateway {
     /// (refused, out of credit, rate limited) or the model at its address.
     func recordFailure(status: Int, retryAfter: String?, of candidate: Candidate, log: RequestLog) {
         let key = candidate.keyScope ?? candidate.modelScope
+        let reason = "\(status)"
         switch status {
         case 401:
             if let scope = candidate.keyScope, health.recordUnauthorized(scope) {
@@ -251,13 +252,13 @@ extension Gateway {
                         + "refusals in a row (401); reload the configuration to use it again",
                 )
             }
-            health.recordFailure(key, base: HealthStore.maxCooldown)
-        case 402: health.recordFailure(key, base: HealthStore.paymentCooldown)
-        case 403: health.recordFailure(key, base: HealthStore.maxCooldown)
-        case 429: health.recordFailure(key, base: HealthStore.rateLimitCooldown, retryAfter: HealthStore.retryAfter(retryAfter))
-        case 404: health.recordFailure(candidate.modelScope, base: HealthStore.maxCooldown)
+            health.recordFailure(key, base: HealthStore.maxCooldown, reason: reason)
+        case 402: health.recordFailure(key, base: HealthStore.paymentCooldown, reason: reason)
+        case 403: health.recordFailure(key, base: HealthStore.maxCooldown, reason: reason)
+        case 429: health.recordFailure(key, base: HealthStore.rateLimitCooldown, retryAfter: HealthStore.retryAfter(retryAfter), reason: reason)
+        case 404: health.recordFailure(candidate.modelScope, base: HealthStore.maxCooldown, reason: reason)
         default:
-            health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, retryAfter: HealthStore.retryAfter(retryAfter))
+            health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, retryAfter: HealthStore.retryAfter(retryAfter), reason: reason)
         }
     }
 

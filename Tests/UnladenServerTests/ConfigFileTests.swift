@@ -236,7 +236,7 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         #expect(routes.named("long")?.fallbackMaxContext == 200_000)
         let planner = CandidatePlanner(configuration: loaded.gateway)
         #expect(try planner.plan(for: "claude-sonnet-4-5") == CandidatePlanner.Plan(
-            references: ["anthropic/claude-sonnet-4-5", "deepseek/deepseek-chat", "mistral/mistral-large-latest"],
+            references: ["anthropic/claude-sonnet-4-5", "deepseek/deepseek-chat", "mistral/mistral-large-latest"], route: "claude-*",
         ))
         // A reference passed through has one target and no limit.
         #expect(try planner.plan(for: "openai/gpt-4o") == CandidatePlanner.Plan(references: ["openai/gpt-4o"]))

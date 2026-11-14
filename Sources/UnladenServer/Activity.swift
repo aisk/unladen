@@ -154,6 +154,73 @@ struct RequestRecord: Sendable {
         var milliseconds: Int
     }
 
+    /// A candidate that came before the one that answered (or before none
+    /// answering) and was not tried: why.
+    struct PassedOver: Sendable, Hashable {
+        /// Its place in the request's candidates, in route order.
+        var position: Int
+        var reference: String
+        var account: String
+        /// `cooling`, `disabled` (refused again and again) or `kept` (the
+        /// conversation stays on another target).
+        var why: String
+        /// For `cooling`: how long it had left, and what started it.
+        var seconds: Int?
+        var last: String?
+    }
+
+    /// Warnings of one kind at one place, the indices left out
+    /// (`messages[*].reasoning_content`): what the gateway changed.
+    struct Change: Sendable, Hashable {
+        /// ``WireWarning/Code``.
+        var code: String
+        var path: String
+        /// `request` or `reply`.
+        var side: String
+        var count: Int
+        /// The first one's message.
+        var message: String
+
+        static let limit = 30
+
+        /// `request` and `reply` warnings, grouped.
+        static func summary(request: [WireWarning], reply: [WireWarning] = []) -> [Change] {
+            var changes: [Change] = []
+            var index: [String: Int] = [:]
+            for (side, warnings) in [("request", request), ("reply", reply)] {
+                for warning in warnings {
+                    let path = pattern(warning.path)
+                    let key = [side, warning.code.rawValue, path].joined(separator: "\u{0}")
+                    if let at = index[key] {
+                        changes[at].count += 1
+                    } else if changes.count < limit {
+                        index[key] = changes.count
+                        changes.append(Change(code: warning.code.rawValue, path: path, side: side, count: 1, message: warning.message))
+                    }
+                }
+            }
+            return changes
+        }
+
+        /// `messages[3].content[0]` → `messages[*].content[*]`.
+        static func pattern(_ path: String) -> String {
+            var result = ""
+            var inIndex = false
+            for character in path {
+                if character == "[" {
+                    inIndex = true
+                    result += "[*"
+                } else if character == "]" {
+                    inIndex = false
+                    result += "]"
+                } else if !inIndex {
+                    result.append(character)
+                }
+            }
+            return result
+        }
+    }
+
     enum Phase: String, Sendable {
         /// Waiting for an upstream's first content.
         case waiting
@@ -172,6 +239,22 @@ struct RequestRecord: Sendable {
     var stream = false
     var phase = Phase.waiting
     var attempts: [Attempt] = []
+    /// The route the model name matched; `nil` for a reference passed
+    /// through.
+    var route: String?
+    /// The models it was to try, in order.
+    var targets: [String] = []
+    /// The conversation stayed on one target, past `fallback_max_context`.
+    var kept: KeptPlace?
+    /// Candidates held back, before the one that answered.
+    var passedOver: [PassedOver] = []
+    /// The answering candidate's place among the request's candidates.
+    var servedPosition: Int?
+    /// The response headers went out before any content, and comments
+    /// kept the client waiting.
+    var heldHeaders = false
+    /// What the gateway changed of the request or its reply.
+    var changes: [Change] = []
     /// The candidate that answered.
     var provider: String?
     var account: String?
@@ -204,12 +287,19 @@ struct RequestRecord: Sendable {
         if let value = provider { object["provider"] = .string(value) }
         if let value = account { object["account"] = .string(value) }
         if let value = served { object["served"] = .string(value) }
+        if let value = route { object["route"] = .string(value) }
+        if let target { object["target"] = .number(JSONNumber(target)) }
         if let value = firstContentMilliseconds { object["first_content_ms"] = .number(JSONNumber(value)) }
         if let value = milliseconds { object["ms"] = .number(JSONNumber(value)) }
         if warnings > 0 { object["warnings"] = .number(JSONNumber(warnings)) }
         if let value = note { object["note"] = .string(String(value.prefix(300))) }
         if let tokens { object["tokens"] = tokens.json }
         return .object(object)
+    }
+
+    /// Which of ``targets`` answered, from 1.
+    var target: Int? {
+        served.flatMap { targets.firstIndex(of: $0) }.map { $0 + 1 }
     }
 
     /// The request's line in the gateway's log: protocol, model → what
@@ -250,6 +340,11 @@ struct RequestRecord: Sendable {
         provider = value["provider"]?.stringValue
         account = value["account"]?.stringValue
         served = value["served"]?.stringValue
+        route = value["route"]?.stringValue
+        // The served model stands in for the list at its place.
+        if let served, let target = value["target"]?.numberValue?.int, target >= 1 {
+            targets = Array(repeating: "", count: target - 1) + [served]
+        }
         status = value["status"]?.numberValue?.int
         note = value["note"]?.stringValue
         failed = value["failed"]?.boolValue ?? ((status ?? 0) >= 400)
@@ -580,6 +675,8 @@ final class RequestTracker: Sendable {
     let id: UInt64
     let start: ContinuousClock.Instant
     let log: RequestLog
+    /// Each candidate's place, by ``positionKey(_:)``.
+    private let positions = NIOLockedValueBox<[String: Int]>([:])
 
     fileprivate init(activity: Activity, id: UInt64, start: ContinuousClock.Instant, log: RequestLog) {
         self.activity = activity
@@ -605,10 +702,33 @@ final class RequestTracker: Sendable {
         activity.update(id) { $0.attempts.append(attempt) }
     }
 
+    /// What the request was routed to: the route, its models in order,
+    /// the candidates held back and why, and a conversation kept on one
+    /// target. `positions` gives each candidate's place, by
+    /// ``positionKey(_:)``.
+    func routed(route: String?, targets: [String], kept: KeptPlace?, passedOver: [RequestRecord.PassedOver], positions: [String: Int]) {
+        activity.update(id) { record in
+            record.route = route
+            record.targets = targets
+            record.kept = kept
+            record.passedOver = passedOver
+        }
+        self.positions.withLockedValue { $0 = positions }
+    }
+
+    static func positionKey(_ candidate: Candidate) -> String { candidate.reference + "\u{0}" + candidate.keyName }
+
+    /// The response headers went out before any content.
+    func heldHeaders() {
+        activity.update(id) { $0.heldHeaders = true }
+    }
+
     /// `candidate` answered; a stream goes on.
     func serving(_ candidate: Candidate, streaming: Bool) {
         let elapsed = elapsedMilliseconds
+        let position = positions.withLockedValue { $0[Self.positionKey(candidate)] }
         activity.update(id) { record in
+            record.servedPosition = position
             record.provider = candidate.target.provider
             record.account = candidate.keyName.isEmpty ? nil : candidate.keyName
             record.served = candidate.reference
@@ -618,16 +738,29 @@ final class RequestTracker: Sendable {
     }
 
     /// The request ended: its record is kept and its line logged.
-    /// `failed` defaults to an error status.
-    func finish(status: Int, note: String? = nil, tokens: TokenCounts? = nil, warnings: Int = 0, failed: Bool? = nil) {
+    /// `failed` defaults to an error status. `warnings` and
+    /// `replyWarnings` are what the request and its reply lost or had
+    /// changed on the way.
+    func finish(
+        status: Int, note: String? = nil, tokens: TokenCounts? = nil, warnings: [WireWarning] = [],
+        replyWarnings: [WireWarning] = [], failed: Bool? = nil,
+    ) {
         let elapsed = elapsedMilliseconds
         let record = activity.end(id) { record in
             record.status = status
             record.failed = failed ?? (status >= 400)
             record.note = note
             record.tokens = tokens
-            record.warnings = warnings
+            record.warnings = warnings.count + replyWarnings.count
+            record.changes = RequestRecord.Change.summary(request: warnings, reply: replyWarnings)
             record.milliseconds = elapsed
+            // Held back only before the one that answered, and not tried
+            // after all.
+            let tried = Set(record.attempts.map { $0.model + "\u{0}" + $0.account })
+            record.passedOver.removeAll { passed in
+                tried.contains(passed.reference + "\u{0}" + passed.account)
+                    || record.servedPosition.map { passed.position > $0 } ?? false
+            }
             // A request no account served is counted against the last one tried.
             if record.provider == nil, let last = record.attempts.last {
                 record.provider = last.provider

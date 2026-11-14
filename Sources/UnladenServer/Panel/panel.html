@@ -512,34 +512,68 @@
                 <div class="card-actions" x-show="session"><button class="btn btn-sm" @click="session = null; sessionRequests = []">Show all recent</button></div>
               </div>
               <div class="table-responsive" x-show="shownRequests().length">
-              <table class="table card-table table-sm">
-                <thead><tr><th>Time</th><th>Client</th><th>Model</th><th>Served by</th><th>Status</th><th class="text-end">First content</th><th class="text-end">Total</th><th class="text-end">Input</th><th class="text-end">Output</th><th class="text-end">Cached</th></tr></thead>
+              <table class="table card-table table-sm table-vcenter">
+                <thead><tr><th>Time</th><th>Client</th><th>Request</th><th>Status</th><th class="text-end">Duration</th><th class="text-end">Tokens</th></tr></thead>
                 <tbody>
                   <template x-for="r in shownRequests()" :key="r.id">
                     <tr>
-                      <td>
+                      <td class="align-top text-nowrap">
                         <a href="#" class="text-reset" @click.prevent="expanded[r.id] = !expanded[r.id]"><i class="ti me-1 text-secondary" :class="expanded[r.id] ? 'ti-chevron-down' : 'ti-chevron-right'"></i><span x-text="clock(r.t)"></span></a>
-                        <div x-show="expanded[r.id]" class="small text-secondary mt-1">
-                          <div x-show="r.session" class="mono" x-text="'session ' + r.session + (r.subagent ? ', subagent ' + r.subagent : '')"></div>
-                          <div x-text="r.protocol + (r.stream ? ', streamed' : '')"></div>
-                          <template x-for="a in r.attempt_list || []">
-                            <div class="mono" x-text="a.provider + '/' + a.account + ' ' + a.model + ': ' + a.outcome + ' (' + duration(a.ms) + ')'"></div>
+                      </td>
+                      <td class="align-top"><span x-text="r.client || r.program"></span> <span class="text-secondary" x-show="r.client" x-text="'(' + r.program + ')'"></span></td>
+                      <td class="align-top">
+                        <div class="d-flex flex-wrap align-items-center gap-1">
+                          <span class="mono" x-text="r.model"></span>
+                          <template x-if="r.served && r.served !== r.model">
+                            <span><i class="ti ti-arrow-right text-secondary mx-1"></i><span class="mono" x-text="who(r.served, r.account)"></span></span>
                           </template>
-                          <div x-show="r.note" class="text-danger" x-text="r.note"></div>
+                          <span class="badge" :class="r.target > 1 ? 'bg-orange-lt' : 'bg-secondary-lt'" x-show="targetBadge(r)" x-text="targetBadge(r)"></span>
+                          <a href="#" class="badge bg-azure-lt text-decoration-none" x-show="changeCount(r)" @click.prevent="expanded[r.id] = !expanded[r.id]" x-text="changeCount(r) + (changeCount(r) === 1 ? ' change' : ' changes')"></a>
+                          <span class="badge bg-secondary-lt" x-show="heldHeaders(r)" title="No content within 3 s: the headers went out first, and comments kept the client waiting.">Headers sent early</span>
+                        </div>
+                        <template x-for="line in routeStory(r)">
+                          <div class="small" :class="storyIsTrouble(r) ? 'text-danger' : 'text-orange'" x-text="line"></div>
+                        </template>
+                        <div class="small text-danger" x-show="noteOf(r) && storyIsTrouble(r)" x-text="noteOf(r)"></div>
+                        <div x-show="expanded[r.id]" class="small mt-2">
+                          <div class="text-secondary" x-text="r.protocol + (r.stream ? ', streamed' : '')"></div>
+                          <div class="text-secondary mono" x-show="r.session" x-text="'session ' + r.session + (r.subagent ? ', subagent ' + r.subagent : '')"></div>
+                          <div class="text-secondary" x-show="r.route" x-text="'Route ' + r.route + ': ' + (r.targets || []).join(' → ')"></div>
+                          <div class="mt-1" x-show="(r.attempt_list || []).length">
+                            <div class="fw-bold">Tried</div>
+                            <template x-for="a in r.attempt_list || []">
+                              <div><span class="mono" x-text="who(a.model, a.account)"></span> <span :class="a.outcome === 'ok' ? 'text-green' : 'text-danger'" x-text="a.outcome"></span> <span class="text-secondary" x-text="duration(a.ms)"></span></div>
+                            </template>
+                          </div>
+                          <div class="text-secondary mt-1" x-show="noteOf(r) && !storyIsTrouble(r)" x-text="noteOf(r)"></div>
+                          <div class="mt-1" x-show="(r.changes || []).length">
+                            <div class="fw-bold">What the gateway changed</div>
+                            <template x-for="c in r.changes || []">
+                              <div class="mb-1">
+                                <span x-text="changeLabel(c.code)"></span>
+                                <span class="text-secondary" x-text="c.side === 'reply' ? '(reply)' : '(request)'"></span>
+                                <span class="mono" x-show="c.path" x-text="c.path"></span>
+                                <span class="text-secondary" x-show="c.count > 1" x-text="'×' + c.count"></span>
+                                <div class="text-secondary mono" x-text="c.message"></div>
+                              </div>
+                            </template>
+                          </div>
+                          <div class="text-secondary mt-1" x-show="r.warnings && !(r.changes || []).length">The details of these changes are kept only for requests since the gateway last started.</div>
                         </div>
                       </td>
-                      <td><span x-text="r.client || r.program"></span> <span class="text-secondary" x-show="r.client" x-text="'(' + r.program + ')'"></span></td>
-                      <td class="mono" x-text="r.model"></td>
-                      <td class="mono">
-                        <span x-text="accountOf(r)"></span>
-                        <span class="badge bg-orange-lt" x-show="r.attempts > 1" x-text="r.attempts + ' tries'"></span>
+                      <td class="align-top"><span class="badge" :class="r.failed || r.status >= 400 ? 'bg-red-lt' : 'bg-green-lt'" x-text="r.phase && r.phase !== 'done' ? r.phase : r.status"></span></td>
+                      <td class="align-top text-end text-nowrap">
+                        <div x-text="r.ms == null ? '' : duration(r.ms)"></div>
+                        <div class="small text-secondary" x-show="r.first_content_ms != null" x-text="'first ' + duration(r.first_content_ms)"></div>
                       </td>
-                      <td><span class="badge" :class="r.failed || r.status >= 400 ? 'bg-red-lt' : 'bg-green-lt'" x-text="r.phase && r.phase !== 'done' ? r.phase : r.status"></span></td>
-                      <td class="text-end" x-text="r.first_content_ms == null ? '' : duration(r.first_content_ms)"></td>
-                      <td class="text-end" x-text="r.ms == null ? '' : duration(r.ms)"></td>
-                      <td class="text-end" x-text="r.tokens ? count(r.tokens.input) : ''"></td>
-                      <td class="text-end" x-text="r.tokens ? count(r.tokens.output) : ''"></td>
-                      <td class="text-end" x-text="r.tokens ? count(r.tokens.cache_read) : ''"></td>
+                      <td class="align-top text-end text-nowrap">
+                        <template x-if="r.tokens">
+                          <div>
+                            <div><span x-text="count(r.tokens.input)"></span> <span class="text-secondary">in</span> · <span x-text="count(r.tokens.output)"></span> <span class="text-secondary">out</span></div>
+                            <div class="small text-secondary" x-show="cacheShare(r.tokens)" x-text="cacheShare(r.tokens) + ' cached'"></div>
+                          </div>
+                        </template>
+                      </td>
                     </tr>
                   </template>
                 </tbody>

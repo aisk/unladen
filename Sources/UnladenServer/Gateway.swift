@@ -73,6 +73,30 @@ struct Gateway: Sendable {
 
     // MARK: Handling
 
+    /// The candidates that will not be tried first, and why: left out for
+    /// a conversation kept elsewhere, disabled, or cooling down (tried
+    /// last). In route order; ``RequestTracker/finish`` keeps those that
+    /// came before the one that answered and were not tried after all.
+    static func heldBack(_ candidates: [Candidate], kept: KeptPlace?, health: HealthSnapshot) -> [RequestRecord.PassedOver] {
+        var held: [RequestRecord.PassedOver] = []
+        for (position, candidate) in candidates.enumerated() {
+            var passed = RequestRecord.PassedOver(position: position, reference: candidate.reference, account: candidate.keyName, why: "")
+            if let kept, candidate.reference != kept.reference {
+                passed.why = "kept"
+            } else if health.isDisabled(candidate) {
+                passed.why = "disabled"
+            } else if let (until, reason) = health.cooldown(of: candidate) {
+                passed.why = "cooling"
+                passed.seconds = max(Int((until - health.now).components.seconds), 1)
+                passed.last = reason.isEmpty ? nil : reason
+            } else {
+                continue
+            }
+            held.append(passed)
+        }
+        return held
+    }
+
     /// Serves one client request of `clientProtocol`.
     ///
     /// The upstream work runs under `monitor`: a client that disconnects
@@ -101,7 +125,7 @@ struct Gateway: Sendable {
         ), log: log)
         func fail(_ status: Int, _ message: String, detail: String? = nil, warnings: [WireWarning] = []) -> Response {
             monitor.uninstall()
-            tracker.finish(status: status, note: detail ?? message, warnings: warnings.count)
+            tracker.finish(status: status, note: detail ?? message, warnings: warnings)
             return Self.errorResponse(clientProtocol, status: status, message: message, warnings: warnings)
         }
 
@@ -132,9 +156,15 @@ struct Gateway: Sendable {
                 placement: conversation.flatMap { placements.placement(for: $0) },
             )
         }
+        let snapshot = health.snapshot()
+        tracker.routed(
+            route: plan.route, targets: plan.references, kept: kept,
+            passedOver: Self.heldBack(candidates, kept: kept, health: snapshot),
+            positions: Dictionary(candidates.enumerated().map { (RequestTracker.positionKey($0.element), $0.offset) }) { first, _ in first },
+        )
         if let kept { candidates.removeAll { $0.reference != kept.reference } }
         let ordered = strategy.order(
-            candidates, context: RoutingContext(clientProtocol: clientProtocol, stream: stream), health: health.snapshot(),
+            candidates, context: RoutingContext(clientProtocol: clientProtocol, stream: stream), health: snapshot,
         )
         if ordered.isEmpty {
             return fail(
@@ -211,7 +241,7 @@ struct Gateway: Sendable {
                 }
                 tracker.serving(candidate, streaming: false)
                 let tokens = TokenCounts(response.usage)
-                tracker.finish(status: 200, tokens: tokens, warnings: all.count)
+                tracker.finish(status: 200, tokens: tokens, warnings: served.requestWarnings, replyWarnings: responseWarnings)
                 if let ticket { placements.answered(ticket, input: tokens?.input) }
                 return Response(status: .ok, headers: fields, body: ResponseBody(byteBuffer: ByteBuffer(bytes: encoded.body)))
 

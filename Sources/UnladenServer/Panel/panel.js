@@ -271,6 +271,62 @@ function panel() {
     },
 
     accountOf(r) { return r.provider ? r.provider + '/' + (r.account || '-') : ''; },
+    // A candidate as the panel names it: the model, and the account when
+    // it is not named after its provider.
+    who(reference, account) {
+      const provider = (reference || '').split('/')[0];
+      return account && account !== provider ? reference + '@' + account : reference;
+    },
+    // Which of its route's targets answered: `First choice`, `Target 2 of 3`.
+    targetBadge(r) {
+      const n = (r.targets || []).length;
+      if (n < 2 || !r.target) return '';
+      return r.target === 1 ? 'First choice' : 'Target ' + r.target + ' of ' + n;
+    },
+    // How the request was routed, as sentences: why it did not go to the
+    // targets before the one that answered, or why it did not move on.
+    routeStory(r) {
+      const lines = [];
+      const kept = r.kept;
+      if (kept) {
+        if (kept.stored_reply) lines.push('Not moved: the conversation builds on a reply kept by ' + kept.reference);
+        else if (kept.reported != null) lines.push('Not moved: about ' + this.count(kept.context) + ' tokens of context (' + this.count(kept.reported) + ' reported for the last turn), over ' + this.count(kept.limit));
+        else lines.push('Not moved: about ' + this.count(kept.context) + ' tokens of context (estimated), over ' + this.count(kept.limit));
+      }
+      const failed = (r.attempt_list || []).filter(a => a.outcome !== 'ok');
+      const passed = (r.passed_over || []).filter(p => p.why !== 'kept');
+      if (!failed.length && !passed.length) return lines;
+      if (r.target > 1) lines.push('Fell back to target ' + r.target + ' of ' + r.targets.length);
+      else if (r.served) lines.push('Another account answered');
+      else if (!kept) lines.push('No target answered');
+      for (const p of passed) {
+        const name = this.who(p.reference, p.account);
+        if (p.why === 'disabled') lines.push(name + ': disabled after repeated refusals');
+        else lines.push(name + ': cooling, ' + this.duration(p.seconds * 1000) + ' left' + (p.last ? ' (after ' + p.last + ')' : ''));
+      }
+      for (const a of failed) lines.push(this.who(a.model, a.account) + ' failed: ' + a.outcome);
+      return lines;
+    },
+    // Whether the story tells of something gone wrong, or only how it went.
+    storyIsTrouble(r) { return !!r.failed || r.status >= 400; },
+    // The headers went out before any content (older records say so in their note).
+    heldHeaders(r) { return !!r.held_headers || r.note === 'headers sent before the first content'; },
+    // The note, unless it only says the headers went out early.
+    noteOf(r) { return r.note && r.note !== 'headers sent before the first content' ? r.note : ''; },
+    changeCount(r) { return (r.changes || []).reduce((n, c) => n + c.count, 0) || r.warnings || 0; },
+    changeLabel(code) {
+      return {
+        unknown_field: 'Kept a field it does not know',
+        opaque_content: 'Kept content it does not know, as it is',
+        dropped_field: 'Dropped a field the target cannot take',
+        dropped_content: 'Dropped content the target cannot take',
+        lossy_conversion: 'Converted, not exactly',
+        unsupported_value: 'Ignored a value it does not understand',
+        malformed_stream: 'The stream broke its protocol',
+        adjusted: 'Adjusted to fit the model',
+        unsupported_by_model: 'Left out a setting the model does not take',
+      }[code] || code;
+    },
     count(n) {
       if (n == null) return '';
       if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';

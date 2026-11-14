@@ -260,6 +260,35 @@ enum AdminActivity {
                 "outcome": .string(attempt.outcome), "ms": .number(JSONNumber(attempt.milliseconds)),
             ]
         })
+        if !record.targets.isEmpty { object["targets"] = .array(record.targets.map(JSONValue.string)) }
+        if let kept = record.kept {
+            var value: JSONObject = [
+                "reference": .string(kept.reference), "context": .number(JSONNumber(kept.context)),
+                "limit": .number(JSONNumber(kept.limit)),
+            ]
+            if let reported = kept.reported { value["reported"] = .number(JSONNumber(reported)) }
+            if kept.storedReply { value["stored_reply"] = true }
+            object["kept"] = .object(value)
+        }
+        if !record.passedOver.isEmpty {
+            object["passed_over"] = .array(record.passedOver.map { passed in
+                var value: JSONObject = [
+                    "reference": .string(passed.reference), "account": .string(passed.account), "why": .string(passed.why),
+                ]
+                if let seconds = passed.seconds { value["seconds"] = .number(JSONNumber(seconds)) }
+                if let last = passed.last { value["last"] = .string(last) }
+                return .object(value)
+            })
+        }
+        if record.heldHeaders { object["held_headers"] = true }
+        if !record.changes.isEmpty {
+            object["changes"] = .array(record.changes.map { change in
+                [
+                    "code": .string(change.code), "path": .string(change.path), "side": .string(change.side),
+                    "count": .number(JSONNumber(change.count)), "message": .string(change.message),
+                ]
+            })
+        }
         return .object(object)
     }
 
