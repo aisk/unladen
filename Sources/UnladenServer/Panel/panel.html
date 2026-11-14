@@ -104,7 +104,7 @@
             </div>
             <div class="col-auto ms-auto">
               <button class="btn btn-primary" x-show="tab === 'accounts'" @click="startAdding()"><i class="ti ti-plus me-1"></i>Add account</button>
-              <button class="btn btn-primary" x-show="tab === 'models'" @click="startModel(null)"><i class="ti ti-plus me-1"></i>Add model</button>
+              <button class="btn btn-primary" x-show="tab === 'models'" @click="startModel(null)"><i class="ti ti-plus me-1"></i>Add route</button>
               <button class="btn btn-primary" x-show="tab === 'clients'" @click="startClient(null)"><i class="ti ti-plus me-1"></i>Add client</button>
             </div>
           </div>
@@ -421,9 +421,9 @@
               </div>
               <div class="empty" x-show="!model.models.length">
                 <div class="empty-icon"><i class="ti ti-route-off"></i></div>
-                <p class="empty-title">No model yet</p>
-                <p class="empty-subtitle text-secondary">A model gives clients a name to ask for and says which provider answers it. Without any, clients must name both, as provider/model.</p>
-                <div class="empty-action"><button class="btn btn-primary" @click="startModel(null)"><i class="ti ti-plus me-1"></i>Add model</button></div>
+                <p class="empty-title">No route yet</p>
+                <p class="empty-subtitle text-secondary">A route gives clients a model name to ask for and says who answers it. Without any, clients must name both, as provider/model.</p>
+                <div class="empty-action"><button class="btn btn-primary" @click="startModel(null)"><i class="ti ti-plus me-1"></i>Add route</button></div>
               </div>
             </div>
           </div>
@@ -771,7 +771,7 @@
                       </div>
                     </template>
                     <div class="col-12" x-show="draft.suggestions.length">
-                      <label class="form-label">Models to answer with this account</label>
+                      <label class="form-label">Routes to answer with this account</label>
                       <template x-for="s in draft.suggestions" :key="s.name">
                         <label class="form-check">
                           <input class="form-check-input" type="checkbox" x-model="s.chosen">
@@ -876,20 +876,20 @@
           <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
               <div class="modal-header">
-                <h5 class="modal-title" x-text="modelEdit.original === null ? 'Add a model' : 'Edit ' + modelEdit.original"></h5>
+                <h5 class="modal-title" x-text="modelEdit.original === null ? 'Add a route' : 'Edit ' + modelEdit.original"></h5>
                 <button type="button" class="btn-close" @click="modelEdit = null"></button>
               </div>
               <div class="modal-body">
                 <div class="mb-3">
                   <label class="form-label">Clients ask for</label>
                   <input class="form-control mono" x-model="modelEdit.name" placeholder="claude-*, fast, *" x-init="modelEdit.original === null && $nextTick(() => $el.focus())">
-                  <div class="form-hint">A star stands for any run of characters: claude-* takes every name that starts with claude-, and a star alone takes every name no other model takes.</div>
+                  <div class="form-hint">A star stands for any run of characters: claude-* takes every name that starts with claude-, and a star alone takes every name no other route takes.</div>
                 </div>
                 <template x-if="modelEdit.raw !== undefined">
                   <div>
                     <label class="form-label">Answered by</label>
                     <pre class="mb-2" x-text="JSON.stringify(modelEdit.raw, null, 2)"></pre>
-                    <div class="form-hint">This model is written in a way the form cannot show: change it under Settings, in the file as JSON.</div>
+                    <div class="form-hint">This route is written in a way the form cannot show: change it under Settings, in the file as JSON.</div>
                   </div>
                 </template>
                 <template x-if="modelEdit.raw === undefined">
@@ -916,9 +916,10 @@
                             </label>
                             <label class="form-selectgroup-item flex-fill">
                               <input type="radio" class="form-selectgroup-input" value="alias" x-model="target.kind" :disabled="!aliasNames().length">
-                              <span class="form-selectgroup-label"><i class="ti ti-corner-down-right me-1"></i>Another model</span>
+                              <span class="form-selectgroup-label"><i class="ti ti-corner-down-right me-1"></i>Another route</span>
                             </label>
                           </div>
+                          <div class="form-hint mt-0 mb-2" x-show="!aliasNames().length">Another route can be chosen once there is one without a star: a name with a star passes on the name the client asked for, and cannot stand for another.</div>
                           <div x-show="target.kind === 'provider'">
                             <select class="form-select mb-2" x-model="target.provider">
                               <template x-for="id in targetProviders()" :key="id">

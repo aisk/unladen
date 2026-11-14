@@ -88,7 +88,7 @@ function panel() {
       { name: 'idle_timeout', label: 'Longest silence in a stream', placeholder: '300s', help: 'A stream that stays silent this long is ended. off: no limit.' },
       { name: 'keepalive', label: 'Keepalive interval', placeholder: '15s', help: 'How often a stream that is waiting is kept alive.' },
       { name: 'max_request_bytes', label: 'Largest request', placeholder: '64MiB', help: 'A request with a larger body is refused.' },
-      { name: 'fallback_max_context', label: 'Longest conversation to move', placeholder: 'off', help: 'A conversation under way with more context than this (in tokens, such as 64k) is not moved to the next model of its list: it waits for the one holding its prompt cache. A model entry may set its own. off: no limit.' },
+      { name: 'fallback_max_context', label: 'Longest conversation to move', placeholder: 'off', help: 'A conversation under way with more context than this (in tokens, such as 64k) is not moved to the next target of its route: it waits for the one holding its prompt cache. A route may set its own. off: no limit.' },
     ],
     apps: [
       { id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }, { id: 'gemini', label: 'Gemini CLI' }, { id: 'pi', label: 'pi' }, { id: 'opencode', label: 'OpenCode' },
@@ -588,7 +588,7 @@ function panel() {
       await this.apply();
     },
     removeAccount(a) {
-      this.ask('Remove ' + a.name + '?', 'The account is taken out of the configuration file. Models that point at it stay, and fail until they point elsewhere.', 'Remove', async () => {
+      this.ask('Remove ' + a.name + '?', 'The account is taken out of the configuration file. Routes that point at it stay, and fail until they point elsewhere.', 'Remove', async () => {
         this.model.accounts.splice(this.model.accounts.indexOf(a), 1);
         await this.apply();
       });
@@ -783,11 +783,11 @@ function panel() {
       const e = this.modelEdit;
       if (!e) return '';
       const name = e.name.trim();
-      if (!name) return 'Give the model a name.';
-      if (name !== e.original && this.menuNames().includes(name)) return 'Another model has this name.';
+      if (!name) return 'Give the name clients ask for.';
+      if (name !== e.original && this.menuNames().includes(name)) return 'Another route has this name.';
       if (e.raw !== undefined) return '';
-      if (e.targets.some(t => t.kind === 'alias' && !t.alias)) return 'Choose the model it stands for.';
-      if (e.targets.some(t => t.kind === 'provider' && !t.provider)) return 'Add an account first: a model needs a provider to answer it.';
+      if (e.targets.some(t => t.kind === 'alias' && !t.alias)) return 'Choose the route it stands for.';
+      if (e.targets.some(t => t.kind === 'provider' && !t.provider)) return 'Add an account first: a route needs a provider to answer it.';
       const limit = e.limit.trim().toLowerCase();
       if (limit && limit !== 'off' && !/^[1-9][0-9]*\s*[km]?$/.test(limit)) return 'Give the length in tokens, such as 64000 or 64k, or off.';
       return '';
@@ -802,7 +802,7 @@ function panel() {
       if (await this.persist()) this.modelEdit = null;
     },
     removeModel(r) {
-      this.ask('Remove ' + r.name + '?', 'Clients that ask for this name are refused, unless another model takes it.', 'Remove', async () => {
+      this.ask('Remove ' + r.name + '?', 'Clients that ask for this name are refused, unless another route takes it.', 'Remove', async () => {
         this.model.models.splice(this.model.models.indexOf(r), 1);
         await this.apply();
       });
