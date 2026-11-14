@@ -25,7 +25,7 @@ const TRANSLATIONS = {
       'Home': '首页',
       'Set up': '配置',
       'Accounts': '账号',
-      'Models': '模型',
+      'Model routing': '模型路由',
       'Clients': '客户端',
       'Observe': '观察',
       'Activity': '活动',
@@ -36,7 +36,7 @@ const TRANSLATIONS = {
       'Dark theme': '深色主题',
       'What needs you, and how tools connect.': '需要你处理的事，以及工具如何接入。',
       'The provider accounts the gateway spends from.': '网关用来付费的服务商账号。',
-      'The names clients ask for, and who answers them.': '客户端请求的名字，以及由谁来回答。',
+      'The model names clients ask for, and who answers them, in what order.': '客户端请求的模型名，以及按什么顺序由谁回答。',
       'The keys your tools present to the gateway.': '你的工具向网关出示的 key。',
       'Requests as they happen, and the sessions of the last 7 days.': '实时的请求，以及最近 7 天的会话。',
       'Tokens as the providers reported them, by local day.': '服务商报告的 token 用量，按本地日期统计。',
@@ -196,7 +196,17 @@ const TRANSLATIONS = {
       'Add a model': '添加模型',
       'A star stands for any run of characters: claude-* takes every name that starts with claude-, and a star alone takes every name no other model takes.':
         '星号代表任意一串字符：claude-* 匹配所有以 claude- 开头的名字，单独一个星号匹配其他模型都不匹配的名字。',
-      'This model has more than one target: change them under Settings, in the file as JSON.': '这个模型有多个目标：请在“设置”里以 JSON 修改。',
+      'This model is written in a way the form cannot show: change it under Settings, in the file as JSON.': '这个模型的写法表单无法显示：请在“设置”里以 JSON 修改。',
+      'First': '首先',
+      'Then': '然后',
+      'Target': '目标',
+      'Move up': '上移',
+      'Move down': '下移',
+      'Add a fallback': '添加备用',
+      'Tried in order: the next one answers only when every account of the one before it fails.': '按顺序尝试：前一个的所有账号都失败时，才由下一个回答。',
+      'A conversation under way with more context than this (in tokens, such as 64k) is not moved to the next target: it waits for the one holding its prompt cache. Leave it empty to use the one under Settings.':
+        '已在进行、上下文超过这个长度（token 数，如 64k）的会话，不会换到下一个目标，而是等待持有它 prompt cache 的那个。留空则使用“设置”里的值。',
+      'Give the length in tokens, such as 64000 or 64k, or off.': '请填写 token 数，如 64000 或 64k，或者 off。',
       'A provider': '服务商',
       'Another model': '另一个模型',
       'Model the provider is asked for': '向服务商请求的模型',
@@ -220,7 +230,7 @@ const TRANSLATIONS = {
       'Generate': '生成',
       'Copy it now: once saved, the panel shows only its fingerprint.': '现在就复制：保存之后，面板只显示它的指纹。',
       'Every model': '所有模型',
-      'The names on the Models page.': '“模型”页上的名字。',
+      'The names on the Model routing page.': '“模型路由”页上的名字。',
       'Some models': '部分模型',
       'Only the ones you choose.': '只有你选中的那些。',
       'Everything, provider/model too': '全部，包括 provider/model',
@@ -320,6 +330,7 @@ const TRANSLATIONS = {
     // Text built from parts: a pattern, and the translation with the
     // parts it captured ($1…), themselves translated when they can be.
     patterns: [
+      [/^A conversation longer than (\S+) tokens stays where it is$/, '上下文超过 $1 token 的会话不换目标'],
       [/^(\d+) days$/, '$1 天'],
       [/^granted (\S+) · topped up (\S+)$/, '赠送 $1 · 充值 $2'],
       [/^(\S+) \/ (\S+) credits \+ (\S+) extra$/, '$1 / $2 点 + 额外 $3'],

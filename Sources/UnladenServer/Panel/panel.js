@@ -74,7 +74,7 @@ function panel() {
       { id: 'home', label: 'Home', icon: 'ti-home', about: 'What needs you, and how tools connect.' },
       { label: 'Set up' },
       { id: 'accounts', label: 'Accounts', icon: 'ti-wallet', about: 'The provider accounts the gateway spends from.' },
-      { id: 'models', label: 'Models', icon: 'ti-route', about: 'The names clients ask for, and who answers them.' },
+      { id: 'models', label: 'Model routing', icon: 'ti-route', about: 'The model names clients ask for, and who answers them, in what order.' },
       { id: 'clients', label: 'Clients', icon: 'ti-key', about: 'The keys your tools present to the gateway.' },
       { label: 'Observe' },
       { id: 'activity', label: 'Activity', icon: 'ti-activity', about: 'Requests as they happen, and the sessions of the last 7 days.' },
@@ -512,7 +512,7 @@ function panel() {
           + 'wire_api = "responses"\nenv_key = "UNLADEN_API_KEY"\n\n# shell\nexport UNLADEN_API_KEY=' + key;
       }
       // Gemini CLI, pi and OpenCode ask for the models they are told of:
-      // the names on the Models page.
+      // the names on the Model routing page.
       const names = this.menuNames().filter(name => !name.includes('*'));
       const listed = names.length ? names : ['MODEL_NAME'];
       if (app === 'gemini') return 'export GOOGLE_GEMINI_BASE_URL=' + base + '\nexport GEMINI_API_KEY=' + key + '\ngemini -m ' + listed[0];
@@ -664,7 +664,7 @@ function panel() {
       d.suggestions = [];
       for (const name of FAMILIES[d.provider] || []) {
         const existing = this.model.models.find(r => r.name.trim() === name);
-        const current = existing ? (existing.raw === undefined ? existing.target.trim() : JSON.stringify(existing.raw)) : '';
+        const current = existing ? (existing.raw === undefined ? existing.targets.join(', ') : JSON.stringify(existing.raw)) : '';
         if (existing && current === provider) continue;
         d.suggestions.push({ name, target: provider, current, chosen: !existing });
       }
@@ -696,8 +696,8 @@ function panel() {
       this.model.accounts.push(account);
       for (const s of d.suggestions.filter(s => s.chosen)) {
         const existing = this.model.models.find(r => r.name.trim() === s.name);
-        if (existing) { existing.target = s.target; existing.raw = undefined; }
-        else this.model.models.push({ uid: ++counter, name: s.name, target: s.target, raw: undefined });
+        if (existing) Object.assign(existing, { targets: [s.target], limit: '', raw: undefined });
+        else this.model.models.push({ uid: ++counter, name: s.name, targets: [s.target], limit: '', raw: undefined });
       }
       if (await this.persist()) {
         this.draft = null;
@@ -757,14 +757,28 @@ function panel() {
     },
     // What the gateway resolves a name to, once in force.
     resolved(name) { return (this.status?.models || []).find(r => r.name === name)?.targets || []; },
+    // The longest conversation a model moves to its next target: its own, else Settings'.
+    limitOf(r) { return (r.limit || '').trim() || String(this.model.advanced.fallback_max_context || '').trim() || 'off'; },
+    // One target of the edit dialog.
+    editTarget(target) {
+      const parts = this.targetParts(target);
+      return { uid: ++counter, kind: parts.kind, alias: parts.alias, provider: parts.provider || this.targetProviders()[0] || '', upstream: parts.upstream };
+    },
     startModel(r) {
       this.saveError = '';
-      const parts = this.targetParts(r?.target);
       this.modelEdit = {
-        original: r ? r.name : null, name: r ? r.name : '', raw: r?.raw,
-        kind: parts.kind, alias: parts.alias, provider: parts.provider || this.targetProviders()[0] || '', upstream: parts.upstream,
+        original: r ? r.name : null, name: r ? r.name : '', raw: r?.raw, limit: r?.limit || '',
+        targets: (r && r.targets.length ? r.targets : ['']).map(t => this.editTarget(t)),
       };
     },
+    addTarget() { this.modelEdit.targets.push(this.editTarget('')); },
+    moveTarget(i, by) {
+      const targets = this.modelEdit.targets;
+      [targets[i], targets[i + by]] = [targets[i + by], targets[i]];
+    },
+    removeTarget(i) { this.modelEdit.targets.splice(i, 1); },
+    // The names a target may stand for: the models without a star, but this one.
+    aliasNames() { return this.menuNames().filter(n => !n.includes('*') && n !== this.modelEdit.original); },
     modelProblem() {
       const e = this.modelEdit;
       if (!e) return '';
@@ -772,16 +786,19 @@ function panel() {
       if (!name) return 'Give the model a name.';
       if (name !== e.original && this.menuNames().includes(name)) return 'Another model has this name.';
       if (e.raw !== undefined) return '';
-      if (e.kind === 'alias' && !e.alias) return 'Choose the model it stands for.';
-      if (e.kind === 'provider' && !e.provider) return 'Add an account first: a model needs a provider to answer it.';
+      if (e.targets.some(t => t.kind === 'alias' && !t.alias)) return 'Choose the model it stands for.';
+      if (e.targets.some(t => t.kind === 'provider' && !t.provider)) return 'Add an account first: a model needs a provider to answer it.';
+      const limit = e.limit.trim().toLowerCase();
+      if (limit && limit !== 'off' && !/^[1-9][0-9]*\s*[km]?$/.test(limit)) return 'Give the length in tokens, such as 64000 or 64k, or off.';
       return '';
     },
     async saveModel() {
       const e = this.modelEdit, name = e.name.trim();
-      const target = e.kind === 'alias' ? '@' + e.alias : e.provider + (e.upstream.trim() ? '/' + e.upstream.trim() : '');
+      const targets = e.targets.map(t => t.kind === 'alias' ? '@' + t.alias : t.provider + (t.upstream.trim() ? '/' + t.upstream.trim() : ''));
       const existing = this.model.models.find(r => r.name === e.original);
-      if (existing) Object.assign(existing, e.raw === undefined ? { name, target } : { name });
-      else this.model.models.push({ uid: ++counter, name, target, raw: undefined });
+      const entry = e.raw === undefined ? { name, targets, limit: e.limit.trim() } : { name };
+      if (existing) Object.assign(existing, entry);
+      else this.model.models.push({ uid: ++counter, raw: undefined, ...entry });
       if (await this.persist()) this.modelEdit = null;
     },
     removeModel(r) {
@@ -926,8 +943,8 @@ function fromDocument(doc) {
   }
 
   for (const [name, r] of Object.entries(doc.models || {})) {
-    const simple = typeof r === 'string';
-    model.models.push({ uid: ++counter, name, target: simple ? r : '', raw: simple ? undefined : r });
+    const entry = menuEntry(r);
+    model.models.push(entry ? { uid: ++counter, name, ...entry, raw: undefined } : { uid: ++counter, name, targets: [], limit: '', raw: r });
   }
   const menu = model.models.map(r => r.name);
 
@@ -950,6 +967,31 @@ function fromDocument(doc) {
 
 function globs(value) {
   return value.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+// A models entry the form can edit: a target, a list of them, or `try`
+// with `fallback_max_context`; `null` for anything else, kept as written.
+function menuEntry(value) {
+  const targets = v => typeof v === 'string' ? [v] : Array.isArray(v) && v.length && v.every(t => typeof t === 'string') ? v : null;
+  if (typeof value === 'string' || Array.isArray(value)) {
+    const list = targets(value);
+    return list && { targets: list, limit: '' };
+  }
+  if (value && typeof value === 'object' && Object.keys(value).every(k => k === 'try' || k === 'fallback_max_context')) {
+    const list = targets(value.try);
+    const limit = value.fallback_max_context;
+    return list && { targets: list, limit: limit === undefined ? '' : limit === false ? 'off' : String(limit) };
+  }
+  return null;
+}
+
+// The entry as the file writes it: the simplest form that holds it.
+function menuValue(r) {
+  if (r.raw !== undefined) return r.raw;
+  const targets = r.targets.map(t => t.trim()).filter(Boolean);
+  const limit = (r.limit || '').trim();
+  if (limit) return { try: targets, fallback_max_context: scalar(limit) };
+  return targets.length === 1 ? targets[0] : targets;
 }
 
 function scalar(value) {
@@ -980,7 +1022,7 @@ function toDocument(model, original) {
   if (model.accounts.length) sections.accounts = accounts;
 
   const models = {};
-  for (const r of model.models) models[r.name.trim()] = r.raw === undefined ? r.target.trim() : r.raw;
+  for (const r of model.models) models[r.name.trim()] = menuValue(r);
   if (model.models.length) sections.models = models;
 
   const clients = {};

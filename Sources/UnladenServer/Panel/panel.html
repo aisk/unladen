@@ -384,17 +384,29 @@
                         <template x-if="r.raw !== undefined">
                           <code class="text-secondary" x-text="JSON.stringify(r.raw)"></code>
                         </template>
-                        <template x-if="r.raw === undefined && targetParts(r.target).kind === 'alias'">
-                          <div><i class="ti ti-corner-down-right me-2 text-secondary"></i><span class="text-secondary">the same as</span> <span class="mono" x-text="targetParts(r.target).alias"></span></div>
-                        </template>
-                        <template x-if="r.raw === undefined && targetParts(r.target).kind === 'provider'">
-                          <div class="d-flex align-items-center">
-                            <span class="avatar avatar-xs brand me-2" x-data="{ failed: false }">
-                              <img :src="brandIcon(targetParts(r.target).provider) || null" x-show="brandIcon(targetParts(r.target).provider) && !failed" @error="failed = true" alt="">
-                              <span x-show="!brandIcon(targetParts(r.target).provider) || failed" x-text="initials(targetParts(r.target).provider)"></span>
-                            </span>
-                            <span x-text="brandName(targetParts(r.target).provider)"></span>
-                            <span x-show="targetParts(r.target).upstream"><span class="text-secondary mx-2">as</span><span class="mono" x-text="targetParts(r.target).upstream"></span></span>
+                        <template x-if="r.raw === undefined">
+                          <div>
+                            <template x-for="(target, i) in r.targets" :key="i">
+                              <div class="d-flex align-items-center" :class="i > 0 && 'mt-1'">
+                                <span class="text-secondary small me-2 text-nowrap" x-show="r.targets.length > 1" x-text="i === 0 ? 'First' : 'Then'"></span>
+                                <template x-if="targetParts(target).kind === 'alias'">
+                                  <div><i class="ti ti-corner-down-right me-2 text-secondary"></i><span class="text-secondary">the same as</span> <span class="mono" x-text="targetParts(target).alias"></span></div>
+                                </template>
+                                <template x-if="targetParts(target).kind === 'provider'">
+                                  <div class="d-flex align-items-center">
+                                    <span class="avatar avatar-xs brand me-2" x-data="{ failed: false }">
+                                      <img :src="brandIcon(targetParts(target).provider) || null" x-show="brandIcon(targetParts(target).provider) && !failed" @error="failed = true" alt="">
+                                      <span x-show="!brandIcon(targetParts(target).provider) || failed" x-text="initials(targetParts(target).provider)"></span>
+                                    </span>
+                                    <span x-text="brandName(targetParts(target).provider)"></span>
+                                    <span x-show="targetParts(target).upstream"><span class="text-secondary mx-2">as</span><span class="mono" x-text="targetParts(target).upstream"></span></span>
+                                  </div>
+                                </template>
+                              </div>
+                            </template>
+                            <div class="text-secondary small mt-1" x-show="r.targets.length > 1 && limitOf(r) !== 'off'">
+                              <i class="ti ti-pin me-1"></i><span x-text="'A conversation longer than ' + limitOf(r) + ' tokens stays where it is'"></span>
+                            </div>
                           </div>
                         </template>
                       </td>
@@ -877,40 +889,63 @@
                   <div>
                     <label class="form-label">Answered by</label>
                     <pre class="mb-2" x-text="JSON.stringify(modelEdit.raw, null, 2)"></pre>
-                    <div class="form-hint">This model has more than one target: change them under Settings, in the file as JSON.</div>
+                    <div class="form-hint">This model is written in a way the form cannot show: change it under Settings, in the file as JSON.</div>
                   </div>
                 </template>
                 <template x-if="modelEdit.raw === undefined">
                   <div>
                     <label class="form-label">Answered by</label>
-                    <div class="form-selectgroup w-100 mb-3">
-                      <label class="form-selectgroup-item flex-fill">
-                        <input type="radio" class="form-selectgroup-input" value="provider" x-model="modelEdit.kind">
-                        <span class="form-selectgroup-label"><i class="ti ti-building-store me-1"></i>A provider</span>
-                      </label>
-                      <label class="form-selectgroup-item flex-fill">
-                        <input type="radio" class="form-selectgroup-input" value="alias" x-model="modelEdit.kind" :disabled="!menuNames().some(n => !n.includes('*') && n !== modelEdit.original)">
-                        <span class="form-selectgroup-label"><i class="ti ti-corner-down-right me-1"></i>Another model</span>
-                      </label>
-                    </div>
-                    <div x-show="modelEdit.kind === 'provider'">
-                      <select class="form-select mb-3" x-model="modelEdit.provider">
-                        <template x-for="id in targetProviders()" :key="id">
-                          <option :value="id" :selected="modelEdit.provider === id" x-text="brandName(id) === id ? id : brandName(id) + ' (' + id + ')'"></option>
-                        </template>
-                      </select>
-                      <label class="form-label">Model the provider is asked for</label>
-                      <input class="form-control mono" x-model="modelEdit.upstream" placeholder="deepseek-chat">
-                      <div class="form-hint">Leave it empty to pass on the name the client asked for.</div>
-                    </div>
-                    <div x-show="modelEdit.kind === 'alias'">
-                      <select class="form-select mono" x-model="modelEdit.alias">
-                        <option value="" :selected="!modelEdit.alias">–</option>
-                        <template x-for="name in menuNames().filter(n => !n.includes('*') && n !== modelEdit.original)" :key="name">
-                          <option :value="name" :selected="modelEdit.alias === name" x-text="name"></option>
-                        </template>
-                      </select>
-                      <div class="form-hint">Asking for this name is the same as asking for that one.</div>
+                    <div class="form-hint mt-0 mb-2" x-show="modelEdit.targets.length > 1">Tried in order: the next one answers only when every account of the one before it fails.</div>
+                    <template x-for="(target, i) in modelEdit.targets" :key="target.uid">
+                      <div class="card card-sm mb-2">
+                        <div class="card-body">
+                          <div class="d-flex align-items-center mb-2">
+                            <span class="fw-bold me-auto" x-text="modelEdit.targets.length === 1 ? 'Target' : i === 0 ? 'First' : 'Then'"></span>
+                            <template x-if="modelEdit.targets.length > 1">
+                              <div class="text-nowrap">
+                                <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Move up" :disabled="i === 0" @click="moveTarget(i, -1)"><i class="ti ti-arrow-up"></i></button>
+                                <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Move down" :disabled="i === modelEdit.targets.length - 1" @click="moveTarget(i, 1)"><i class="ti ti-arrow-down"></i></button>
+                                <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="removeTarget(i)"><i class="ti ti-trash"></i></button>
+                              </div>
+                            </template>
+                          </div>
+                          <div class="form-selectgroup w-100 mb-2">
+                            <label class="form-selectgroup-item flex-fill">
+                              <input type="radio" class="form-selectgroup-input" value="provider" x-model="target.kind">
+                              <span class="form-selectgroup-label"><i class="ti ti-building-store me-1"></i>A provider</span>
+                            </label>
+                            <label class="form-selectgroup-item flex-fill">
+                              <input type="radio" class="form-selectgroup-input" value="alias" x-model="target.kind" :disabled="!aliasNames().length">
+                              <span class="form-selectgroup-label"><i class="ti ti-corner-down-right me-1"></i>Another model</span>
+                            </label>
+                          </div>
+                          <div x-show="target.kind === 'provider'">
+                            <select class="form-select mb-2" x-model="target.provider">
+                              <template x-for="id in targetProviders()" :key="id">
+                                <option :value="id" :selected="target.provider === id" x-text="brandName(id) === id ? id : brandName(id) + ' (' + id + ')'"></option>
+                              </template>
+                            </select>
+                            <label class="form-label">Model the provider is asked for</label>
+                            <input class="form-control mono" x-model="target.upstream" placeholder="deepseek-chat">
+                            <div class="form-hint">Leave it empty to pass on the name the client asked for.</div>
+                          </div>
+                          <div x-show="target.kind === 'alias'">
+                            <select class="form-select mono" x-model="target.alias">
+                              <option value="" :selected="!target.alias">–</option>
+                              <template x-for="name in aliasNames()" :key="name">
+                                <option :value="name" :selected="target.alias === name" x-text="name"></option>
+                              </template>
+                            </select>
+                            <div class="form-hint">Asking for this name is the same as asking for that one.</div>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                    <button class="btn btn-sm btn-outline-secondary" @click="addTarget()"><i class="ti ti-plus me-1"></i>Add a fallback</button>
+                    <div class="mt-3" x-show="modelEdit.targets.length > 1 || modelEdit.limit.trim()">
+                      <label class="form-label">Longest conversation to move</label>
+                      <input class="form-control mono" x-model="modelEdit.limit" :placeholder="String(model.advanced.fallback_max_context || '').trim() || 'off'">
+                      <div class="form-hint">A conversation under way with more context than this (in tokens, such as 64k) is not moved to the next target: it waits for the one holding its prompt cache. Leave it empty to use the one under Settings.</div>
                     </div>
                   </div>
                 </template>
@@ -969,7 +1004,7 @@
                     <input type="radio" class="form-selectgroup-input" value="menu" x-model="clientEdit.access">
                     <span class="form-selectgroup-label d-flex align-items-center p-3">
                       <span class="me-3"><span class="form-selectgroup-check"></span></span>
-                      <span><span class="d-block">Every model</span><span class="d-block text-secondary">The names on the Models page.</span></span>
+                      <span><span class="d-block">Every model</span><span class="d-block text-secondary">The names on the Model routing page.</span></span>
                     </span>
                   </label>
                   <label class="form-selectgroup-item flex-fill">
