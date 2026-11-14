@@ -98,6 +98,7 @@ function panel() {
     ],
     apps: [
       { id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }, { id: 'gemini', label: 'Gemini CLI' }, { id: 'pi', label: 'pi' }, { id: 'opencode', label: 'OpenCode' },
+      { id: 'paimon', label: 'Paimon' }, { id: 'dsh', label: 'DeepSeek Harness' },
       { id: 'openai', label: 'OpenAI-compatible' }, { id: 'curl', label: 'curl' },
     ],
     app: 'claude',
@@ -833,7 +834,7 @@ function panel() {
         return '# ~/.codex/config.toml\nmodel_provider = "unladen"\n\n[model_providers.unladen]\nname = "unladen"\nbase_url = "' + base + '/v1"\n'
           + 'wire_api = "responses"\nenv_key = "UNLADEN_API_KEY"\n\n# shell\nexport UNLADEN_API_KEY=' + key;
       }
-      // Gemini CLI, pi and OpenCode ask for the models they are told of:
+      // The other tools ask for the models they are told of:
       // the names on the Model routing page.
       const names = this.menuNames().filter(name => !name.includes('*'));
       const listed = names.length ? names : ['MODEL_NAME'];
@@ -849,6 +850,14 @@ function panel() {
           + '      "name": "Unladen",\n      "options": {\n        "baseURL": "' + base + '/v1",\n        "apiKey": "' + key + '"\n      },\n'
           + '      "models": {\n        ' + models + '\n      }\n    }\n  }\n}';
       }
+      if (app === 'paimon') {
+        return 'export UNLADEN_API_KEY=' + key + '\npaimon login --model anthropic:' + listed[0] + ' --api-base ' + base + ' --api-key-env UNLADEN_API_KEY\npaimon';
+      }
+      if (app === 'dsh') {
+        const models = listed.map(name => '          - id: ' + JSON.stringify(name)).join('\n');
+        return '# ~/.dsh/profiles/cli/cordis.patch.yml\n- id: llm-pi-ai\n  config:\n    providers:\n      unladen:\n        apiKeyEnv: UNLADEN_API_KEY\n'
+          + '        api: openai-completions\n        baseURL: ' + base + '/v1\n        models:\n' + models + '\n\n# shell\nexport UNLADEN_API_KEY=' + key;
+      }
       if (app === 'openai') return 'Base URL: ' + base + '/v1\nAPI key:  ' + key;
       return 'curl ' + base + '/v1/models \\\n  -H "Authorization: Bearer ' + key + '"';
     },
@@ -859,6 +868,8 @@ function panel() {
         gemini: 'Gemini CLI speaks the Gemini protocol. If it asks how to sign in, choose the Gemini API key; -m names the model to ask for.',
         opencode: 'Goes in ~/.config/opencode/opencode.json, or opencode.json in a project. List the models OpenCode may ask for under models, then choose one with /models.',
         pi: 'Goes in ~/.pi/agent/models.json. List the models pi may ask for under models, then choose one with /model.',
+        paimon: 'Paimon speaks the Anthropic protocol here. paimon login keeps the address and the key, and makes the model the default; name another with --model anthropic:NAME or paimon model.',
+        dsh: 'For dsh in the terminal; dsh web reads ~/.dsh/profiles/web instead. If the file already has an llm-pi-ai entry, put unladen under its providers: an entry replaces the whole of its config. List the models dsh may ask for under models, then choose one in the model picker.',
         openai: 'For any tool that takes an OpenAI base URL and key. Anthropic and Gemini clients use the same address without /v1.',
         curl: 'Lists the models this key may ask for.',
       }[app];
