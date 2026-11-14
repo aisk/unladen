@@ -210,8 +210,16 @@ const TRANSLATIONS = {
       'Another route can be chosen once there is one without a star besides this one: a name with a star passes on the name the client asked for, and cannot stand for another.':
         '有了除这条以外、不带星号的路由之后，才能选择另一条路由：带星号的名字会把客户端请求的名字原样转过去，不能被别的路由引用。',
       'Model the provider is asked for': '向服务商请求的模型',
-      'Leave it empty to pass on the name the client asked for.': '留空则把客户端请求的名字原样转过去。',
-      'Asking the provider for its models…': '正在向厂商查询模型列表…',
+      'Asking the provider for its models…': '正在向服务商查询模型列表…',
+      'The provider gave no list.': '服务商没有给出模型列表。',
+      'No model matches.': '没有匹配的模型。',
+      "Search the provider's models": '搜索服务商的模型',
+      "Pick from the provider's list or type a name. Leave it empty to pass on the name the client asked for.":
+        '从服务商的列表里选，或直接填写名字。留空则把客户端请求的名字原样转过去。',
+      'Clients that ask for these names are answered by this provider. Each model picked from the list is a route by its own name.':
+        '客户端请求这些名字时，由这个服务商回答。从列表里选中的每个模型都会成为一条同名路由。',
+      'Clients that ask for these names are answered by this provider. Once the account is signed in, its models can be picked under Model routing.':
+        '客户端请求这些名字时，由这个服务商回答。账号登录之后，可以在「模型路由」里选它的模型。',
       'Asking for this name is the same as asking for that one.': '请求这个名字等同于请求那个名字。',
       'Give the name clients ask for.': '请填写客户端请求的名字。',
       'Another route has this name.': '已有路由用了这个名字。',
@@ -398,7 +406,7 @@ const TRANSLATIONS = {
     // Text built from parts: a pattern, and the translation with the
     // parts it captured ($1…), themselves translated when they can be.
     patterns: [
-      [/^(\d+) models listed by the provider: pick one or type a name\.$/, '厂商列出了 $1 个模型：可以从中选，也可以直接填写。'],
+      [/^(\d+) more: type to narrow the list\.$/, '还有 $1 个：继续输入以缩小范围。'],
       [/^Target (\d+) of (\d+)$/, '第 $1 个目标（共 $2 个）'],
       [/^Fell back to target (\d+) of (\d+)$/, '回退到了第 $1 个目标（共 $2 个）'],
       [/^Not moved: about (\S+) tokens of context \((\S+) reported for the last turn\), over (\S+)$/, '没有换目标：上下文约 $1 token（上一轮上游报告 $2），超过 $3'],

@@ -46,6 +46,8 @@
   .share { height: 4px; border-radius: 2px; background: var(--series-1); }
   .shares { display: flex; gap: 2px; height: 8px; min-width: 8rem; }
   .shares > div { border-radius: 2px; }
+  /* A searchable list under a text field. */
+  .combo-menu { top: 100%; left: 0; margin-top: 2px; max-height: 18rem; overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -946,7 +948,7 @@
                         </div>
                       </div>
                     </template>
-                    <div class="col-12" x-show="draft.suggestions.length">
+                    <div class="col-12">
                       <label class="form-label">Routes to answer with this account</label>
                       <template x-for="s in draft.suggestions" :key="s.name">
                         <label class="form-check">
@@ -957,7 +959,28 @@
                           </span>
                         </label>
                       </template>
-                      <div class="form-hint">Clients that ask for these names are answered by this provider.</div>
+                      <template x-if="!draftSignsIn()">
+                        <div class="position-relative" @click.outside="open = false"
+                             x-data="combo({ items: () => draftModels(), load: () => askDraftModels(), multi: true, chosen: n => draftPicks(n), pick: n => pickDraftModel(n) })">
+                          <div class="input-icon">
+                            <span class="input-icon-addon"><i class="ti" :class="open && loading ? 'ti-loader-2' : 'ti-search'"></i></span>
+                            <input class="form-control mono" x-model="text" placeholder="Search the provider's models" autocomplete="off" spellcheck="false" @focus="show()" @click="show()" @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)" @keydown.enter.prevent="enter()" @keydown.escape.stop="open = false" @keydown.tab="open = false">
+                          </div>
+                          <div class="dropdown-menu w-100 combo-menu" :class="{ show: open }" x-ref="list">
+                                <div class="dropdown-item disabled" x-show="loading">Asking the provider for its models…</div>
+                                <div class="dropdown-item disabled" x-show="!loading && !count">The provider gave no list.</div>
+                                <div class="dropdown-item disabled" x-show="count && !matches.length">No model matches.</div>
+                                <template x-for="(name, i) in shown" :key="name">
+                                  <a href="#" class="dropdown-item" :class="{ active: i === active }" @mousedown.prevent @mousemove="active = i" @click.prevent="choose(name)">
+                                    <span class="mono text-truncate me-auto" x-text="name"></span><i class="ti ti-check ms-2" x-show="chosen(name)"></i>
+                                  </a>
+                                </template>
+                                <div class="dropdown-item disabled" x-show="matches.length > shown.length" x-text="(matches.length - shown.length) + ' more: type to narrow the list.'"></div>
+                              </div>
+                        </div>
+                      </template>
+                      <div class="form-hint" x-show="!draftSignsIn()">Clients that ask for these names are answered by this provider. Each model picked from the list is a route by its own name.</div>
+                      <div class="form-hint" x-show="draftSignsIn()">Clients that ask for these names are answered by this provider. Once the account is signed in, its models can be picked under Model routing.</div>
                     </div>
                   </div>
                   <div class="text-danger mt-3" x-show="saveError" x-text="saveError"></div>
@@ -1103,14 +1126,25 @@
                               </template>
                             </select>
                             <label class="form-label">Model the provider is asked for</label>
-                            <input class="form-control mono" x-model="target.upstream" placeholder="deepseek-chat" :list="'models-' + target.uid" autocomplete="off"
-                                   x-effect="target.kind === 'provider' && askModels(target.provider)">
-                            <datalist :id="'models-' + target.uid">
-                              <template x-for="name in providerModels[target.provider] || []" :key="name"><option :value="name"></option></template>
-                            </datalist>
-                            <div class="form-hint">Leave it empty to pass on the name the client asked for.</div>
-                            <div class="form-hint" x-show="providerModels[target.provider] === null">Asking the provider for its models…</div>
-                            <div class="form-hint" x-show="(providerModels[target.provider] || []).length" x-text="(providerModels[target.provider] || []).length + ' models listed by the provider: pick one or type a name.'"></div>
+                            <div class="position-relative" @click.outside="open = false"
+                                 x-data="combo({ items: () => modelsOf(target.provider), load: () => askModels(target.provider), get: () => target.upstream, set: v => target.upstream = v })">
+                              <div class="input-icon">
+                                <input class="form-control mono" x-model="text" placeholder="deepseek-chat" autocomplete="off" spellcheck="false" @focus="show()" @click="show()" @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)" @keydown.enter.prevent="enter()" @keydown.escape.stop="open = false" @keydown.tab="open = false">
+                                <span class="input-icon-addon"><i class="ti" :class="open && loading ? 'ti-loader-2' : 'ti-selector'"></i></span>
+                              </div>
+                              <div class="dropdown-menu w-100 combo-menu" :class="{ show: open }" x-ref="list">
+                                <div class="dropdown-item disabled" x-show="loading">Asking the provider for its models…</div>
+                                <div class="dropdown-item disabled" x-show="!loading && !count">The provider gave no list.</div>
+                                <div class="dropdown-item disabled" x-show="count && !matches.length">No model matches.</div>
+                                <template x-for="(name, i) in shown" :key="name">
+                                  <a href="#" class="dropdown-item" :class="{ active: i === active }" @mousedown.prevent @mousemove="active = i" @click.prevent="choose(name)">
+                                    <span class="mono text-truncate me-auto" x-text="name"></span><i class="ti ti-check ms-2" x-show="chosen(name)"></i>
+                                  </a>
+                                </template>
+                                <div class="dropdown-item disabled" x-show="matches.length > shown.length" x-text="(matches.length - shown.length) + ' more: type to narrow the list.'"></div>
+                              </div>
+                            </div>
+                            <div class="form-hint">Pick from the provider's list or type a name. Leave it empty to pass on the name the client asked for.</div>
                           </div>
                           <div x-show="target.kind === 'alias'">
                             <select class="form-select mono" x-model="target.alias">

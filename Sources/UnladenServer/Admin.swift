@@ -119,6 +119,16 @@ final class ConfigManager: Sendable {
         }
     }
 
+    /// The configuration the file would give with `accounts` (as the
+    /// panel edits them) in place of its own; nothing is written.
+    func trying(accounts: JSONValue) throws(ConfigError) -> GatewayConfiguration {
+        let current = try ConfigDocument.read(try readFile(), file: path ?? "config")
+        var document = current.document.objectValue ?? JSONObject()
+        document["accounts"] = accounts
+        let text = try ConfigDocument.text(from: .object(document), secrets: current.secrets)
+        return try ConfigFile.parse(text, file: path ?? "config", overrides: overrides, environment: environment).gateway
+    }
+
     private func readFile() throws(ConfigError) -> String {
         guard let path, FileManager.default.fileExists(atPath: path) else { return "" }
         guard let data = FileManager.default.contents(atPath: path) else {
@@ -549,12 +559,26 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         return adminJSON(200, ["accounts": .array(quotas.map(\.json))])
     }
 
-    /// The models a provider lists, for the panel to suggest; kept by
-    /// ``ModelCatalog``, so asking again does not ask the provider.
-    router.get("/admin/api/providers/:id/models") { request, context in
+    /// The models a provider lists, for the panel to offer:
+    /// `{"provider": …}`, with the accounts in force, or with
+    /// `"accounts": {…}` in place of them, such as one being added. Kept
+    /// by ``ModelCatalog``, so asking again does not ask the provider.
+    router.post("/admin/api/models") { request, _ in
         if let denied = adminDenied(request, gateway: gateway) { return denied }
-        let provider = context.parameters.get("id") ?? ""
-        let configuration = gateway.configuration
+        var request = request
+        let body = try? await request.collectBody(upTo: 1 << 20)
+        let json = body.flatMap { try? JSONValue(parsing: Array($0.readableBytesView)) }
+        guard let provider = json?["provider"]?.stringValue, !provider.isEmpty else {
+            return adminError(400, "expected {\"provider\": \"…\"}, and optionally \"accounts\": {…}")
+        }
+        var configuration = gateway.configuration
+        if let accounts = json?["accounts"] {
+            do throws(ConfigError) {
+                configuration = try manager.trying(accounts: accounts)
+            } catch {
+                return adminError(422, error.message)
+            }
+        }
         let names = await gateway.models.names(of: provider, gateway: gateway, configuration: configuration)
         return adminJSON(200, ["models": .array(names.map(JSONValue.string))])
     }

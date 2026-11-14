@@ -9,8 +9,10 @@ import NIOCore
 @_spi(Wire) import UnladenCore
 
 /// Providers' model lists, asked of them with the first account that
-/// answers and kept for a while. Asks for one provider at the same time
-/// share one call.
+/// answers and kept for a while. A list is kept for a provider's accounts
+/// and endpoints as they were when it was asked, so a change to them asks
+/// again, and a change to anything else does not. Asks for the same list
+/// at the same time share one call.
 final class ModelCatalog: Sendable {
     /// How long a list is kept.
     static let lifetime: Int64 = 10 * 60 * 1000
@@ -19,55 +21,50 @@ final class ModelCatalog: Sendable {
     /// The longest one provider may take to answer.
     static let timeout: Duration = .seconds(10)
 
+    /// What a list depends on.
+    private struct Source: Hashable {
+        var provider: String
+        var keys: [UpstreamKey]
+        var endpoints: [Endpoint]
+    }
+
     private struct Entry {
         var names: [String]
         var until: Int64
     }
 
     private struct State {
-        var entries: [String: Entry] = [:]
-        var pending: [String: Task<[String]?, Never>] = [:]
-        /// Raised by each forgetting, so that a call started before it
-        /// does not keep its list.
-        var generation = 0
+        var entries: [Source: Entry] = [:]
+        var pending: [Source: Task<[String]?, Never>] = [:]
     }
 
     private let state = NIOLockedValueBox(State())
 
     init() {}
 
-    /// Forgets the lists of the providers `changed` picks (the
-    /// configuration changed), and every call under way.
-    func forget(_ changed: (String) -> Bool = { _ in true }) {
-        state.withLockedValue { state in
-            state.entries = state.entries.filter { !changed($0.key) }
-            state.pending = [:]
-            state.generation += 1
-        }
-    }
-
     /// The models `provider` lists; empty when it cannot be asked.
     func names(of provider: String, gateway: Gateway, configuration: GatewayConfiguration) async -> [String] {
-        enum Found { case kept([String]), asking(Task<[String]?, Never>, generation: Int) }
+        let source = Source(
+            provider: provider, keys: configuration.keyPools[provider]?.keys ?? [],
+            endpoints: configuration.registry[provider]?.endpoints ?? [],
+        )
         let now = LocalDay.nowMilliseconds()
-        let found: Found = state.withLockedValue { state in
-            if let entry = state.entries[provider], entry.until > now { return .kept(entry.names) }
-            if let task = state.pending[provider] { return .asking(task, generation: state.generation) }
+        // A list still kept, or the call that asks for it.
+        let (kept, task): ([String]?, Task<[String]?, Never>?) = state.withLockedValue { state in
+            if let entry = state.entries[source], entry.until > now { return (entry.names, nil) }
+            if let task = state.pending[source] { return (nil, task) }
             let task = Task { await self.fetch(provider, gateway: gateway, configuration: configuration) }
-            state.pending[provider] = task
-            return .asking(task, generation: state.generation)
+            state.pending[source] = task
+            return (nil, task)
         }
-        let task: Task<[String]?, Never>, generation: Int
-        switch found {
-        case .kept(let names): return names
-        case .asking(let t, let g): (task, generation) = (t, g)
-        }
+        guard let task else { return kept ?? [] }
         let names = await task.value
         let done = LocalDay.nowMilliseconds()
         state.withLockedValue { state in
-            guard state.generation == generation, state.pending[provider] == task else { return }
-            state.pending[provider] = nil
-            state.entries[provider] = Entry(names: names ?? [], until: done + (names == nil ? Self.failureLifetime : Self.lifetime))
+            guard state.pending[source] == task else { return }
+            state.pending[source] = nil
+            state.entries = state.entries.filter { $0.value.until > done }
+            state.entries[source] = Entry(names: names ?? [], until: done + (names == nil ? Self.failureLifetime : Self.lifetime))
         }
         return names ?? []
     }

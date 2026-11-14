@@ -65,7 +65,7 @@ let counter = 0;
 function panel() {
   return {
     token: localStorage.getItem(TOKEN_KEY) || '',
-    // The models each provider lists, once asked: provider → names, or
+    // The models providers list, once asked (by `listKey`): names, or
     // `null` while asking. The gateway keeps them too.
     providerModels: {},
     tokenInput: '',
@@ -963,16 +963,19 @@ function panel() {
 
     startAdding() {
       this.saveError = '';
-      this.draft = { step: 'pick', query: '', provider: '', name: '', autoName: '', key: '', preset: '', protocol: 'chat', url: '', suggestions: [] };
+      this.draft = { step: 'pick', query: '', provider: '', name: '', autoName: '', key: '', preset: '', protocol: 'chat', url: '', suggestions: [], picked: [] };
     },
     // `provider`: a preset or an address of your own; empty: a new address.
     pickProvider(provider) {
       this.draft.provider = provider;
+      this.draft.suggestions = [];
+      this.draft.picked = [];
       this.draft.step = 'details';
       this.draftChanged(true);
     },
     // A name that follows the provider until it is typed over, and the
-    // models the provider's family suggests.
+    // routes to add: those the provider's family suggests, and the models
+    // picked from its list.
     draftChanged(fresh) {
       const d = this.draft;
       if (fresh || d.autoName === d.name) {
@@ -982,14 +985,48 @@ function panel() {
         while (taken.has(name)) name = base + '-' + n++;
         d.name = d.autoName = name;
       }
-      const provider = d.provider || d.name.trim();
+      const provider = this.draftProvider();
+      const before = new Map(d.suggestions.map(s => [s.name, s.chosen]));
       d.suggestions = [];
-      for (const name of FAMILIES[d.provider] || []) {
+      const add = (name, picked) => {
+        if (d.suggestions.some(s => s.name === name)) return;
         const existing = this.model.models.find(r => r.name.trim() === name);
         const current = existing ? (existing.raw === undefined ? existing.targets.join(', ') : JSON.stringify(existing.raw)) : '';
-        if (existing && current === provider) continue;
-        d.suggestions.push({ name, target: provider, current, chosen: !existing });
+        if (existing && current === provider) return;
+        d.suggestions.push({ name, target: provider, current, chosen: before.get(name) ?? (picked || !existing) });
+      };
+      for (const name of FAMILIES[d.provider] || []) add(name, false);
+      for (const name of d.picked) add(name, true);
+    },
+    // The provider the account being added belongs to.
+    draftProvider() { return this.draft.provider || this.draft.name.trim(); },
+    // The account the add dialog adds.
+    draftAccount() {
+      const d = this.draft, name = d.name.trim();
+      const account = { uid: 0, name, provider: '', key: this.signsIn(d.provider) ? '' : d.key.trim(), enabled: true, custom: false, preset: '', endpoints: [], headers: [], rest: {} };
+      if (d.provider) {
+        account.provider = d.provider === name ? '' : d.provider;
+      } else {
+        account.custom = true;
+        account.preset = d.preset;
+        account.endpoints = [{ uid: 0, protocol: d.protocol, url: d.url.trim() }];
       }
+      return account;
+    },
+    // The accounts with the one being added, to ask its provider for its
+    // models before it is saved.
+    draftAccounts() {
+      return toDocument({ ...this.model, accounts: [...this.model.accounts, this.draftAccount()] }, this.original).accounts || {};
+    },
+    draftModels() { return this.modelsOf(this.draftProvider(), this.draftAccounts()); },
+    askDraftModels() { if (this.draftProvider()) this.askModels(this.draftProvider(), this.draftAccounts()); },
+    // Whether a model of the list is to be added as a route.
+    draftPicks(name) { return this.draft.suggestions.some(s => s.name === name && s.chosen); },
+    pickDraftModel(name) {
+      const d = this.draft, row = d.suggestions.find(s => s.name === name);
+      if (row) { row.chosen = !row.chosen; return; }
+      d.picked.push(name);
+      this.draftChanged();
     },
     draftProblem() {
       const d = this.draft;
@@ -1007,14 +1044,9 @@ function panel() {
     draftSignsIn() { return this.signsIn(this.draft.provider) && !this.draft.key.trim(); },
     async addAccount() {
       const d = this.draft, name = d.name.trim();
-      const account = { uid: ++counter, name, provider: '', key: this.signsIn(d.provider) ? '' : d.key.trim(), enabled: true, custom: false, preset: '', endpoints: [], headers: [], rest: {} };
-      if (d.provider) {
-        account.provider = d.provider === name ? '' : d.provider;
-      } else {
-        account.custom = true;
-        account.preset = d.preset;
-        account.endpoints = [{ uid: ++counter, protocol: d.protocol, url: d.url.trim() }];
-      }
+      const account = this.draftAccount();
+      account.uid = ++counter;
+      for (const e of account.endpoints) e.uid = ++counter;
       this.model.accounts.push(account);
       for (const s of d.suggestions.filter(s => s.chosen)) {
         const existing = this.model.models.find(r => r.name.trim() === s.name);
@@ -1079,12 +1111,16 @@ function panel() {
     },
     // What the gateway resolves a name to, once in force.
     resolved(name) { return (this.status?.models || []).find(r => r.name === name)?.targets || []; },
+    // The models `provider` lists: names, `null` while asking, or
+    // `undefined` before. `accounts`: in place of the accounts in force.
+    modelsOf(provider, accounts) { return this.providerModels[listKey(provider, accounts)]; },
     // Asks the gateway once for the models `provider` lists.
-    async askModels(provider) {
-      if (!provider || provider in this.providerModels) return;
-      this.providerModels[provider] = null;
-      const result = await this.api('GET', 'providers/' + encodeURIComponent(provider) + '/models');
-      this.providerModels[provider] = result.status === 200 ? result.json.models || [] : [];
+    async askModels(provider, accounts) {
+      const key = listKey(provider, accounts);
+      if (!provider || key in this.providerModels) return;
+      this.providerModels[key] = null;
+      const result = await this.api('POST', 'models', accounts === undefined ? { provider } : { provider, accounts });
+      this.providerModels[key] = result.status === 200 ? result.json.models || [] : [];
     },
     // The longest conversation a model moves to its next target: its own, else Settings'.
     limitOf(r) { return (r.limit || '').trim() || String(this.model.advanced.fallback_max_context || '').trim() || 'off'; },
@@ -1216,6 +1252,62 @@ function panel() {
     toggle(items, value) { const i = items.indexOf(value); if (i < 0) items.push(value); else items.splice(i, 1); },
     uid() { return ++counter; },
     generateSecret,
+  };
+}
+
+// Where a provider's model list is kept: by provider, and by the accounts
+// it was asked with, if not those in force.
+function listKey(provider, accounts) {
+  return provider + '\n' + (accounts === undefined ? '' : JSON.stringify(accounts));
+}
+
+// A text field with a searchable list under it. `config`: `items()` (names,
+// `null` while asking, `undefined` before) and `load()`; then `get()` and
+// `set(value)` for one value that may also be typed, or `multi`,
+// `chosen(name)` and `pick(name)` to pick several.
+const COMBO_SHOWN = 100;
+function combo(config) {
+  return {
+    open: false, typed: false, active: -1, query: '',
+    get text() { return config.multi ? this.query : config.get() || ''; },
+    set text(value) {
+      if (config.multi) this.query = value; else config.set(value);
+      this.typed = this.open = true;
+      this.active = -1;
+    },
+    get loading() { return config.items() == null; },
+    get count() { return (config.items() || []).length; },
+    // Each word typed in the name, in any order.
+    get matches() {
+      const words = this.typed ? this.text.toLowerCase().split(/\s+/).filter(Boolean) : [];
+      return (config.items() || []).filter(name => words.every(w => name.toLowerCase().includes(w)));
+    },
+    get shown() { return this.matches.slice(0, COMBO_SHOWN); },
+    chosen(name) { return config.multi ? config.chosen(name) : name === config.get(); },
+    show() {
+      config.load();
+      if (this.open) return;
+      this.open = true;
+      this.typed = false;
+      this.active = -1;
+    },
+    move(by) {
+      this.show();
+      const n = this.shown.length;
+      if (!n) return;
+      this.active = this.active < 0 ? (by > 0 ? 0 : n - 1) : (this.active + by + n) % n;
+      this.$nextTick(() => this.$refs.list?.querySelector('.active')?.scrollIntoView({ block: 'nearest' }));
+    },
+    choose(name) {
+      if (config.multi) { config.pick(name); return; }
+      config.set(name);
+      this.open = false;
+    },
+    enter() {
+      const name = this.shown[this.active];
+      if (this.open && name !== undefined) this.choose(name);
+      else this.open = false;
+    },
   };
 }
 
