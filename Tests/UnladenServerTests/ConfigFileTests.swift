@@ -137,7 +137,7 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
     }
 
     @Test func disabledClientsStillRequireAKey() throws {
-        let loaded = try parse(#"{ "clients": { "old": { "key": "k", "enabled": false } } }"#, environment: ["UNLADEN_API_KEY": "env"])
+        let loaded = try parse(#"{ "clients": { "old": { "key": "k", "enabled": false } } }"#)
         #expect(loaded.gateway.clientKeys.isEmpty)
         #expect(loaded.gateway.disabledClients == ["old"])
         #expect(!loaded.gateway.isOpen)
@@ -145,12 +145,12 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
     }
 
     @Test func emptyFileUsesTheEnvironment() throws {
-        let loaded = try parse("", environment: ["DEEPSEEK_API_KEY": "a, b", "UNLADEN_API_KEY": "client"])
+        let loaded = try parse("", environment: ["DEEPSEEK_API_KEY": "a, b"])
         #expect(loaded.server == ServerSettings())
         #expect(loaded.gateway.keyPools["deepseek"]?.keys.map(\.secret) == ["a", "b"])
         #expect(loaded.gateway.keyPools["deepseek"]?.fromEnvironment == true)
         #expect(loaded.gateway.routes.isEmpty)
-        #expect(loaded.gateway.clientKeys.map(\.secret) == ["client"])
+        #expect(loaded.gateway.isOpen)
     }
 
     @Test func accountsWinOverTheEnvironment() throws {
@@ -172,14 +172,13 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
     }
 
     @Test func commandLineOverridesTheFile() throws {
-        let overrides = ConfigOverrides(host: "::1", port: 9000, model: "openai/gpt-4o", apiKey: "cli", strict: true, keepalive: 2)
+        let overrides = ConfigOverrides(host: "::1", port: 9000, model: "openai/gpt-4o", strict: true, keepalive: 2)
         let loaded = try parse(#"{ "models": { "*": "deepseek/deepseek-chat" } }"#, overrides: overrides)
         #expect(loaded.server.host == "::1")
         #expect(loaded.server.port == 9000)
         #expect(loaded.gateway.routes.catchAll?.targets == [RouteTarget(model: "openai/gpt-4o")])
         #expect(loaded.gateway.strict)
         #expect(loaded.gateway.keepaliveInterval == .seconds(2))
-        #expect(loaded.gateway.clientKeys == [ClientKey(name: "command-line", secret: "cli", models: ["*"])])
         #expect(loaded.warnings.contains { $0.contains("--model replaces") })
     }
 

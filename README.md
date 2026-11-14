@@ -13,7 +13,7 @@ swift build -c release --product unladen --static-swift-stdlib
 .build/release/unladen --config config.jsonc
 ```
 
-The configuration is JSON with comments and trailing commas, read from `--config` or `~/.config/unladen/config.jsonc`.
+The configuration is JSON with comments and trailing commas, read from `--config` or `~/.config/unladen/config.jsonc`. On the first start without one, the gateway writes that file with a panel token, a client API key and Kilo's free model serving every model name, and prints the token and the key, so it answers requests before any account is added; `http://127.0.0.1:4141/` then leads to the panel.
 
 ```jsonc
 {
@@ -72,7 +72,7 @@ podman-compose up -d
 # or: docker compose up -d
 ```
 
-The configuration directory is mounted read-only at `/config/unladen`, and one volume over `/data` keeps everything that outlives a restart (sign-in tokens, usage logs). Keys belong in the configuration file rather than in the environment, because anyone who can reach the container runtime can read the environment, while the panel at `/admin` exists only once `panel.token` is set. A read-only mount means the panel can show the file but not save it, so edit it and send `SIGHUP` (`podman kill -s HUP unladen`), or use the panel's Reload. The image listens on `0.0.0.0:4141` as uid 65532. For a quick try without a configuration file, `UNLADEN_ANTHROPIC_API_KEY`-style environment variables work too.
+The configuration directory is mounted read-only at `/config/unladen`, and one volume over `/data` keeps everything that outlives a restart (sign-in tokens, usage logs). Keys belong in the configuration file rather than in the environment, because anyone who can reach the container runtime can read the environment, while the panel at `/admin` exists only once `panel.token` is set. A read-only mount means the panel can show the file but not save it, so edit it and send `SIGHUP` (`podman kill -s HUP unladen`), or use the panel's Reload. The image listens on `0.0.0.0:4141` as uid 65532. For a quick try without a configuration file, `UNLADEN_ANTHROPIC_API_KEY`-style environment variables work too; the read-only mount keeps the gateway from writing one, so it prints a panel token that holds until it stops.
 
 ## The library
 

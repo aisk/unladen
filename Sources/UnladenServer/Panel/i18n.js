@@ -15,7 +15,8 @@ const TRANSLATIONS = {
       // Sign-in to the panel
       'Control panel': '控制面板',
       'Panel token': '面板令牌',
-      'The value of panel.token in the configuration file.': '配置文件里 panel.token 的值。',
+      'The value of panel.token in the configuration file. On its first start the gateway writes that file and prints the token in its log.':
+        '配置文件里 panel.token 的值。网关第一次启动时会写出这个文件，并在日志里打印这个令牌。',
       'Sign in': '登录',
       'Sign out': '退出',
       'The panel token was refused.': '面板令牌被拒绝。',

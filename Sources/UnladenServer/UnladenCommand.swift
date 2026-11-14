@@ -40,8 +40,8 @@ struct UnladenCommand: AsyncParsableCommand {
         ************************************************************************
         WARNING: unladen is listening on \(host) without a client key.
         Anyone who can reach this address can use the upstream API keys it
-        holds. Configure clients or set --api-key (or UNLADEN_API_KEY),
-        or listen on 127.0.0.1.
+        holds. Add a client in the control panel or under clients in the
+        configuration file, or listen on 127.0.0.1.
         ************************************************************************
 
         """
@@ -71,7 +71,7 @@ struct UnladenCommand: AsyncParsableCommand {
 
 /// Options shared by `serve` and `check-config`.
 struct ConfigOptions: ParsableArguments {
-    @Option(help: "Configuration file (JSON; comments and trailing commas allowed). Default: $XDG_CONFIG_HOME/unladen/config.jsonc when it exists.")
+    @Option(help: "Configuration file (JSON; comments and trailing commas allowed). Default: $XDG_CONFIG_HOME/unladen/config.jsonc, which the gateway writes on its first start when it does not exist.")
     var config: String?
 
     @Option(help: "Address to listen on (overrides listen).")
@@ -82,9 +82,6 @@ struct ConfigOptions: ParsableArguments {
 
     @Option(help: "The `*` entry of models: provider, provider/model or @name, for every model name the menu does not list.")
     var model: String?
-
-    @Option(name: .customLong("api-key"), help: "A client key allowed every model name. Also UNLADEN_API_KEY when the file has no clients.")
-    var apiKey: String?
 
     @Flag(help: "Refuse to forward a request that would lose something (content or fields the target cannot carry, lossy conversions). Parameters a model's profile declares it does not take are left out and only reported.")
     var strict = false
@@ -103,7 +100,7 @@ struct ConfigOptions: ParsableArguments {
 
     var overrides: ConfigOverrides {
         ConfigOverrides(
-            host: host, port: port, model: model, apiKey: apiKey.flatMap { $0.isEmpty ? nil : $0 }, strict: strict,
+            host: host, port: port, model: model, strict: strict,
             connectTimeout: connectTimeout, keepalive: keepalive,
         )
     }
@@ -136,9 +133,16 @@ struct Serve: AsyncParsableCommand {
         Several comma-separated keys form a pool. Providers: \(ProviderRegistry.builtIn.providers.keys.sorted().joined(separator: ", ")). \
         Log level: LOG_LEVEL (trace, debug, info, ...).
 
-        Client keys: clients present one as a Bearer token, x-api-key or \
-        x-goog-api-key, or ?key= on Gemini routes. Listening on a non-loopback \
-        address without one prints a warning.
+        Client keys: the configuration's clients present one as a Bearer \
+        token, x-api-key or x-goog-api-key, or ?key= on Gemini routes. \
+        Without clients anyone who reaches the gateway can use it; listening \
+        on a non-loopback address so prints a warning.
+
+        First start: without --config and without a file at the default \
+        path, the gateway writes one there with a panel token, a client key, \
+        and Kilo's free model serving every model name, and prints the \
+        token and the key. When it cannot write the file, the panel token \
+        holds for that run alone.
 
         Disconnects: a client that closes its connection, or half-closes it \
         (shuts down its sending side), is treated as gone and its upstream \
@@ -158,7 +162,19 @@ struct Serve: AsyncParsableCommand {
             }
             logLevel = parsed
         }
-        let loaded = try options.load()
+        // Without a configuration file, one is written, so that the panel
+        // opens and callers need a key.
+        var overrides = options.overrides
+        var firstStart: FirstStart.Outcome?
+        if options.config == nil {
+            let path = ConfigLoader.defaultPath { ProcessInfo.processInfo.environment[$0] }
+            if path.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true {
+                let outcome = FirstStart.create(at: path)
+                if outcome.path == nil { overrides.panelToken = outcome.panelToken }
+                firstStart = outcome
+            }
+        }
+        let loaded = try ConfigLoader.load(path: options.config, overrides: overrides)
         let server = loaded.server
         var clientConfiguration = HTTPClient.Configuration()
         clientConfiguration.timeout = .init(connect: .nanoseconds(Int64(server.connectTimeout / .nanoseconds(1))), read: nil)
@@ -180,7 +196,7 @@ struct Serve: AsyncParsableCommand {
         gateway.activity.restore()
         // Reloads (SIGHUP, the control panel) and the panel's saves.
         let manager = ConfigManager(
-            path: loaded.path ?? options.config, overrides: options.overrides, server: server, gateway: gateway, logger: logger,
+            path: loaded.path ?? options.config, overrides: overrides, server: server, gateway: gateway, logger: logger,
         )
         let app = Application(
             router: buildRouter(gateway: gateway, manager: manager),
@@ -189,6 +205,9 @@ struct Serve: AsyncParsableCommand {
         )
         if let warning = UnladenCommand.exposureWarning(host: server.host, open: loaded.gateway.isOpen) {
             UnladenCommand.printToStandardError(warning)
+        }
+        if let firstStart {
+            UnladenCommand.printToStandardError(FirstStart.notice(firstStart, host: server.host, port: server.port))
         }
         app.logger.info("configuration: \(loaded.path ?? "none (flags and environment only)")")
         app.logger.info("usage log: \(usageLog.map { $0.directory } ?? "off (no HOME or XDG_STATE_HOME)")")
@@ -300,7 +319,7 @@ enum Summary {
         }.joined(separator: "; ")))
         let clients = configuration.clientKeys.map(\.name) + configuration.disabledClients.map { "\($0) (disabled)" }
         lines.append("clients: " + (clients.isEmpty ? "none" : clients.joined(separator: ", ")))
-        lines.append("control panel: " + (configuration.adminToken == nil ? "off (set panel.token)" : "/admin"))
+        lines.append("control panel: " + (configuration.adminToken == nil ? "off (set panel.token)" : "/admin, signing in with panel.token"))
         return lines
     }
 }

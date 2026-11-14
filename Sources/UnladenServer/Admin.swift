@@ -452,13 +452,25 @@ enum AdminActivity {
 
 // MARK: - Routes
 
-/// `/admin` (the panel) and `/admin/api/*`, open only with
-/// `panel.token` set; 404 otherwise, as though they did not exist.
+/// `/` (sent on to `/admin`), `/admin` (the panel) and `/admin/api/*`,
+/// open only with `panel.token` set; otherwise `/admin` says how to turn
+/// the panel on, and the API answers 404.
 func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigManager) {
     let gateway = manager.gateway
 
+    router.get("/") { _, _ in
+        Response(status: .found, headers: [.location: "/admin", .cacheControl: "no-store"])
+    }
+
     @Sendable func page(_ request: Request) -> Response {
-        guard gateway.configuration.adminToken != nil else { return adminError(404, "not found") }
+        guard gateway.configuration.adminToken != nil else {
+            let file = manager.path ?? "the configuration file (--config, or $XDG_CONFIG_HOME/unladen/config.jsonc)"
+            let text = "The control panel is off. Set panel.token (16 characters or more) in \(file), then reload the gateway (SIGHUP) or restart it.\n"
+            return Response(
+                status: .notFound, headers: [.contentType: "text/plain; charset=utf-8", .cacheControl: "no-store"],
+                body: ResponseBody(byteBuffer: ByteBuffer(string: text)),
+            )
+        }
         var headers: HTTPFields = [.contentType: "text/html; charset=utf-8", .cacheControl: "no-store"]
         headers[HTTPField.Name("x-frame-options")!] = "DENY"
         headers[HTTPField.Name("referrer-policy")!] = "no-referrer"

@@ -42,11 +42,12 @@ struct ConfigOverrides: Sendable {
     var port: Int?
     /// Becomes the `*` entry of the menu.
     var model: String?
-    /// A client key allowed every model name.
-    var apiKey: String?
     var strict = false
     var connectTimeout: Int?
     var keepalive: Int?
+    /// The panel token when the file sets none: one made up for a run
+    /// without a configuration file.
+    var panelToken: String?
 }
 
 enum ConfigLoader {
@@ -144,11 +145,7 @@ enum ConfigFile {
         if let seconds = overrides.connectTimeout { loaded.server.connectTimeout = .seconds(seconds) }
         if let seconds = overrides.keepalive { loaded.gateway.keepaliveInterval = .seconds(seconds) }
         if overrides.strict { loaded.gateway.strict = true }
-        if let apiKey = overrides.apiKey {
-            clientKeys = (clientKeys ?? []) + [ClientKey(name: "command-line", secret: apiKey, models: ["*"])]
-        } else if clientKeys == nil, let apiKey = environment("UNLADEN_API_KEY"), !apiKey.isEmpty {
-            clientKeys = [ClientKey(name: "UNLADEN_API_KEY", secret: apiKey, models: ["*"])]
-        }
+        if loaded.gateway.adminToken == nil { loaded.gateway.adminToken = overrides.panelToken }
         loaded.gateway.clientKeys = clientKeys ?? []
         loaded.gateway.disabledClients = disabledClients
 

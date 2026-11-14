@@ -208,6 +208,15 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
             let page = try await client.execute(uri: "/admin", method: .get)
             let api = try await client.execute(uri: "/admin/api/config", method: .get)
             #expect(page.status == .notFound && api.status == .notFound)
+            #expect(String(buffer: page.body).contains("panel.token"))
+        }
+    }
+
+    @Test func theRootLeadsToThePanel() async throws {
+        let manager = try makeManager(sample)
+        try await app(manager).test(.router) { client in
+            let root = try await client.execute(uri: "/", method: .get)
+            #expect(root.status == .found && root.headers[.location] == "/admin")
         }
     }
 
@@ -331,5 +340,52 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
             let account = json(status.body)["accounts"]?.arrayValue?.first { $0["provider"] == "chatgpt" }
             #expect(account?["sign_in"]?["state"] == "signed out")
         }
+    }
+}
+
+@Suite struct FirstStartTests {
+    @Test func theWrittenFileOpensThePanelAndNeedsAKey() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("unladen-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let path = directory + "/unladen/config.jsonc"
+        let outcome = FirstStart.create(at: path)
+        #expect(outcome.path == path && outcome.problem == nil)
+        let key = try #require(outcome.clientKey)
+        #expect(outcome.panelToken.count == 32 && key.count == 32 && key != outcome.panelToken)
+        #expect(FileManager.default.permissions(atPath: path) == 0o600)
+        #expect(FileManager.default.permissions(atPath: directory + "/unladen") == 0o700)
+
+        let loaded = try ConfigLoader.load(path: path) { _ in nil }
+        #expect(loaded.gateway.adminToken == outcome.panelToken)
+        #expect(loaded.gateway.clientKeys.map(\.name) == [FirstStart.clientName])
+        #expect(loaded.gateway.clientKeys.first?.secret == key)
+        #expect(loaded.gateway.clientKeys.first?.models == ["*"])
+
+        let notice = FirstStart.notice(outcome, host: "0.0.0.0", port: 4141)
+        #expect(notice.contains(path) && notice.contains(outcome.panelToken) && notice.contains(key))
+        #expect(notice.contains("http://localhost:4141/admin"))
+    }
+
+    @Test func theWrittenFileServesKilosFreeModel() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("unladen-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        _ = FirstStart.create(at: directory + "/config.jsonc")
+        let loaded = try ConfigLoader.load(path: directory + "/config.jsonc") { _ in nil }
+        #expect(loaded.gateway.keyPools["kilo"] != nil)
+        #expect(try CandidatePlanner(configuration: loaded.gateway).references(for: "claude-sonnet-4") == [FirstStart.model])
+        #expect(loaded.warnings.allSatisfy { $0.contains("`*` serves every model name") })
+    }
+
+    @Test func aFileThatCannotBeWrittenLeavesATokenForTheRun() throws {
+        let outcome = FirstStart.create(at: "/proc/unladen-\(UUID().uuidString)/config.jsonc")
+        #expect(outcome.path == nil && outcome.clientKey == nil)
+        #expect(outcome.problem?.hasPrefix("cannot create /proc/") == true)
+        #expect(FirstStart.create(at: nil).path == nil)
+
+        var overrides = ConfigOverrides()
+        overrides.panelToken = outcome.panelToken
+        #expect(try ConfigFile.parse("", overrides: overrides) { _ in nil }.gateway.adminToken == outcome.panelToken)
+        let file = #"{ "panel": { "token": "\#(adminToken)" } }"#
+        #expect(try ConfigFile.parse(file, overrides: overrides) { _ in nil }.gateway.adminToken == adminToken)
     }
 }

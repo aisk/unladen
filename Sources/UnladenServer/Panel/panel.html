@@ -60,7 +60,7 @@
           <h2 class="h3 text-center mb-4">Control panel</h2>
           <label class="form-label">Panel token</label>
           <input type="password" class="form-control" x-model="tokenInput" autocomplete="current-password">
-          <div class="form-hint">The value of panel.token in the configuration file.</div>
+          <div class="form-hint">The value of panel.token in the configuration file. On its first start the gateway writes that file and prints the token in its log.</div>
           <div class="text-danger mt-2" x-text="signInError"></div>
           <button class="btn btn-primary w-100 mt-4" type="submit"><i class="ti ti-login-2 me-1"></i>Sign in</button>
         </div>
