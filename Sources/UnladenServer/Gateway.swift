@@ -60,7 +60,12 @@ struct Gateway: Sendable {
         }
         if !changed.isEmpty { health.forget { changed.contains($0) } }
         health.enableDisabledKeys()
-        models.forget()
+        // A provider whose accounts and endpoints are as they were keeps
+        // its model list.
+        models.forget { provider in
+            (old.keyPools[provider]?.keys ?? []) != (configuration.keyPools[provider]?.keys ?? [])
+                || old.registry[provider]?.endpoints != configuration.registry[provider]?.endpoints
+        }
         // An account as it was keeps what was read of its allowance: a
         // save of something else does not ask its provider again.
         var same: Set<String> = []

@@ -65,6 +65,9 @@ let counter = 0;
 function panel() {
   return {
     token: localStorage.getItem(TOKEN_KEY) || '',
+    // The models each provider lists, once asked: provider → names, or
+    // `null` while asking. The gateway keeps them too.
+    providerModels: {},
     tokenInput: '',
     signInError: '',
     tab: 'home',
@@ -658,6 +661,7 @@ function panel() {
       this.hash = config.json.hash;
       this.original = config.json.document || {};
       this.model = fromDocument(this.original);
+      this.providerModels = {};
       this.settings = null;
       if (this.tab === 'settings') this.showSettings();
       await this.refreshStatus();
@@ -1075,6 +1079,13 @@ function panel() {
     },
     // What the gateway resolves a name to, once in force.
     resolved(name) { return (this.status?.models || []).find(r => r.name === name)?.targets || []; },
+    // Asks the gateway once for the models `provider` lists.
+    async askModels(provider) {
+      if (!provider || provider in this.providerModels) return;
+      this.providerModels[provider] = null;
+      const result = await this.api('GET', 'providers/' + encodeURIComponent(provider) + '/models');
+      this.providerModels[provider] = result.status === 200 ? result.json.models || [] : [];
+    },
     // The longest conversation a model moves to its next target: its own, else Settings'.
     limitOf(r) { return (r.limit || '').trim() || String(this.model.advanced.fallback_max_context || '').trim() || 'off'; },
     // One target of the edit dialog.

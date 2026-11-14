@@ -9,7 +9,8 @@ import NIOCore
 @_spi(Wire) import UnladenCore
 
 /// Providers' model lists, asked of them with the first account that
-/// answers and kept for a while.
+/// answers and kept for a while. Asks for one provider at the same time
+/// share one call.
 final class ModelCatalog: Sendable {
     /// How long a list is kept.
     static let lifetime: Int64 = 10 * 60 * 1000
@@ -23,22 +24,50 @@ final class ModelCatalog: Sendable {
         var until: Int64
     }
 
-    private let entries = NIOLockedValueBox([String: Entry]())
+    private struct State {
+        var entries: [String: Entry] = [:]
+        var pending: [String: Task<[String]?, Never>] = [:]
+        /// Raised by each forgetting, so that a call started before it
+        /// does not keep its list.
+        var generation = 0
+    }
+
+    private let state = NIOLockedValueBox(State())
 
     init() {}
 
-    /// Forgets every list (the configuration changed).
-    func forget() {
-        entries.withLockedValue { $0 = [:] }
+    /// Forgets the lists of the providers `changed` picks (the
+    /// configuration changed), and every call under way.
+    func forget(_ changed: (String) -> Bool = { _ in true }) {
+        state.withLockedValue { state in
+            state.entries = state.entries.filter { !changed($0.key) }
+            state.pending = [:]
+            state.generation += 1
+        }
     }
 
     /// The models `provider` lists; empty when it cannot be asked.
     func names(of provider: String, gateway: Gateway, configuration: GatewayConfiguration) async -> [String] {
+        enum Found { case kept([String]), asking(Task<[String]?, Never>, generation: Int) }
         let now = LocalDay.nowMilliseconds()
-        if let entry = entries.withLockedValue({ $0[provider] }), entry.until > now { return entry.names }
-        let names = await fetch(provider, gateway: gateway, configuration: configuration)
-        entries.withLockedValue {
-            $0[provider] = Entry(names: names ?? [], until: now + (names == nil ? Self.failureLifetime : Self.lifetime))
+        let found: Found = state.withLockedValue { state in
+            if let entry = state.entries[provider], entry.until > now { return .kept(entry.names) }
+            if let task = state.pending[provider] { return .asking(task, generation: state.generation) }
+            let task = Task { await self.fetch(provider, gateway: gateway, configuration: configuration) }
+            state.pending[provider] = task
+            return .asking(task, generation: state.generation)
+        }
+        let task: Task<[String]?, Never>, generation: Int
+        switch found {
+        case .kept(let names): return names
+        case .asking(let t, let g): (task, generation) = (t, g)
+        }
+        let names = await task.value
+        let done = LocalDay.nowMilliseconds()
+        state.withLockedValue { state in
+            guard state.generation == generation, state.pending[provider] == task else { return }
+            state.pending[provider] = nil
+            state.entries[provider] = Entry(names: names ?? [], until: done + (names == nil ? Self.failureLifetime : Self.lifetime))
         }
         return names ?? []
     }

@@ -1103,8 +1103,14 @@
                               </template>
                             </select>
                             <label class="form-label">Model the provider is asked for</label>
-                            <input class="form-control mono" x-model="target.upstream" placeholder="deepseek-chat">
+                            <input class="form-control mono" x-model="target.upstream" placeholder="deepseek-chat" :list="'models-' + target.uid" autocomplete="off"
+                                   x-effect="target.kind === 'provider' && askModels(target.provider)">
+                            <datalist :id="'models-' + target.uid">
+                              <template x-for="name in providerModels[target.provider] || []" :key="name"><option :value="name"></option></template>
+                            </datalist>
                             <div class="form-hint">Leave it empty to pass on the name the client asked for.</div>
+                            <div class="form-hint" x-show="providerModels[target.provider] === null">Asking the provider for its models…</div>
+                            <div class="form-hint" x-show="(providerModels[target.provider] || []).length" x-text="(providerModels[target.provider] || []).length + ' models listed by the provider: pick one or type a name.'"></div>
                           </div>
                           <div x-show="target.kind === 'alias'">
                             <select class="form-select mono" x-model="target.alias">

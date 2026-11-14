@@ -549,6 +549,16 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         return adminJSON(200, ["accounts": .array(quotas.map(\.json))])
     }
 
+    /// The models a provider lists, for the panel to suggest; kept by
+    /// ``ModelCatalog``, so asking again does not ask the provider.
+    router.get("/admin/api/providers/:id/models") { request, context in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        let provider = context.parameters.get("id") ?? ""
+        let configuration = gateway.configuration
+        let names = await gateway.models.names(of: provider, gateway: gateway, configuration: configuration)
+        return adminJSON(200, ["models": .array(names.map(JSONValue.string))])
+    }
+
     router.post("/admin/api/reload") { request, _ in
         if let denied = adminDenied(request, gateway: gateway) { return denied }
         return manager.reload() ? adminJSON(200, ["reloaded": true]) : adminError(422, "the file does not load; see the log")
