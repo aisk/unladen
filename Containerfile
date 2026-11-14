@@ -3,7 +3,7 @@
 # runtime inside the executable; what remains is glibc 2.43 and libstdc++,
 # which is what the Swift image's own Ubuntu ships.
 
-FROM swift:6.4 AS build
+FROM docker.io/library/swift:6.4 AS build
 WORKDIR /src
 # The dependencies in a layer of their own: editing the sources (the README
 # included) then reuses the resolved checkouts instead of fetching and
