@@ -255,6 +255,8 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         #expect(parseError(#"{ "models": { "a": { "try": "openai/gpt-4o", "fallback_max_context": "lots" } } }"#)?
             .message.contains("expected a positive number of tokens") == true)
         #expect(parseError(#"{ "advanced": { "fallback_max_context": 0 } }"#)?.message.contains("advanced.fallback_max_context") == true)
+        #expect(parseError(#"{ "advanced": { "fallback_max_context": "99999999999999999m" } }"#)?
+            .message.contains("expected a positive number of tokens") == true)
         let loop = parseError(#"{ "models": { "a": ["openai/gpt-4o", "@b"], "b": ["deepseek/deepseek-chat", "@a"] } }"#)
         #expect(loop?.message.contains("refers back to itself: a → b → a") == true)
         #expect(loop?.message.hasPrefix("models.b.1:") == true)

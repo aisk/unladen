@@ -359,7 +359,10 @@ private struct Field {
         if allowingOff, text == "off" { return nil }
         if let value = Int(text), value > 0 { return value }
         for (unit, factor) in [("k", 1000), ("m", 1_000_000)] where text.hasSuffix(unit) {
-            if let value = Int(text.dropLast().trimmingBlanks()), value > 0 { return value * factor }
+            if let value = Int(text.dropLast().trimmingBlanks()), value > 0 {
+                let (tokens, overflow) = value.multipliedReportingOverflow(by: factor)
+                if !overflow { return tokens }
+            }
         }
         throw error("expected a positive number of tokens such as 64000, 64k or 1m\(allowingOff ? ", or off" : "")")
     }

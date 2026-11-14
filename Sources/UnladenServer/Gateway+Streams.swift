@@ -28,7 +28,7 @@ extension Gateway {
         request: WireRequest,
         decodeWarnings: [WireWarning],
         configuration: GatewayConfiguration,
-        conversation: String?,
+        ticket: Placements.Ticket?,
         monitor: DisconnectMonitor,
         log: RequestLog,
         tracker: RequestTracker,
@@ -72,7 +72,7 @@ extension Gateway {
                 tracker.serving(served.candidate, streaming: true)
                 try await self.forward(
                     served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
-                    conversation: conversation, monitor: monitor, writer: &writer, log: log, tracker: tracker,
+                    ticket: ticket, monitor: monitor, writer: &writer, log: log, tracker: tracker,
                     note: "headers sent before the first content",
                 )
             }
@@ -82,14 +82,14 @@ extension Gateway {
     /// Streams a primed reply to `writer`, whose headers are sent: the
     /// warnings first as a comment where the protocol takes one, then the
     /// events. Logs the request, cools an upstream that broke off, and
-    /// notes what the upstream counted of `conversation`.
+    /// notes what the upstream counted of `ticket`'s request.
     @concurrent func forward(
         _ served: Served,
         _ events: PrimedEvents,
         clientProtocol: WireProtocol,
         request: WireRequest,
         configuration: GatewayConfiguration,
-        conversation: String? = nil,
+        ticket: Placements.Ticket? = nil,
         monitor: DisconnectMonitor,
         writer: inout any ResponseBodyWriter,
         log: RequestLog,
@@ -134,7 +134,7 @@ extension Gateway {
             status: summary.disconnected ? 499 : 200, note: note, tokens: tokens,
             warnings: warnings.count + summary.warnings.count, failed: summary.failure != nil && !summary.disconnected,
         )
-        if let conversation { placements.answered(candidate.reference, input: tokens?.input, for: conversation) }
+        if let ticket { placements.answered(ticket, input: tokens?.input) }
         if !summary.disconnected, !summary.closedAfterEnd { try await writer.finish(nil) }
     }
 

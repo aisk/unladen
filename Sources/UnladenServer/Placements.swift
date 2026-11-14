@@ -25,16 +25,31 @@ struct Placement: Sendable, Equatable {
     /// The input tokens its upstream reported for that request (cached
     /// ones included); `nil` until the reply ends, or when it reports none.
     var reportedInput: Int?
+    /// The request it answered (``Placements/Ticket/request``).
+    var request = 0
 }
 
 /// The target that last answered each conversation.
 final class Placements: Sendable {
-    /// How long a placement is kept: the longest a prompt cache is assumed to live.
-    static let lifetime: Duration = .seconds(3600)
+    /// One request's hold on its conversation's placement: what it writes
+    /// when it is answered, and when its reply ends.
+    struct Ticket: Sendable, Hashable {
+        var conversation: String
+        var request: Int
+    }
+
+    /// How long a placement is kept: well past the longest a prompt cache
+    /// is assumed to live, so that one gone cold is known as such.
+    static let retention: Duration = .seconds(24 * 3600)
     /// How many conversations are kept.
     static let limit = 4096
 
-    private let state = NIOLockedValueBox<[String: Placement]>([:])
+    private struct State {
+        var placements: [String: Placement] = [:]
+        var next = 1
+    }
+
+    private let state = NIOLockedValueBox(State())
 
     init() {}
 
@@ -46,40 +61,48 @@ final class Placements: Sendable {
         return [session, origin.subagent ?? "", model.lowercased()].joined(separator: "\u{0}")
     }
 
-    /// Where `conversation` was last answered, within ``lifetime``.
+    /// A ticket for a new request of `conversation`.
+    func ticket(for conversation: String) -> Ticket {
+        state.withLockedValue { state in
+            defer { state.next += 1 }
+            return Ticket(conversation: conversation, request: state.next)
+        }
+    }
+
+    /// Where `conversation` was last answered, within ``retention``.
     func placement(for conversation: String) -> Placement? {
         let now = ContinuousClock.now
-        return state.withLockedValue { placements in
-            guard let placement = placements[conversation], placement.at + Self.lifetime > now else { return nil }
+        return state.withLockedValue { state in
+            guard let placement = state.placements[conversation], placement.at + Self.retention > now else { return nil }
             return placement
         }
     }
 
-    /// `reference` has begun answering `conversation`, whose request is
-    /// estimated at `estimate` tokens.
-    func answering(_ reference: String, estimate: Int?, for conversation: String) {
+    /// `reference` has begun answering `ticket`'s request, estimated at
+    /// `estimate` tokens.
+    func answering(_ reference: String, estimate: Int?, for ticket: Ticket) {
         let now = ContinuousClock.now
-        state.withLockedValue { placements in
-            placements[conversation] = Placement(reference: reference, at: now, estimate: estimate)
-            guard placements.count > Self.limit else { return }
-            placements = placements.filter { $0.value.at + Self.lifetime > now }
-            if placements.count > Self.limit {
-                let oldest = placements.sorted { $0.value.at < $1.value.at }.prefix(placements.count - Self.limit)
-                for (key, _) in oldest { placements.removeValue(forKey: key) }
+        state.withLockedValue { state in
+            state.placements[ticket.conversation] = Placement(reference: reference, at: now, estimate: estimate, request: ticket.request)
+            guard state.placements.count > Self.limit else { return }
+            state.placements = state.placements.filter { $0.value.at + Self.retention > now }
+            if state.placements.count > Self.limit {
+                let oldest = state.placements.sorted { $0.value.at < $1.value.at }.prefix(state.placements.count - Self.limit)
+                for (key, _) in oldest { state.placements.removeValue(forKey: key) }
             }
         }
     }
 
-    /// `reference` has finished answering `conversation`, its upstream
-    /// reporting `input` tokens. Ignored when another target has answered
-    /// it since.
-    func answered(_ reference: String, input: Int?, for conversation: String) {
+    /// `ticket`'s reply has ended, its upstream reporting `input` tokens.
+    /// Ignored when a later request of the conversation has been answered
+    /// since: its input belongs with that request's estimate.
+    func answered(_ ticket: Ticket, input: Int?) {
         let now = ContinuousClock.now
-        state.withLockedValue { placements in
-            guard var placement = placements[conversation], placement.reference == reference else { return }
+        state.withLockedValue { state in
+            guard var placement = state.placements[ticket.conversation], placement.request == ticket.request else { return }
             placement.at = now
             if let input, input > 0 { placement.reportedInput = input }
-            placements[conversation] = placement
+            state.placements[ticket.conversation] = placement
         }
     }
 }
@@ -118,8 +141,9 @@ struct KeptPlace: Sendable, Equatable {
     ///
     /// Not kept: a new conversation, and one whose cache at its target has
     /// gone cold (``ConversationContext/cacheLifetime(_:provider:)``),
-    /// which have nothing to lose. `estimate` is
-    /// ``ConversationContext/estimatedTokens(_:)`` of `request`.
+    /// which have nothing to lose; nor one that builds on a stored reply
+    /// without a placement, as which target keeps that reply is not known.
+    /// `estimate` is ``ConversationContext/estimatedTokens(_:)`` of `request`.
     static func keep(
         _ request: WireRequest, estimate: Int, candidates: [Candidate], limit: Int?, placement: Placement?,
         now: ContinuousClock.Instant = .now,
@@ -133,6 +157,7 @@ struct KeptPlace: Sendable, Equatable {
         let placed = placement.flatMap { placement in
             candidates.first { $0.reference == placement.reference }.map { (placement, $0.target.provider) }
         }
+        if storedReply, placed == nil { return nil }
         if !storedReply, let (placement, provider) = placed,
            placement.at + ConversationContext.cacheLifetime(request, provider: provider) < now
         {

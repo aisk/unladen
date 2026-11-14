@@ -206,9 +206,12 @@ private let session: HTTPFields = [HTTPField.Name("x-session-id")!: "s-1"]
         """#)
         #expect(keep(hour, placement: placed(primary, ago: .seconds(400)))?.reference == primary)
 
-        // A reply the upstream keeps holds the context: kept however short.
+        // A reply the upstream keeps holds the context: kept however short,
+        // where it was answered, however long ago. Not knowing where, it is not kept.
         let stored = try request(.responses, #"{"model":"m","input":"Go on","previous_response_id":"resp_1"}"#)
-        #expect(keep(stored)?.storedReply == true)
+        #expect(keep(stored, placement: placed(secondary, ago: .seconds(4000)))?.storedReply == true)
+        #expect(keep(stored, placement: placed(secondary, ago: .seconds(4000)))?.reference == secondary)
+        #expect(keep(stored) == nil)
         #expect(keep(try request(.responses, #"{"model":"m","input":"Go on"}"#), limit: 1) == nil)
 
         // A tool result is an earlier turn of the model.
@@ -218,6 +221,19 @@ private let session: HTTPFields = [HTTPField.Name("x-session-id")!: "s-1"]
         """#)
         #expect(ConversationContext.continues(tool))
         #expect(keep(tool) != nil)
+    }
+
+    @Test func aReplyEndingLateDoesNotOverwriteALaterRequestsPlacement() throws {
+        let placements = Placements()
+        let first = placements.ticket(for: "c")
+        let second = placements.ticket(for: "c")
+        placements.answering(primary, estimate: 100_000, for: first)
+        placements.answering(primary, estimate: 5000, for: second)
+        placements.answered(first, input: 100_000)
+        #expect(placements.placement(for: "c")?.estimate == 5000)
+        #expect(placements.placement(for: "c")?.reportedInput == nil)
+        placements.answered(second, input: 5200)
+        #expect(placements.placement(for: "c")?.reportedInput == 5200)
     }
 
     @Test func contextEstimates() {

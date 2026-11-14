@@ -124,6 +124,7 @@ struct Gateway: Sendable {
         }
         // A long conversation stays where its prompt cache is.
         let conversation = Placements.conversation(origin, model: request.model)
+        let ticket = conversation.map { placements.ticket(for: $0) }
         let estimate = plan.fallbackMaxContext != nil ? ConversationContext.estimatedTokens(request) : nil
         let kept = estimate.flatMap { estimate in
             KeptPlace.keep(
@@ -154,7 +155,7 @@ struct Gateway: Sendable {
                 }
                 switch outcome {
                 case .reply(let served):
-                    if let conversation { placements.answering(served.candidate.reference, estimate: estimate, for: conversation) }
+                    if let ticket { placements.answering(served.candidate.reference, estimate: estimate, for: ticket) }
                 case .failure:
                     if let kept { log.emit(kept.note) }
                 }
@@ -171,7 +172,7 @@ struct Gateway: Sendable {
             // in the same response.
             guard let done = await settled.wait(upTo: hold) else {
                 return heldStream(settled, work, clientProtocol: clientProtocol, request: request, decodeWarnings: decoded.warnings,
-                                  configuration: configuration, conversation: conversation, monitor: monitor, log: log, tracker: tracker)
+                                  configuration: configuration, ticket: ticket, monitor: monitor, log: log, tracker: tracker)
             }
             result = done
         } else {
@@ -211,7 +212,7 @@ struct Gateway: Sendable {
                 tracker.serving(candidate, streaming: false)
                 let tokens = TokenCounts(response.usage)
                 tracker.finish(status: 200, tokens: tokens, warnings: all.count)
-                if let conversation { placements.answered(candidate.reference, input: tokens?.input, for: conversation) }
+                if let ticket { placements.answered(ticket, input: tokens?.input) }
                 return Response(status: .ok, headers: fields, body: ResponseBody(byteBuffer: ByteBuffer(bytes: encoded.body)))
 
             case .events(let events):
@@ -225,7 +226,7 @@ struct Gateway: Sendable {
                     defer { monitor.uninstall() }
                     try await self.forward(
                         served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
-                        conversation: conversation, monitor: monitor, writer: &writer, log: log, tracker: tracker,
+                        ticket: ticket, monitor: monitor, writer: &writer, log: log, tracker: tracker,
                     )
                 })
             }
