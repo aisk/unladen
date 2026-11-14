@@ -4,7 +4,7 @@ const HIDDEN = /^<hidden (key-[0-9a-f]{8})>$/;
 // The sections the forms edit. `listen` and `panel` are set in the file
 // alone and carried back as they are.
 const SECTIONS = ['accounts', 'models', 'clients', 'advanced'];
-const ADVANCED = ['strict', 'keepalive', 'head_timeout', 'idle_timeout', 'max_request_bytes'];
+const ADVANCED = ['strict', 'keepalive', 'head_timeout', 'idle_timeout', 'max_request_bytes', 'fallback_max_context'];
 // The names a provider's own models go by, offered as models when an
 // account of it is added.
 const FAMILIES = {
@@ -88,6 +88,7 @@ function panel() {
       { name: 'idle_timeout', label: 'Longest silence in a stream', placeholder: '300s', help: 'A stream that stays silent this long is ended. off: no limit.' },
       { name: 'keepalive', label: 'Keepalive interval', placeholder: '15s', help: 'How often a stream that is waiting is kept alive.' },
       { name: 'max_request_bytes', label: 'Largest request', placeholder: '64MiB', help: 'A request with a larger body is refused.' },
+      { name: 'fallback_max_context', label: 'Longest conversation to move', placeholder: 'off', help: 'A conversation under way with more context than this (in tokens, such as 64k) is not moved to the next model of its list: it waits for the one holding its prompt cache. A model entry may set its own. off: no limit.' },
     ],
     apps: [
       { id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }, { id: 'gemini', label: 'Gemini CLI' }, { id: 'pi', label: 'pi' }, { id: 'opencode', label: 'OpenCode' },

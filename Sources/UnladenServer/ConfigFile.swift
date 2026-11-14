@@ -159,9 +159,9 @@ enum ConfigFile {
                 loaded.warnings.append("--model replaces the `*` entry of models")
             }
             menu.removeAll { $0.name == "*" }
-            menu.append(Parser.MenuEntry(name: "*", target: model.trimmingBlanks(), field: nil))
+            menu.append(Parser.MenuEntry(name: "*", targets: [Parser.MenuTarget(text: model.trimmingBlanks(), field: nil)], field: nil))
         }
-        let routes = try parser.routes(menu, registry: registry)
+        let routes = try parser.routes(menu, registry: registry, fallbackMaxContext: loaded.gateway.fallbackMaxContext)
         for route in routes {
             if route.name == "*" {
                 loaded.warnings.append("models: `*` serves every model name no other entry matches: such requests are answered by \(route.targets.map(\.model).joined(separator: ", "))")
@@ -351,6 +351,19 @@ private struct Field {
         throw error("expected a positive duration such as 500ms, 15s, 2m or 1h\(allowingOff ? ", or off" : "")")
     }
 
+    /// A number of tokens: `64000`, `64k` or `1m` (thousands, millions);
+    /// `off` is `nil` when `allowingOff`.
+    func tokenCount(allowingOff: Bool) throws(ConfigError) -> Int? {
+        if allowingOff, value == .bool(false) { return nil }
+        let text = try string().trimmingBlanks().lowercased()
+        if allowingOff, text == "off" { return nil }
+        if let value = Int(text), value > 0 { return value }
+        for (unit, factor) in [("k", 1000), ("m", 1_000_000)] where text.hasSuffix(unit) {
+            if let value = Int(text.dropLast().trimmingBlanks()), value > 0 { return value * factor }
+        }
+        throw error("expected a positive number of tokens such as 64000, 64k or 1m\(allowingOff ? ", or off" : "")")
+    }
+
     func byteCount() throws(ConfigError) -> Int {
         let text = try string().trimmingBlanks()
         let units: [(String, Int)] = [("KiB", 1 << 10), ("MiB", 1 << 20), ("GiB", 1 << 30), ("KB", 1000), ("MB", 1_000_000), ("GB", 1_000_000_000)]
@@ -432,7 +445,10 @@ extension ConfigFile {
         func advanced(_ field: Field, into loaded: inout LoadedConfiguration) throws(ConfigError) -> [String: KeyPool.Strategy] {
             var pools: [String: KeyPool.Strategy] = [:]
             for (name, value) in try field.mapping(
-                allowed: ["strict", "keepalive", "connect_timeout", "max_request_bytes", "head_timeout", "idle_timeout", "pools"],
+                allowed: [
+                    "strict", "keepalive", "connect_timeout", "max_request_bytes", "head_timeout", "idle_timeout", "pools",
+                    "fallback_max_context",
+                ],
             ) {
                 switch name {
                 case "strict": loaded.gateway.strict = try value.bool()
@@ -441,6 +457,7 @@ extension ConfigFile {
                 case "max_request_bytes": loaded.gateway.maxRequestBytes = try value.byteCount()
                 case "head_timeout": loaded.gateway.headTimeout = try value.duration(allowingOff: true)
                 case "idle_timeout": loaded.gateway.idleTimeout = try value.duration(allowingOff: true)
+                case "fallback_max_context": loaded.gateway.fallbackMaxContext = try value.tokenCount(allowingOff: true)
                 case "pools":
                     for (provider, pick) in try value.mapping() {
                         guard loaded.gateway.registry[provider] != nil else {
@@ -650,8 +667,10 @@ extension ConfigFile {
 
         struct MenuEntry {
             var name: String
-            /// As written: `provider`, `provider/model` or `@name`.
-            var target: String
+            var targets: [MenuTarget]
+            /// `fallback_max_context`: `nil` when the entry leaves it to
+            /// `advanced`, `.some(nil)` when it is `off`.
+            var fallbackMaxContext: Int??
             /// Where it is written; `nil`: on the command line (`--model`).
             var field: Field?
 
@@ -659,6 +678,19 @@ extension ConfigFile {
                 field?.error(message) ?? ConfigError(message: "--model: \(message)")
             }
         }
+
+        struct MenuTarget {
+            /// As written: `provider`, `provider/model` or `@name`.
+            var text: String
+            var field: Field?
+
+            func error(_ message: String) -> ConfigError {
+                field?.error(message) ?? ConfigError(message: "--model: \(message)")
+            }
+        }
+
+        /// Entry settings later versions give a meaning to.
+        static let laterEntrySettings: Set<String> = ["budget", "head_timeout", "patience", "strict", "affinity"]
 
         func menu(_ field: Field) throws(ConfigError) -> [MenuEntry] {
             var entries: [MenuEntry] = []
@@ -668,18 +700,41 @@ extension ConfigFile {
                 guard seen.insert(name.lowercased()).inserted else {
                     throw value.error("`\(name)` is defined twice (names are case-insensitive)")
                 }
-                switch value.value {
-                case .array:
-                    throw value.error("a list of targets to fall back through is not supported yet: give one target")
-                case .object:
-                    throw value.error("an entry with settings (`try`, `budget`, …) is not supported yet: give one target")
-                default:
-                    let target = try value.string().trimmingBlanks()
-                    guard !target.isEmpty else { throw value.error("is empty") }
-                    entries.append(MenuEntry(name: name, target: target, field: value))
+                var entry = MenuEntry(name: name, targets: [], field: value)
+                if value.value.objectValue != nil {
+                    var list: Field?
+                    for (setting, item) in try value.mapping(allowed: ["try", "fallback_max_context"], reserved: Self.laterEntrySettings) {
+                        switch setting {
+                        case "try": list = item
+                        case "fallback_max_context": entry.fallbackMaxContext = .some(try item.tokenCount(allowingOff: true))
+                        default: break
+                        }
+                    }
+                    guard let list else { throw value.error("`try` is missing: give the targets to try, in order") }
+                    entry.targets = try Self.targets(list)
+                } else {
+                    entry.targets = try Self.targets(value)
                 }
+                entries.append(entry)
             }
             return entries
+        }
+
+        /// One target, or a list of them tried in order.
+        static func targets(_ field: Field) throws(ConfigError) -> [MenuTarget] {
+            let items = field.value.arrayValue != nil ? try field.sequence() : [field]
+            guard !items.isEmpty else { throw field.error("is empty: give at least one target") }
+            var targets: [MenuTarget] = []
+            for item in items {
+                if let object = item.value.objectValue {
+                    let what = object["any"] != nil ? "a group of targets (`any`)" : "a target with settings (`model`, `weight`, `when`)"
+                    throw item.error("\(what) is not supported yet: give the target as a string")
+                }
+                let text = try item.string().trimmingBlanks()
+                guard !text.isEmpty else { throw item.error("is empty") }
+                targets.append(MenuTarget(text: text, field: item))
+            }
+            return targets
         }
 
         /// `provider` alone is `provider/$model`.
@@ -687,35 +742,48 @@ extension ConfigFile {
             target.contains("/") ? target : target + "/$model"
         }
 
-        /// The menu as routes: references followed, targets checked.
-        func routes(_ entries: [MenuEntry], registry: ProviderRegistry) throws(ConfigError) -> [Route] {
+        /// The menu as routes: references spliced in, targets checked.
+        /// An entry without its own `fallback_max_context` takes `fallbackMaxContext`.
+        func routes(_ entries: [MenuEntry], registry: ProviderRegistry, fallbackMaxContext: Int?) throws(ConfigError) -> [Route] {
             var byName: [String: MenuEntry] = [:]
             for entry in entries { byName[entry.name.lowercased()] = entry }
-            var routes: [Route] = []
-            for entry in entries {
-                var current = entry
-                var chain = [entry.name]
-                while current.target.hasPrefix("@") {
-                    let name = String(current.target.dropFirst())
+
+            /// `entry`'s targets, each `@name` replaced by that entry's.
+            func expanded(_ entry: MenuEntry, chain: [String]) throws(ConfigError) -> [RouteTarget] {
+                var targets: [RouteTarget] = []
+                for target in entry.targets {
+                    guard target.text.hasPrefix("@") else {
+                        let routeTarget = RouteTarget(model: Self.expand(target.text))
+                        do throws(ConfigError) {
+                            try ConfigFile.check(routeTarget, registry: registry)
+                        } catch {
+                            throw target.error(error.message)
+                        }
+                        targets.append(routeTarget)
+                        continue
+                    }
+                    let name = String(target.text.dropFirst())
                     guard let next = byName[name.lowercased()] else {
-                        throw entry.error("`@\(name)` names no entry of models")
+                        throw target.error("`@\(name)` names no entry of models")
                     }
                     guard !next.name.contains("*") else {
-                        throw entry.error("`@\(name)` names a pattern: only an entry without * can be referred to")
+                        throw target.error("`@\(name)` names a pattern: only an entry without * can be referred to")
                     }
                     guard !chain.contains(where: { $0.lowercased() == next.name.lowercased() }) else {
-                        throw entry.error("refers back to itself: \((chain + [next.name]).joined(separator: " → "))")
+                        throw target.error("refers back to itself: \((chain + [next.name]).joined(separator: " → "))")
                     }
-                    chain.append(next.name)
-                    current = next
+                    targets += try expanded(next, chain: chain + [next.name])
                 }
-                let target = RouteTarget(model: Self.expand(current.target))
-                do throws(ConfigError) {
-                    try ConfigFile.check(target, registry: registry)
-                } catch {
-                    throw current.error(error.message)
+                return targets
+            }
+
+            var routes: [Route] = []
+            for entry in entries {
+                var targets: [RouteTarget] = []
+                for target in try expanded(entry, chain: [entry.name]) where !targets.contains(target) {
+                    targets.append(target)
                 }
-                routes.append(Route(name: entry.name, targets: [target]))
+                routes.append(Route(name: entry.name, targets: targets, fallbackMaxContext: entry.fallbackMaxContext ?? fallbackMaxContext))
             }
             return routes
         }

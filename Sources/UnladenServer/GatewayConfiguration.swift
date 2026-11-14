@@ -52,6 +52,9 @@ struct GatewayConfiguration: Sendable {
     /// Upstream keys by provider id.
     var keyPools: [String: KeyPool] = [:]
     var routes = RouteTable()
+    /// `advanced.fallback_max_context`: ``Route/fallbackMaxContext`` of
+    /// entries that do not set their own.
+    var fallbackMaxContext: Int?
     /// Keys clients must present.
     var clientKeys: [ClientKey] = []
     /// Clients the file lists with `enabled: false`. With them, an empty
@@ -192,11 +195,15 @@ struct RouteTarget: Sendable, Hashable {
 }
 
 /// A menu entry: a client model name (or glob of names) and the upstream
-/// models that serve it, in order. The file gives one target per entry for
-/// now; the candidate planner already walks a list.
+/// models that serve it, in order: each one is tried, all its keys, before
+/// the next.
 struct Route: Sendable, Hashable {
     var name: String
     var targets: [RouteTarget]
+    /// The longest context, in estimated tokens, a conversation already
+    /// under way may take to another target than the one serving it;
+    /// `nil`: no limit. Switching would leave its prompt cache behind.
+    var fallbackMaxContext: Int?
 
     var isPattern: Bool { name.contains("*") }
 }

@@ -2,9 +2,9 @@
 //
 // A request is routed to an ordered candidate list (model × key); the
 // fallback loop only tries candidates in that order. A `RoutingStrategy`
-// orders them from the request context and each candidate's health. The
-// first version routes each name to one model; its provider's key pool
-// supplies the candidates.
+// orders them from the request context and each candidate's health. A
+// name routes to a list of models tried in order; each model's provider's
+// key pool supplies its candidates.
 
 import NIOConcurrencyHelpers
 @_spi(Wire) import UnladenCore
@@ -261,13 +261,34 @@ struct PlanningError: Error, Sendable {
 struct CandidatePlanner: Sendable {
     var configuration: GatewayConfiguration
 
+    /// What a client model name is served by.
+    struct Plan: Sendable, Equatable {
+        /// The model references to try, in order, without repeats.
+        var references: [String]
+        /// The route's ``Route/fallbackMaxContext``; `nil` for a reference
+        /// passed through.
+        var fallbackMaxContext: Int?
+    }
+
     /// The model references to try for `clientModel`, in order.
     func references(for clientModel: String, access: ClientAccess = .open) throws(PlanningError) -> [String] {
+        try plan(for: clientModel, access: access).references
+    }
+
+    func plan(for clientModel: String, access: ClientAccess = .open) throws(PlanningError) -> Plan {
         let name = clientModel.hasPrefix("models/") ? String(clientModel.dropFirst(7)) : clientModel
         let routes = configuration.routes
+        func serve(_ route: Route) -> Plan {
+            var references: [String] = []
+            for target in route.targets {
+                let reference = target.reference(for: name)
+                if !references.contains(reference) { references.append(reference) }
+            }
+            return Plan(references: references, fallbackMaxContext: route.fallbackMaxContext)
+        }
         if let route = routes.named(name) {
             guard access.mayUse(name) else { throw Self.notAllowed(clientModel) }
-            return route.targets.map { $0.reference(for: name) }
+            return serve(route)
         }
         if let (provider, _) = try? ProviderRegistry.parse(name), configuration.registry[provider] != nil {
             guard access.mayPassThrough(name) else { throw Self.notAllowed(clientModel) }
@@ -276,17 +297,22 @@ struct CandidatePlanner: Sendable {
             } catch {
                 if case .invalidModelID(_, let reason) = error { throw Self.invalidModel(name, reason) }
             }
-            return [name]
+            return Plan(references: [name])
         }
         if let route = routes.catchAll {
             guard access.mayUse(name) else { throw Self.notAllowed(clientModel) }
-            return route.targets.map { $0.reference(for: name) }
+            return serve(route)
         }
         throw PlanningError(status: 404, message: "model `\(clientModel)` is not served by this gateway")
     }
 
     func candidates(for clientModel: String, clientProtocol: WireProtocol, access: ClientAccess = .open) throws(PlanningError) -> [Candidate] {
-        let references = try references(for: clientModel, access: access)
+        try candidates(for: plan(for: clientModel, access: access), clientModel: clientModel, clientProtocol: clientProtocol)
+    }
+
+    /// `plan`'s references, each with the keys of its provider's pool.
+    func candidates(for plan: Plan, clientModel: String, clientProtocol: WireProtocol) throws(PlanningError) -> [Candidate] {
+        let references = plan.references
         var candidates: [Candidate] = []
         var missingKeys: [String] = []
         var unresolved: [String] = []

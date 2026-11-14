@@ -201,8 +201,10 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
 
     @Test func laterFeaturesAreNamedAsNotSupportedYet() {
         for text in [
-            #"{ "models": { "a": ["openai/gpt-4o", "deepseek/deepseek-chat"] } }"#,
+            #"{ "models": { "a": [{ "any": ["openai/gpt-4o", "deepseek/deepseek-chat"] }] } }"#,
+            #"{ "models": { "a": [{ "model": "openai/gpt-4o", "weight": 2 }] } }"#,
             #"{ "models": { "a": { "try": ["openai/gpt-4o"], "budget": { "attempts": 2 } } } }"#,
+            #"{ "models": { "a": { "try": "openai/gpt-4o", "affinity": "auto" } } }"#,
             #"{ "accounts": { "openai": { "key": "k", "weight": 2 } } }"#,
             #"{ "accounts": { "r": { "endpoints": { "chat": "https://x" }, "profiles": {} } } }"#,
             #"{ "clients": { "a": { "key": "k", "limits": {} } } }"#,
@@ -211,6 +213,52 @@ private func parseError(_ text: String, environment: [String: String] = [:]) -> 
         ] {
             #expect(parseError(text)?.message.contains("not supported yet") == true, "\(text)")
         }
+    }
+
+    @Test func targetListsFallBackInOrderWithReferencesSplicedIn() throws {
+        let loaded = try parse("""
+        {
+          "accounts": { "openai": "k1", "deepseek": "k2", "anthropic": "k3", "mistral": "k4" },
+          "advanced": { "fallback_max_context": "64k" },
+          "models": {
+            "cheap": ["deepseek/deepseek-chat", "mistral/mistral-large-latest"],
+            "main": ["openai/gpt-4o", "@cheap", "deepseek/deepseek-chat"],
+            "claude-*": { "try": ["anthropic", "@cheap"], "fallback_max_context": "off" },
+            "long": { "try": "openai/gpt-4o", "fallback_max_context": 200000 },
+          },
+        }
+        """)
+        let routes = loaded.gateway.routes
+        #expect(routes.named("main")?.targets.map(\.model) == ["openai/gpt-4o", "deepseek/deepseek-chat", "mistral/mistral-large-latest"])
+        #expect(routes.named("main")?.fallbackMaxContext == 64000)
+        #expect(routes.named("claude-x")?.targets.map(\.model) == ["anthropic/$model", "deepseek/deepseek-chat", "mistral/mistral-large-latest"])
+        #expect(routes.named("claude-x")?.fallbackMaxContext == nil)
+        #expect(routes.named("long")?.fallbackMaxContext == 200_000)
+        let planner = CandidatePlanner(configuration: loaded.gateway)
+        #expect(try planner.plan(for: "claude-sonnet-4-5") == CandidatePlanner.Plan(
+            references: ["anthropic/claude-sonnet-4-5", "deepseek/deepseek-chat", "mistral/mistral-large-latest"],
+        ))
+        // A reference passed through has one target and no limit.
+        #expect(try planner.plan(for: "openai/gpt-4o") == CandidatePlanner.Plan(references: ["openai/gpt-4o"]))
+    }
+
+    @Test func aTargetNamedTwiceIsTriedOnce() throws {
+        let loaded = try parse(#"{ "accounts": { "anthropic": "k" }, "models": { "claude-*": ["anthropic", "anthropic/claude-opus-4-1"] } }"#)
+        let planner = CandidatePlanner(configuration: loaded.gateway)
+        #expect(try planner.references(for: "claude-opus-4-1") == ["anthropic/claude-opus-4-1"])
+        #expect(try planner.references(for: "claude-sonnet-4-5") == ["anthropic/claude-sonnet-4-5", "anthropic/claude-opus-4-1"])
+    }
+
+    @Test func badTargetListsAndLimits() {
+        #expect(parseError(#"{ "models": { "a": [] } }"#)?.message.contains("is empty") == true)
+        #expect(parseError(#"{ "models": { "a": { "fallback_max_context": "64k" } } }"#)?.message.contains("`try` is missing") == true)
+        #expect(parseError(#"{ "models": { "a": { "try": "openai/gpt-4o", "fallback_max_context": "lots" } } }"#)?
+            .message.contains("expected a positive number of tokens") == true)
+        #expect(parseError(#"{ "advanced": { "fallback_max_context": 0 } }"#)?.message.contains("advanced.fallback_max_context") == true)
+        let loop = parseError(#"{ "models": { "a": ["openai/gpt-4o", "@b"], "b": ["deepseek/deepseek-chat", "@a"] } }"#)
+        #expect(loop?.message.contains("refers back to itself: a → b → a") == true)
+        #expect(loop?.message.hasPrefix("models.b.1:") == true)
+        #expect(parseError(#"{ "models": { "a": ["openai/gpt-4o", "nowhere/x"] } }"#)?.message.hasPrefix("models.a.1:") == true)
     }
 
     @Test func aFreeProvidersAccountMayHoldNoKey() throws {

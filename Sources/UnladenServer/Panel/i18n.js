@@ -282,6 +282,8 @@ const TRANSLATIONS = {
       'How long an account may take to send its first content before the next one is tried. off: no limit.': '一个账号多久没发出首个内容就换下一个。off：不限。',
       'Longest silence in a stream': '流的最长静默',
       'A stream that stays silent this long is ended. off: no limit.': '流静默这么久就会被结束。off：不限。',
+      'Longest conversation to move': '可换模型的最长会话',
+      'A conversation under way with more context than this (in tokens, such as 64k) is not moved to the next model of its list: it waits for the one holding its prompt cache. A model entry may set its own. off: no limit.': '已在进行、上下文超过这个长度（token 数，如 64k）的会话，不会换到列表里的下一个模型，而是等待持有它 prompt cache 的那个。模型条目可以单独设置。off：不限。',
       'Keepalive interval': '保活间隔',
       'How often a stream that is waiting is kept alive.': '等待中的流多久保活一次。',
       'Largest request': '请求体上限',

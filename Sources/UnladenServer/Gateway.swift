@@ -29,6 +29,8 @@ struct Gateway: Sendable {
     var models = ModelCatalog()
     /// Accounts' plan allowances, for the panel.
     var quotas = QuotaReader()
+    /// The target that last answered each conversation.
+    var placements = Placements()
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
         self.store = ConfigurationStore(configuration)
@@ -111,13 +113,25 @@ struct Gateway: Sendable {
         let request = decoded.value
         let stream = request.stream == true
 
-        let candidates: [Candidate]
+        var candidates: [Candidate]
+        let plan: CandidatePlanner.Plan
         do {
-            candidates = try CandidatePlanner(configuration: configuration)
-                .candidates(for: request.model, clientProtocol: clientProtocol, access: access)
+            let planner = CandidatePlanner(configuration: configuration)
+            plan = try planner.plan(for: request.model, access: access)
+            candidates = try planner.candidates(for: plan, clientModel: request.model, clientProtocol: clientProtocol)
         } catch {
             return fail(error.status, error.message, detail: error.detail, warnings: decoded.warnings)
         }
+        // A long conversation stays where its prompt cache is.
+        let conversation = Placements.conversation(origin, model: request.model)
+        let estimate = plan.fallbackMaxContext != nil ? ConversationContext.estimatedTokens(request) : nil
+        let kept = estimate.flatMap { estimate in
+            KeptPlace.keep(
+                request, estimate: estimate, candidates: candidates, limit: plan.fallbackMaxContext,
+                placement: conversation.flatMap { placements.placement(for: $0) },
+            )
+        }
+        if let kept { candidates.removeAll { $0.reference != kept.reference } }
         let ordered = strategy.order(
             candidates, context: RoutingContext(clientProtocol: clientProtocol, stream: stream), health: health.snapshot(),
         )
@@ -138,6 +152,12 @@ struct Gateway: Sendable {
                         strict: configuration.strict, headTimeout: configuration.headTimeout, log: log, tracker: tracker,
                     )
                 }
+                switch outcome {
+                case .reply(let served):
+                    if let conversation { placements.answering(served.candidate.reference, estimate: estimate, for: conversation) }
+                case .failure:
+                    if let kept { log.emit(kept.note) }
+                }
                 settled.set(.success(outcome))
             } catch {
                 settled.set(.failure(error))
@@ -151,7 +171,7 @@ struct Gateway: Sendable {
             // in the same response.
             guard let done = await settled.wait(upTo: hold) else {
                 return heldStream(settled, work, clientProtocol: clientProtocol, request: request, decodeWarnings: decoded.warnings,
-                                  configuration: configuration, monitor: monitor, log: log, tracker: tracker)
+                                  configuration: configuration, conversation: conversation, monitor: monitor, log: log, tracker: tracker)
             }
             result = done
         } else {
@@ -189,7 +209,9 @@ struct Gateway: Sendable {
                     fields[WarningHeader.name] = WarningHeader.value(request: served.requestWarnings, response: responseWarnings)
                 }
                 tracker.serving(candidate, streaming: false)
-                tracker.finish(status: 200, tokens: TokenCounts(response.usage), warnings: all.count)
+                let tokens = TokenCounts(response.usage)
+                tracker.finish(status: 200, tokens: tokens, warnings: all.count)
+                if let conversation { placements.answered(candidate.reference, input: tokens?.input, for: conversation) }
                 return Response(status: .ok, headers: fields, body: ResponseBody(byteBuffer: ByteBuffer(bytes: encoded.body)))
 
             case .events(let events):
@@ -203,7 +225,7 @@ struct Gateway: Sendable {
                     defer { monitor.uninstall() }
                     try await self.forward(
                         served, events, clientProtocol: clientProtocol, request: request, configuration: configuration,
-                        monitor: monitor, writer: &writer, log: log, tracker: tracker,
+                        conversation: conversation, monitor: monitor, writer: &writer, log: log, tracker: tracker,
                     )
                 })
             }

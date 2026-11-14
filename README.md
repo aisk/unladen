@@ -31,6 +31,9 @@ The configuration is JSON with comments and trailing commas, read from `--config
   "models": {
     "claude-*": "anthropic",               // the name asked for, passed on
     "fast": "deepseek/deepseek-chat",
+    // Tried in order. A conversation past 64k tokens waits for the model
+    // that holds its prompt cache instead of moving on.
+    "smart": { "try": ["anthropic/claude-sonnet-4-5", "@fast"], "fallback_max_context": "64k" },
     "*": "@fast",                          // every other name
   },
   // The keys clients present; without models, a client may use every name above.
@@ -44,14 +47,14 @@ The configuration is JSON with comments and trailing commas, read from `--config
 **What you get**
 
 - **Four client protocols over one port.** A Claude Code or OpenCode client, a Gemini CLI and a plain OpenAI SDK can all talk to the same gateway, each in its own protocol, and share the accounts and model names configured there.
-- **Model mapping.** `models` maps the names clients ask for to the account that answers. A name can pass through to its own provider, point at a fixed upstream model, or fall back to another mapping.
+- **Model mapping and fallback.** `models` maps the names clients ask for to the accounts that answer. A name can pass through to its own provider, point at a fixed upstream model or another mapping, or list several of these to try in order when one fails. Past `fallback_max_context`, a conversation under way stays on the model that answered it last, and a failure there goes back to the client to retry, instead of paying for the whole context again uncached elsewhere.
 - **Account pools.** Accounts of one provider form a pool; when one fails, the next one is tried.
 - **Client keys.** Clients present a key from `clients`, and a client can be limited to a subset of the model names.
 - **A control panel at `/admin`**, in English or Chinese, once `panel.token` is set, showing requests in flight, recent requests and sessions, token usage by account, client and model, and editing the configuration itself. Every finished request is appended to `~/.local/state/unladen/usage-YYYY-MM.jsonl` (or under `$XDG_STATE_HOME`).
 - **Subscription accounts.** A `chatgpt` account may hold an OpenAI API key, or none. Then it signs in with a ChatGPT account ("Sign in with ChatGPT") and uses that plan through OpenAI's Responses API, for your own use only. An `antigravity` account signs in with Google and uses an Antigravity subscription through Google's Code Assist backend; Google does not offer this to other apps and may suspend an account it sees used outside Antigravity, so use one you can afford to lose. Sign in from the control panel or with `unladen sign-in <provider>`; tokens are kept in `~/.local/state/unladen/logins.json` and refreshed as needed.
 - **Operational niceties.** `unladen check-config` checks a configuration without serving it. The server reloads its configuration on `SIGHUP` and when it is saved from the panel. `/health` answers `ok` without authentication, which suits a liveness and readiness probe.
 
-It is early work; the routing topology beyond forwarding and pools is still growing.
+It is early work; the routing topology beyond fallback lists and pools is still growing.
 
 ## Container
 
