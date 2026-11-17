@@ -14,6 +14,9 @@ COPY . .
 # No debug information is made (-gnone, -g0), and the linker leaves out the
 # symbol table (-s).
 RUN swift build -c release --product unladen --static-swift-stdlib -Xswiftc -gnone -Xcc -g0 -Xlinker -s
+# Full Foundation would link ICU's data (about 44 MiB) into the binary; only
+# FoundationEssentials belongs in it.
+RUN ! grep -q icudt .build/release/unladen
 
 FROM ubuntu:26.04
 ARG VERSION=dev
