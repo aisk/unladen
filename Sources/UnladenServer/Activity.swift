@@ -566,6 +566,8 @@ final class Activity: Sendable {
         var logError: String?
         /// The day usage and sessions were last aged out on.
         var agedOn: Int?
+        /// Model names asked for that nothing serves, by lowercased name.
+        var unserved: [String: UnservedName] = [:]
     }
 
     private let state = NIOLockedValueBox(State())
@@ -676,6 +678,36 @@ final class Activity: Sendable {
         sessions = Dictionary(uniqueKeysWithValues: kept.map { ($0.id, $0) })
     }
 
+    // MARK: Names nothing serves
+
+    /// How many names nothing serves are kept.
+    static let unservedLimit = 50
+
+    /// Notes a request for `name`, which no route, provider or `*` serves.
+    func noteUnserved(_ name: String, origin: RequestOrigin, now: Int64 = LocalDay.nowMilliseconds()) {
+        let name = String(name.prefix(200))
+        state.withLockedValue { state in
+            var entry = state.unserved[name.lowercased()] ?? UnservedName(name: name, last: now)
+            entry.requests += 1
+            entry.last = now
+            if !entry.programs.contains(origin.program), entry.programs.count < 5 { entry.programs.append(origin.program) }
+            if let client = origin.client, !entry.clients.contains(client), entry.clients.count < 5 { entry.clients.append(client) }
+            state.unserved[name.lowercased()] = entry
+            if state.unserved.count > Self.unservedLimit, let oldest = state.unserved.min(by: { $0.value.last < $1.value.last }) {
+                state.unserved.removeValue(forKey: oldest.key)
+            }
+        }
+    }
+
+    /// The names nothing served, the latest asked for first.
+    func unserved() -> [UnservedName] {
+        state.withLockedValue { $0.unserved.values.sorted { $0.last != $1.last ? $0.last > $1.last : $0.name < $1.name } }
+    }
+
+    func forgetUnserved(_ name: String) {
+        state.withLockedValue { _ = $0.unserved.removeValue(forKey: name.lowercased()) }
+    }
+
     // MARK: Reading
 
     struct Snapshot: Sendable {
@@ -713,6 +745,18 @@ final class Activity: Sendable {
         let first = LocalDay(milliseconds: now - Int64(max(days, 1) - 1) * 86_400_000).key
         return state.withLockedValue { state in state.buckets.filter { $0.key.day >= first } }
     }
+}
+
+/// A model name clients asked for and nothing serves: who asked, how often.
+struct UnservedName: Sendable, Hashable {
+    /// As the first request wrote it.
+    var name: String
+    var requests = 0
+    /// The programs and clients that asked, a few of them.
+    var programs: [String] = []
+    var clients: [String] = []
+    /// Unix time in milliseconds of the last request.
+    var last: Int64
 }
 
 /// One request's handle on its record.

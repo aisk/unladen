@@ -124,6 +124,23 @@ function panel() {
     accountEdit: null,
     modelEdit: null,
     clientEdit: null,
+    // The add dialog's first question: `pick` (what kind of route) or
+    // `provider` (whose models).
+    routeIntent: null,
+    routeIntents: [
+      { id: 'provider', icon: 'ti-building-store', label: 'A provider\'s models', about: 'By their own names: tick the ones to offer.' },
+      { id: 'name', icon: 'ti-tag', label: 'A short name for a model', about: 'Such as fast, answered by a model you choose.' },
+      { id: 'chain', icon: 'ti-arrows-down', label: 'Several models tried in order', about: 'One name: the next model answers when the one before fails.' },
+      { id: 'rest', icon: 'ti-asterisk', label: 'Every other name', about: 'What no route takes goes to one model.' },
+      { id: 'pattern', icon: 'ti-regex', label: 'A name with a star', about: 'claude-* takes every name that starts with claude-.' },
+    ],
+    // The Model routing page: the name being tried and what it leads to,
+    // and the providers whose models are shown, with their search.
+    tryName: '',
+    tryClient: '',
+    tryResult: null,
+    openProviders: {},
+    providerFilter: {},
     // The account being signed in: {provider, account, id, url, callback, error, busy}.
     signing: null,
     settings: null,
@@ -161,6 +178,7 @@ function panel() {
       if (this.token) await this.load();
       this.refreshTab();
       setInterval(() => { if (this.token && ['home', 'accounts'].includes(this.tab)) this.refreshTab(); }, 5000);
+      setInterval(() => { if (this.token && this.tab === 'models') this.refreshStatus(); }, 10000);
       setInterval(() => { if (this.token && this.tab === 'activity') this.refreshActivity(); }, 2000);
       setInterval(() => { if (this.token && this.tab === 'usage') this.refreshUsage(); }, 10000);
       this.$watch('tab', () => { this.navOpen = false; this.refreshTab(); });
@@ -176,6 +194,7 @@ function panel() {
       if (this.tab === 'home') { this.refreshStatus(); this.refreshActivity(); this.refreshToday(); this.refreshQuotas(false); }
       if (this.tab === 'accounts') { this.refreshStatus(); this.refreshQuotas(false); }
       if (this.tab === 'models' || this.tab === 'clients') this.refreshStatus();
+      if (this.tab === 'models') this.runTry();
       if (this.tab === 'activity') this.refreshActivity();
       if (this.tab === 'usage') this.refreshUsage();
       if (this.tab === 'settings') this.showSettings();
@@ -660,12 +679,15 @@ function panel() {
       this.signInError = '';
       this.path = config.json.path;
       this.hash = config.json.hash;
+      const accounts = JSON.stringify(this.original?.accounts);
       this.original = config.json.document || {};
       this.model = fromDocument(this.original);
-      this.providerModels = {};
+      // A provider's list holds while its accounts do.
+      if (JSON.stringify(this.original.accounts) !== accounts) this.providerModels = {};
       this.settings = null;
       if (this.tab === 'settings') this.showSettings();
       await this.refreshStatus();
+      this.runTry();
     },
 
     async refreshStatus() {
@@ -731,6 +753,7 @@ function panel() {
       const result = await this.api('POST', 'reload');
       if (result.status === 200) this.say('success', 'The file was read again and is in force', '');
       else if (result.status !== 401) this.say('danger', 'The file does not load', result.json.error || '');
+      this.providerModels = {};
       await this.load();
     },
 
@@ -803,6 +826,14 @@ function panel() {
       }
       for (const c of this.status?.cooling || []) {
         items.push({ kind: 'warning', icon: 'ti-plug-connected-x', text: c.provider + ': ' + c.what + ', retried in ' + c.cooling_seconds + 's', action: '', run: null });
+      }
+      const unserved = this.unserved();
+      if (unserved.length) {
+        items.push({
+          kind: 'warning', icon: 'ti-route-off',
+          text: unserved.length === 1 ? 'A model name was asked for and nothing answers it: ' + unserved[0].name : unserved.length + ' model names were asked for and nothing answers them',
+          action: 'Choose who answers', run: () => this.go('models'),
+        });
       }
       if (this.exposed()) {
         items.push({
@@ -1086,6 +1117,7 @@ function panel() {
         if (result.status === 200) {
           this.signing = null;
           this.say('success', 'Signed in ' + s.provider + '/' + s.account, result.json.user + (result.json.plan ? ' (' + result.json.plan + ')' : ''));
+          this.providerModels = {};
           if (s.adding) await this.addAccount();
           await this.refreshStatus();
           this.refreshQuotas(true);
@@ -1110,7 +1142,6 @@ function panel() {
     targetProviders() {
       const providers = new Set(this.model.accounts.map(a => this.accountProvider(a).trim()).filter(Boolean));
       for (const a of this.status?.accounts || []) providers.add(a.provider);
-      if (this.modelEdit?.provider) providers.add(this.modelEdit.provider);
       return [...providers].sort();
     },
     // A target as its parts: `@name`, `provider` or `provider/model`.
@@ -1135,19 +1166,154 @@ function panel() {
     },
     // The longest conversation a model moves to its next target: its own, else Settings'.
     limitOf(r) { return (r.limit || '').trim() || String(this.model.advanced.fallback_max_context || '').trim() || 'off'; },
-    // One target of the edit dialog.
-    editTarget(target) {
-      const parts = this.targetParts(target);
-      return { uid: ++counter, kind: parts.kind, alias: parts.alias, provider: parts.provider || this.targetProviders()[0] || '', upstream: parts.upstream };
+    // The route of this very name, a star's included.
+    routeNamed(name) {
+      const key = name.trim().toLowerCase();
+      return this.model.models.find(r => r.name.trim().toLowerCase() === key) || null;
     },
-    startModel(r) {
+    // The route with a star that takes `name`, as the gateway chooses it:
+    // the one with the most letters of its own, then by name.
+    patternFor(name) {
+      const letters = r => r.name.replace(/\*/g, '').length;
+      return this.model.models
+        .filter(r => r.name.includes('*') && r.name.trim() !== '*' && globMatches(r.name.trim(), name))
+        .sort((a, b) => letters(b) - letters(a) || (a.name < b.name ? -1 : 1))[0] || null;
+    },
+    // The provider a route offers the models of by their own names: one
+    // target, the provider asked for the name the client asked for.
+    offerOf(r) {
+      const name = r.name.trim();
+      if (r.raw !== undefined || r.targets.length !== 1 || name === '*' || (r.limit || '').trim()) return '';
+      const parts = this.targetParts(r.targets[0]);
+      if (parts.kind !== 'provider' || !parts.provider) return '';
+      const same = !parts.upstream || parts.upstream === '$model' || (!name.includes('*') && parts.upstream.toLowerCase() === name.toLowerCase());
+      return same ? parts.provider : '';
+    },
+    // The providers the page lists: those with an account, and those routes offer.
+    offerProviders() {
+      const providers = new Set(this.targetProviders());
+      for (const r of this.model.models) { const p = this.offerOf(r); if (p) providers.add(p); }
+      return [...providers].sort();
+    },
+    offerCount(p) { return this.model.models.filter(r => !r.name.includes('*') && this.offerOf(r) === p).length; },
+    starOffers(p) { return this.model.models.filter(r => r.name.includes('*') && this.offerOf(r) === p).map(r => r.name.trim()); },
+    // The routes that are not a provider's model by its own name, nor `*`.
+    ownRoutes() { return this.model.models.filter(r => r.name.trim() !== '*' && !this.offerOf(r)); },
+    restRoute() { return this.model.models.find(r => r.name.trim() === '*') || null; },
+    // Who answers `name` now, as a row of provider `p` shows it: ticked
+    // when `p` does; locked when ticking cannot change it here.
+    nameState(p, name) {
+      const exact = this.routeNamed(name);
+      const r = exact || (name.includes('*') ? null : this.patternFor(name));
+      if (!r) return { checked: false };
+      const first = r.raw === undefined ? this.targetParts(r.targets[0]) : null;
+      const here = !!first && first.kind === 'provider' && first.provider === p;
+      const who = r.raw === undefined ? r.targets.join(', ') : '';
+      if (exact) {
+        if (this.offerOf(r) === p) return { checked: true };
+        if (here) return { checked: true, locked: true, note: 'in a route of its own', edit: r };
+        return { checked: false, locked: true, note: who ? 'answered by' : 'answered by a route of its own', who, edit: r };
+      }
+      if (here) return { checked: true, locked: true, note: 'through', who: r.name.trim() };
+      return { checked: false, note: 'now answered by', who, through: r.name.trim() };
+    },
+    // A provider's rows: its names with a star, in force or suggested,
+    // the models it lists, and those offered that it does not list.
+    providerRows(p) {
+      const listed = this.modelsOf(p), rows = [], seen = new Set();
+      const add = (name, more) => {
+        const key = name.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        rows.push({ ...this.nameState(p, name), name, ...more });
+      };
+      for (const name of this.starOffers(p)) add(name, { star: true });
+      for (const name of FAMILIES[p] || []) add(name, { star: true });
+      for (const name of listed || []) add(name, {});
+      for (const r of this.model.models) if (!r.name.includes('*') && this.offerOf(r) === p) add(r.name.trim(), { unlisted: !!(listed && listed.length) });
+      return rows;
+    },
+    filteredRows(p) {
+      const words = (this.providerFilter[p] || '').toLowerCase().split(/\s+/).filter(Boolean);
+      return this.providerRows(p).filter(row => words.every(w => row.name.toLowerCase().includes(w)));
+    },
+    shownRows(p) { return this.filteredRows(p).slice(0, 150); },
+    // The rows in view that ticking would offer, and those it would take back.
+    offerable(p) { return this.filteredRows(p).filter(row => !row.star && !row.checked && !row.locked); },
+    withdrawable(p) { return this.filteredRows(p).filter(row => !row.star && row.checked && !row.locked); },
+    offer(p, name) { this.model.models.push({ uid: ++counter, name, targets: [p], limit: '', raw: undefined }); },
+    withdraw(p, name) {
+      const r = this.routeNamed(name);
+      if (r && this.offerOf(r) === p) this.model.models.splice(this.model.models.indexOf(r), 1);
+    },
+    async toggleOffer(p, row) {
+      if (row.locked) return;
+      if (row.checked) this.withdraw(p, row.name); else this.offer(p, row.name);
+      await this.apply();
+    },
+    async offerAll(p) {
+      for (const row of this.offerable(p)) this.offer(p, row.name);
+      await this.apply();
+    },
+    offerNone(p) {
+      const rows = this.withdrawable(p);
+      this.ask('Stop offering ' + rows.length + ' models of ' + this.brandName(p) + '?', 'Clients that ask for these names are refused, unless another route takes them.', 'Stop offering', async () => {
+        for (const row of rows) this.withdraw(p, row.name);
+        await this.apply();
+      });
+    },
+    // The add dialog's first answer.
+    pickIntent(id) {
+      if (id !== 'provider') { this.routeIntent = null; this.startModel(null, id); return; }
+      const providers = this.offerProviders();
+      if (providers.length === 1) this.showProvider(providers[0]); else this.routeIntent = 'provider';
+    },
+    showProvider(p) {
+      this.routeIntent = null;
+      this.openProviders[p] = true;
+    },
+    intentTitle(intent) { return (this.routeIntents.find(c => c.id === intent) || this.routeIntents[1]).label; },
+
+    // What a name leads to, asked of the gateway: the configuration in force.
+    async runTry() {
+      const name = this.tryName.trim();
+      if (!name || !this.token) { this.tryResult = null; return; }
+      const result = await this.api('POST', 'resolve', this.tryClient ? { model: name, client: this.tryClient } : { model: name });
+      if (name !== this.tryName.trim()) return;
+      this.tryResult = result.status === 200 ? result.json : null;
+    },
+    // Names clients asked for that nothing answers.
+    unserved() { return this.status?.unserved || []; },
+    async forgetUnserved(u) {
+      await this.api('POST', 'unserved/forget', { name: u.name });
+      await this.refreshStatus();
+    },
+
+    // The models to pick a target from: other routes, the providers alone
+    // for a name with a star, and every provider's models.
+    targetChoices() {
+      const e = this.modelEdit, items = [];
+      if (!e) return items;
+      for (const name of this.aliasNames()) if (!this.offerOf(this.routeNamed(name))) items.push('@' + name);
+      const providers = this.targetProviders();
+      if (e.name.includes('*')) items.push(...providers);
+      for (const p of providers) for (const name of this.modelsOf(p) || []) items.push(p + '/' + name);
+      return items;
+    },
+    loadTargets() { for (const p of this.targetProviders()) this.askModels(p); },
+    targetsLoading() { return this.targetProviders().some(p => this.modelsOf(p) == null); },
+    // `intent`: what the dialog is for (`name`, `chain`, `rest`, `pattern`);
+    // a route being edited tells its own. `name`: the name to start with.
+    startModel(r, intent, name) {
       this.saveError = '';
+      if (r) intent = r.name.trim() === '*' ? 'rest' : r.name.includes('*') ? 'pattern' : r.targets.length > 1 ? 'chain' : 'name';
+      const targets = r && r.targets.length ? r.targets : intent === 'chain' ? ['', ''] : [''];
       this.modelEdit = {
-        original: r ? r.name : null, name: r ? r.name : '', raw: r?.raw, limit: r?.limit || '',
-        targets: (r && r.targets.length ? r.targets : ['']).map(t => this.editTarget(t)),
+        original: r ? r.name : null, name: r ? r.name : intent === 'rest' ? '*' : name || '', raw: r?.raw, limit: r?.limit || '', intent,
+        targets: targets.map(text => ({ uid: ++counter, text })),
       };
     },
-    addTarget() { this.modelEdit.targets.push(this.editTarget('')); },
+    addTarget() { this.modelEdit.targets.push({ uid: ++counter, text: '' }); },
     moveTarget(i, by) {
       const targets = this.modelEdit.targets;
       [targets[i], targets[i + by]] = [targets[i + by], targets[i]];
@@ -1160,17 +1326,19 @@ function panel() {
       if (!e) return '';
       const name = e.name.trim();
       if (!name) return 'Give the name clients ask for.';
+      if (name.startsWith('@')) return 'A name cannot start with @.';
       if (name !== e.original && this.menuNames().includes(name)) return 'Another route has this name.';
       if (e.raw !== undefined) return '';
-      if (e.targets.some(t => t.kind === 'alias' && !t.alias)) return 'Choose the route it stands for.';
-      if (e.targets.some(t => t.kind === 'provider' && !t.provider)) return 'Add an account first: a route needs a provider to answer it.';
+      const targets = e.targets.map(t => t.text.trim());
+      if (targets.some(t => !t)) return 'Choose who answers.';
+      if (targets.some(t => t.startsWith('@') && !this.aliasNames().includes(t.slice(1)))) return 'Choose the route it stands for.';
       const limit = e.limit.trim().toLowerCase();
       if (limit && limit !== 'off' && !/^[1-9][0-9]*\s*[km]?$/.test(limit)) return 'Give the length in tokens, such as 64000 or 64k, or off.';
       return '';
     },
     async saveModel() {
       const e = this.modelEdit, name = e.name.trim();
-      const targets = e.targets.map(t => t.kind === 'alias' ? '@' + t.alias : t.provider + (t.upstream.trim() ? '/' + t.upstream.trim() : ''));
+      const targets = e.targets.map(t => t.text.trim());
       const existing = this.model.models.find(r => r.name === e.original);
       const entry = e.raw === undefined ? { name, targets, limit: e.limit.trim() } : { name };
       if (existing) Object.assign(existing, entry);
@@ -1264,6 +1432,13 @@ function panel() {
     uid() { return ++counter; },
     generateSecret,
   };
+}
+
+// A name against a name with stars, each star any run of characters;
+// letters alike in either case.
+function globMatches(pattern, name) {
+  const parts = pattern.toLowerCase().split('*').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp('^' + parts.join('.*') + '$').test(name.toLowerCase());
 }
 
 // Where a provider's model list is kept: by provider, and by the accounts

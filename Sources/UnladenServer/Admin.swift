@@ -231,7 +231,19 @@ enum AdminStatus {
         let clients: [JSONValue] = configuration.clientKeys.map { key in
             ["name": .string(key.name), "models": key.models.map { .array($0.map(JSONValue.string)) } ?? .null]
         } + configuration.disabledClients.map { name in ["name": .string(name), "disabled": true] }
+        // Names asked for that still nothing serves.
+        let planner = CandidatePlanner(configuration: configuration)
+        let unserved: [JSONValue] = gateway.activity.unserved().filter { (try? planner.plan(for: $0.name)) == nil }.map { entry in
+            [
+                "name": .string(entry.name),
+                "requests": .number(JSONNumber(entry.requests)),
+                "programs": .array(entry.programs.map(JSONValue.string)),
+                "clients": .array(entry.clients.map(JSONValue.string)),
+                "last": .number(JSONNumber(entry.last)),
+            ]
+        }
         return [
+            "unserved": .array(unserved),
             "config_path": path.map(JSONValue.string) ?? .null,
             "listen": .string("\(server.host):\(server.port)"),
             "accounts": .array(accounts),
@@ -243,6 +255,59 @@ enum AdminStatus {
                 ProviderRegistry.builtIn.providers.values.filter(\.servesWithoutKey).map(\.id).sorted().map(JSONValue.string),
             ),
             "providers": .array(configuration.registry.providers.keys.sorted().map(JSONValue.string)),
+        ]
+    }
+}
+
+// MARK: - What a name resolves to
+
+enum AdminResolve {
+    /// What `model` leads to for a client: the route that takes it and
+    /// why, then each model tried, in order, with its accounts and how
+    /// they are doing; or why it is refused. `client`: one of `clients`
+    /// by name; `nil`: a client that may ask for anything.
+    static func json(model: String, client: String?, gateway: Gateway) -> JSONValue {
+        let configuration = gateway.configuration
+        var access = ClientAccess.open
+        if let client {
+            guard let key = configuration.clientKeys.first(where: { $0.name == client }) else {
+                return ["status": 403, "message": .string("client `\(client)` is not in force")]
+            }
+            access = .key(key)
+        }
+        let planner = CandidatePlanner(configuration: configuration)
+        let plan: CandidatePlanner.Plan
+        do {
+            plan = try planner.plan(for: model, access: access)
+        } catch {
+            return ["status": .number(JSONNumber(error.status)), "message": .string(error.message)]
+        }
+        let via = switch plan.route {
+        case nil: "direct"
+        case "*"?: "rest"
+        case let name?: name.contains("*") ? "pattern" : "exact"
+        }
+        let health = gateway.health.snapshot()
+        let targets: [JSONValue] = plan.references.map { reference in
+            var target: JSONObject = ["model": .string(reference)]
+            do throws(PlanningError) {
+                let candidates = try planner.candidates(
+                    for: CandidatePlanner.Plan(references: [reference]), clientModel: model, clientProtocol: .chatCompletions,
+                )
+                target["accounts"] = .array(candidates.map { candidate in
+                    let state = health.isDisabled(candidate) ? "disabled" : health.isCooling(candidate) ? "cooling" : "ready"
+                    return ["name": .string(candidate.keyName), "state": .string(state)]
+                })
+            } catch {
+                target["problem"] = .string(error.detail ?? error.message)
+            }
+            return .object(target)
+        }
+        return [
+            "status": 200,
+            "via": .string(via),
+            "route": plan.route.map(JSONValue.string) ?? .null,
+            "targets": .array(targets),
         ]
     }
 }
@@ -581,6 +646,30 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         }
         let names = await gateway.models.names(of: provider, gateway: gateway, configuration: configuration)
         return adminJSON(200, ["models": .array(names.map(JSONValue.string))])
+    }
+
+    /// What a model name leads to: `{"model": …}`, and optionally
+    /// `"client": …` to ask as one of the clients.
+    router.post("/admin/api/resolve") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        var request = request
+        let body = try? await request.collectBody(upTo: 1 << 20)
+        let json = body.flatMap { try? JSONValue(parsing: Array($0.readableBytesView)) }
+        guard let model = json?["model"]?.stringValue?.trimmingBlanks(), !model.isEmpty else {
+            return adminError(400, "expected {\"model\": \"…\"}, and optionally \"client\": \"…\"")
+        }
+        return adminJSON(200, AdminResolve.json(model: model, client: json?["client"]?.stringValue, gateway: gateway))
+    }
+
+    /// Drops a name from those asked for that nothing serves: `{"name": …}`.
+    router.post("/admin/api/unserved/forget") { request, _ in
+        if let denied = adminDenied(request, gateway: gateway) { return denied }
+        var request = request
+        let body = try? await request.collectBody(upTo: 1 << 20)
+        let json = body.flatMap { try? JSONValue(parsing: Array($0.readableBytesView)) }
+        guard let name = json?["name"]?.stringValue else { return adminError(400, "expected {\"name\": \"…\"}") }
+        gateway.activity.forgetUnserved(name)
+        return adminJSON(200, ["forgotten": true])
     }
 
     router.post("/admin/api/reload") { request, _ in

@@ -143,6 +143,7 @@ struct Gateway: Sendable {
             plan = try planner.plan(for: request.model, access: access)
             candidates = try planner.candidates(for: plan, clientModel: request.model, clientProtocol: clientProtocol)
         } catch {
+            if error.status == 404 { activity.noteUnserved(request.model, origin: origin) }
             return fail(error.status, error.message, detail: error.detail, warnings: decoded.warnings)
         }
         // A long conversation stays where its prompt cache is.

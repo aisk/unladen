@@ -257,6 +257,72 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
             #expect(!body.contains("sk-"))
         }
     }
+
+    @Test func aNameIsResolvedAsARequestWouldBe() async throws {
+        let text = sample.replacingOccurrences(
+            of: #""*": "deepseek/deepseek-chat", "#, with: #""fast": ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"], "#,
+        )
+        let manager = try makeManager(text)
+        let headers: HTTPFields = [.authorization: "Bearer \(adminToken)", .contentType: "application/json"]
+        try await app(manager).test(.router) { client in
+            func resolve(_ body: JSONValue) async throws -> JSONValue {
+                let response = try await client.execute(uri: "/admin/api/resolve", method: .post, headers: headers, body: ByteBuffer(bytes: body.encoded()))
+                #expect(response.status == .ok)
+                return try JSONValue(parsing: Array(response.body.readableBytesView))
+            }
+            let pattern = try await resolve(["model": "gpt-4"])
+            #expect(pattern["via"] == "pattern")
+            #expect(pattern["route"] == "gpt-*")
+            #expect(pattern["targets"]?[0]?["model"] == "deepseek/gpt-4")
+            #expect(pattern["targets"]?[0]?["accounts"]?.arrayValue?.count == 2)
+            #expect(pattern["targets"]?[0]?["accounts"]?[0]?["state"] == "ready")
+
+            let chain = try await resolve(["model": "fast"])
+            #expect(chain["via"] == "exact")
+            #expect(chain["targets"]?.arrayValue?.count == 2)
+
+            #expect(try await resolve(["model": "deepseek/deepseek-chat", "client": "me"])["via"] == "direct")
+            #expect(try await resolve(["model": "nope"])["status"] == 404)
+            #expect(try await resolve(["model": "fast", "client": "nobody"])["status"] == 403)
+        }
+    }
+
+    @Test func namesNothingServesAreKeptUntilForgottenOrServed() async throws {
+        let text = sample.replacingOccurrences(of: #""*": "deepseek/deepseek-chat", "#, with: "")
+        let manager = try makeManager(text)
+        let headers: HTTPFields = [.authorization: "Bearer \(adminToken)", .contentType: "application/json"]
+        try await app(manager).test(.router) { client in
+            func unserved() async throws -> [JSONValue] {
+                let status = try await client.execute(uri: "/admin/api/status", method: .get, headers: headers)
+                return try JSONValue(parsing: Array(status.body.readableBytesView))["unserved"]?.arrayValue ?? []
+            }
+            for model in ["claude-haiku", "claude-haiku", "other"] {
+                let refused = try await client.post("/v1/chat/completions", ClientRequest.chat(model: model), headers: [.authorization: "Bearer client-secret"])
+                #expect(refused.status == .notFound)
+            }
+            let names = try await unserved()
+            #expect(names.count == 2)
+            let haiku = try #require(names.first { $0["name"] == "claude-haiku" })
+            #expect(haiku["requests"] == 2)
+            #expect(haiku["clients"]?[0] == "me")
+
+            let forget: JSONValue = ["name": "other"]
+            let forgotten = try await client.execute(uri: "/admin/api/unserved/forget", method: .post, headers: headers, body: ByteBuffer(bytes: forget.encoded()))
+            #expect(forgotten.status == .ok)
+            #expect(try await unserved().count == 1)
+
+            // A route that takes the name answers it: it is no longer listed.
+            let read = try await client.execute(uri: "/admin/api/config", method: .get, headers: headers)
+            var document = try #require(JSONValue(parsing: Array(read.body.readableBytesView))["document"]?.objectValue)
+            var models = document["models"]?.objectValue ?? [:]
+            models["claude-*"] = "deepseek/deepseek-chat"
+            document["models"] = .object(models)
+            let save: JSONValue = ["document": .object(document), "overwrite": true]
+            let saved = try await client.execute(uri: "/admin/api/config", method: .put, headers: headers, body: ByteBuffer(bytes: save.encoded()))
+            #expect(saved.status == .ok)
+            #expect(try await unserved().isEmpty)
+        }
+    }
 }
 
 @Suite struct AdminActivityRouteTests {

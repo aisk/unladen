@@ -129,7 +129,7 @@
             </div>
             <div class="col-auto ms-auto">
               <button class="btn btn-primary" x-show="tab === 'accounts'" @click="startAdding()"><i class="ti ti-plus me-1"></i>Add account</button>
-              <button class="btn btn-primary" x-show="tab === 'models'" @click="startModel(null)"><i class="ti ti-plus me-1"></i>Add route</button>
+              <button class="btn btn-primary" x-show="tab === 'models'" @click="routeIntent = 'pick'"><i class="ti ti-plus me-1"></i>Add route</button>
               <button class="btn btn-primary" x-show="tab === 'clients'" @click="startClient(null)"><i class="ti ti-plus me-1"></i>Add client</button>
             </div>
           </div>
@@ -394,17 +394,159 @@
 
           <!-- Models -->
           <div x-show="tab === 'models'">
-            <div class="card">
-              <div class="table-responsive" x-show="model.models.length">
+            <!-- What a name leads to -->
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="row g-2 align-items-center">
+                  <div class="col">
+                    <div class="input-icon">
+                      <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                      <input class="form-control mono" x-model="tryName" placeholder="Try a name a tool asks for, such as claude-sonnet-4-5" autocomplete="off" spellcheck="false" @input.debounce.300ms="runTry()">
+                    </div>
+                  </div>
+                  <div class="col-auto" x-show="model.clients.some(c => c.enabled)">
+                    <select class="form-select" x-model="tryClient" @change="runTry()">
+                      <option value="">Asked by any client</option>
+                      <template x-for="c in model.clients.filter(c => c.enabled)" :key="c.uid"><option :value="c.name" x-text="c.name"></option></template>
+                    </select>
+                  </div>
+                </div>
+                <template x-if="tryName.trim() && tryResult">
+                  <div class="mt-3">
+                    <template x-if="tryResult.status === 200">
+                      <div>
+                        <div class="mb-2">
+                          <i class="ti ti-circle-check text-success me-1"></i>
+                          <span x-show="tryResult.via === 'exact'">Taken by the route of that name.</span>
+                          <span x-show="tryResult.via === 'pattern'"><span>Taken by the route</span> <span class="mono fw-bold" x-text="tryResult.route"></span></span>
+                          <span x-show="tryResult.via === 'direct'">No route takes it: the provider it names is asked directly.</span>
+                          <span x-show="tryResult.via === 'rest'">No route takes it: it goes where every other name goes.</span>
+                        </div>
+                        <template x-for="(target, i) in tryResult.targets" :key="i">
+                          <div class="d-flex align-items-center flex-wrap mt-1">
+                            <span class="text-secondary small me-2 text-nowrap" x-show="tryResult.targets.length > 1" x-text="i === 0 ? 'First' : 'Then'"></span>
+                            <span class="mono me-3" x-text="target.model"></span>
+                            <template x-for="a in target.accounts || []" :key="a.name">
+                              <span class="badge me-1" :class="a.state === 'ready' ? 'bg-green-lt' : a.state === 'cooling' ? 'bg-yellow-lt' : 'bg-red-lt'">
+                                <span class="mono" x-text="a.name" x-show="a.name"></span><span x-show="!a.name">no key needed</span><span x-show="a.state === 'cooling'">, cooling down</span><span x-show="a.state === 'disabled'">, key refused</span>
+                              </span>
+                            </template>
+                            <span class="text-danger small" x-show="target.problem" x-text="target.problem"></span>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                    <template x-if="tryResult.status !== 200">
+                      <div class="d-flex align-items-center flex-wrap">
+                        <i class="ti ti-circle-x text-danger me-1"></i>
+                        <span class="me-3" x-show="tryResult.status === 404">Nothing answers this name: the client is refused.</span>
+                        <span class="me-3" x-show="tryResult.status === 403">This client may not ask for it.</span>
+                        <span class="me-3 mono" x-show="tryResult.status !== 404 && tryResult.status !== 403" x-text="tryResult.message"></span>
+                        <button class="btn btn-sm" x-show="tryResult.status === 404" @click="startModel(null, 'name', tryName.trim())">Choose who answers</button>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Asked for, not answered -->
+            <div class="card mb-3" x-show="unserved().length">
+              <div class="card-header">
+                <h3 class="card-title"><i class="ti ti-alert-triangle me-2 text-warning"></i>Asked for, not answered</h3>
+              </div>
+              <div class="list-group list-group-flush">
+                <template x-for="u in unserved()" :key="u.name">
+                  <div class="list-group-item">
+                    <div class="row align-items-center g-3">
+                      <div class="col">
+                        <div class="mono fw-bold" x-text="u.name"></div>
+                        <div class="text-secondary small">
+                          <span x-text="u.programs.join(', ')"></span> · <span x-text="u.requests + ' requests'"></span> · <span x-text="ago(u.last, Date.now())"></span>
+                        </div>
+                      </div>
+                      <div class="col-auto">
+                        <button class="btn btn-sm" @click="startModel(null, 'name', u.name)">Choose who answers</button>
+                        <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Dismiss" @click="forgetUnserved(u)"><i class="ti ti-x"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Providers' models, by their own names -->
+            <h3 class="mb-1">Providers' models</h3>
+            <div class="text-secondary mb-2">Tick a model and clients may ask for it by its own name.</div>
+            <div class="card mb-3" x-show="!offerProviders().length">
+              <div class="empty">
+                <p class="empty-title">No account yet</p>
+                <p class="empty-subtitle text-secondary">A provider's models are listed here once it has an account.</p>
+                <div class="empty-action"><button class="btn btn-primary" @click="go('accounts'); startAdding()"><i class="ti ti-plus me-1"></i>Add account</button></div>
+              </div>
+            </div>
+            <template x-for="p in offerProviders()" :key="p">
+              <div class="card mb-2" x-effect="openProviders[p] && askModels(p)">
+                <div class="card-header" style="cursor: pointer" @click="openProviders[p] = !openProviders[p]">
+                  <span class="avatar avatar-xs brand me-2" x-data="{ failed: false }">
+                    <img :src="brandIcon(p) || null" x-show="brandIcon(p) && !failed" @error="failed = true" alt="">
+                    <span x-show="!brandIcon(p) || failed" x-text="initials(p)"></span>
+                  </span>
+                  <span class="fw-bold me-2" x-text="brandName(p)"></span>
+                  <span class="badge bg-red-lt me-2" x-show="!targetProviders().includes(p)">no account</span>
+                  <span class="ms-auto text-secondary small text-end">
+                    <template x-for="name in starOffers(p)" :key="name"><span class="mono me-2" x-text="name"></span></template>
+                    <span x-show="offerCount(p)" x-text="offerCount(p) + ' offered by name'"></span>
+                    <span x-show="!offerCount(p) && !starOffers(p).length">Nothing offered</span>
+                  </span>
+                  <i class="ti ms-3 text-secondary" :class="openProviders[p] ? 'ti-chevron-up' : 'ti-chevron-down'"></i>
+                </div>
+                <template x-if="openProviders[p]">
+                  <div>
+                    <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap">
+                      <div class="input-icon flex-fill">
+                        <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                        <input class="form-control form-control-sm mono" placeholder="Search the provider's models" x-model="providerFilter[p]" autocomplete="off" spellcheck="false">
+                      </div>
+                      <button class="btn btn-sm" :disabled="saving || !offerable(p).length" @click="offerAll(p)" x-text="'Offer all ' + offerable(p).length"></button>
+                      <button class="btn btn-sm" :disabled="saving || !withdrawable(p).length" @click="offerNone(p)" x-text="'Offer none of ' + withdrawable(p).length"></button>
+                    </div>
+                    <div class="list-group list-group-flush" style="max-height: 26rem; overflow-y: auto">
+                      <template x-for="row in shownRows(p)" :key="row.name">
+                        <label class="list-group-item d-flex align-items-center py-2 mb-0">
+                          <input type="checkbox" class="form-check-input m-0 me-3" :checked="row.checked" :disabled="row.locked || saving" @change="toggleOffer(p, row)">
+                          <span class="mono me-2 text-truncate" x-text="row.name"></span>
+                          <span class="badge bg-secondary-lt me-2" x-show="row.star">new names too</span>
+                          <span class="badge bg-yellow-lt me-2" x-show="row.unlisted">not in the provider's list</span>
+                          <span class="text-secondary small ms-auto text-end">
+                            <span x-show="row.note" x-text="row.note"></span>
+                            <span class="mono" x-show="row.who" x-text="row.who"></span>
+                            <span x-show="row.through">through</span>
+                            <span class="mono" x-show="row.through" x-text="row.through"></span>
+                          </span>
+                          <button class="btn btn-sm btn-ghost-secondary btn-icon ms-2" title="Edit" x-show="row.edit" @click.prevent="startModel(row.edit)"><i class="ti ti-pencil"></i></button>
+                        </label>
+                      </template>
+                      <div class="list-group-item text-secondary" x-show="modelsOf(p) == null">Asking the provider for its models…</div>
+                      <div class="list-group-item text-secondary" x-show="modelsOf(p) != null && !modelsOf(p).length">The provider gave no list.</div>
+                      <div class="list-group-item text-secondary" x-show="filteredRows(p).length > shownRows(p).length" x-text="(filteredRows(p).length - shownRows(p).length) + ' more: type to narrow the list.'"></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+
+            <!-- Names of your own -->
+            <h3 class="mt-4 mb-1">Names of your own</h3>
+            <div class="text-secondary mb-2">A short name for a model, several models tried in order, or a name with a star.</div>
+            <div class="card mb-3">
+              <div class="table-responsive" x-show="ownRoutes().length">
               <table class="table card-table table-vcenter">
                 <thead><tr><th>Clients ask for</th><th>Answered by</th><th class="w-1"></th></tr></thead>
                 <tbody>
-                  <template x-for="r in model.models" :key="r.uid">
+                  <template x-for="r in ownRoutes()" :key="r.uid">
                     <tr>
-                      <td>
-                        <span class="mono fw-bold" x-text="r.name"></span>
-                        <span class="badge bg-secondary-lt ms-2" x-show="r.name === '*'">every other name</span>
-                      </td>
+                      <td><span class="mono fw-bold" x-text="r.name"></span></td>
                       <td>
                         <template x-if="r.raw !== undefined">
                           <code class="text-secondary" x-text="JSON.stringify(r.raw)"></code>
@@ -425,6 +567,7 @@
                                     </span>
                                     <span x-text="brandName(targetParts(target).provider)"></span>
                                     <span x-show="targetParts(target).upstream"><span class="text-secondary mx-2">as</span><span class="mono" x-text="targetParts(target).upstream"></span></span>
+                                    <span class="text-secondary ms-2" x-show="!targetParts(target).upstream">the name asked for</span>
                                   </div>
                                 </template>
                               </div>
@@ -444,11 +587,33 @@
                 </tbody>
               </table>
               </div>
-              <div class="empty" x-show="!model.models.length">
-                <div class="empty-icon"><i class="ti ti-route-off"></i></div>
-                <p class="empty-title">No route yet</p>
-                <p class="empty-subtitle text-secondary">A route gives clients a model name to ask for and says who answers it. Without any, clients must name both, as provider/model.</p>
-                <div class="empty-action"><button class="btn btn-primary" @click="startModel(null)"><i class="ti ti-plus me-1"></i>Add route</button></div>
+              <div class="card-body text-secondary" x-show="!ownRoutes().length">
+                <span class="me-3">None yet.</span>
+                <button class="btn btn-sm" @click="routeIntent = 'pick'"><i class="ti ti-plus me-1"></i>Add route</button>
+              </div>
+            </div>
+
+            <!-- Every other name -->
+            <h3 class="mt-4 mb-1">Every other name</h3>
+            <div class="text-secondary mb-2">What a client asks for and nothing above takes.</div>
+            <div class="card">
+              <div class="card-body d-flex align-items-center flex-wrap">
+                <template x-if="restRoute()">
+                  <div class="d-flex align-items-center flex-wrap flex-fill">
+                    <i class="ti ti-arrow-right me-2 text-secondary"></i>
+                    <span class="me-2">Goes to</span>
+                    <span class="mono me-auto" x-text="restRoute().raw === undefined ? restRoute().targets.join(', then ') : JSON.stringify(restRoute().raw)"></span>
+                    <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Edit" @click="startModel(restRoute())"><i class="ti ti-pencil"></i></button>
+                    <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="removeModel(restRoute())"><i class="ti ti-trash"></i></button>
+                  </div>
+                </template>
+                <template x-if="!restRoute()">
+                  <div class="d-flex align-items-center flex-wrap flex-fill">
+                    <i class="ti ti-ban me-2 text-secondary"></i>
+                    <span class="me-auto">Refused: the client is told the model is not served.</span>
+                    <button class="btn btn-sm" @click="startModel(null, 'rest')">Choose a model</button>
+                  </div>
+                </template>
               </div>
             </div>
           </div>
@@ -1070,6 +1235,46 @@
       </div>
     </template>
 
+    <!-- What kind of route to add -->
+    <template x-if="routeIntent">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1" @mousedown.self="routeIntent = null" @keydown.escape.window="routeIntent = null">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" x-text="routeIntent === 'provider' ? 'Which provider?' : 'What should clients be able to ask for?'"></h5>
+                <button type="button" class="btn-close" @click="routeIntent = null"></button>
+              </div>
+              <div class="list-group list-group-flush" x-show="routeIntent === 'pick'">
+                <template x-for="c in routeIntents" :key="c.id">
+                  <a href="#" class="list-group-item list-group-item-action d-flex align-items-center" @click.prevent="pickIntent(c.id)">
+                    <span class="avatar bg-primary-lt me-3"><i class="ti" :class="c.icon"></i></span>
+                    <span><span class="d-block fw-bold" x-text="c.label"></span><span class="d-block text-secondary" x-text="c.about"></span></span>
+                  </a>
+                </template>
+              </div>
+              <div class="list-group list-group-flush" x-show="routeIntent === 'provider'">
+                <template x-for="p in offerProviders()" :key="p">
+                  <a href="#" class="list-group-item list-group-item-action d-flex align-items-center" @click.prevent="showProvider(p)">
+                    <span class="avatar avatar-xs brand me-3" x-data="{ failed: false }">
+                      <img :src="brandIcon(p) || null" x-show="brandIcon(p) && !failed" @error="failed = true" alt="">
+                      <span x-show="!brandIcon(p) || failed" x-text="initials(p)"></span>
+                    </span>
+                    <span x-text="brandName(p)"></span>
+                  </a>
+                </template>
+                <div class="list-group-item" x-show="!offerProviders().length">
+                  <span class="text-secondary me-3">Add an account first.</span>
+                  <button class="btn btn-sm btn-primary" @click="routeIntent = null; go('accounts'); startAdding()"><i class="ti ti-plus me-1"></i>Add account</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop show"></div>
+      </div>
+    </template>
+
     <!-- Add or edit a model -->
     <template x-if="modelEdit">
       <div>
@@ -1077,14 +1282,19 @@
           <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
               <div class="modal-header">
-                <h5 class="modal-title" x-text="modelEdit.original === null ? 'Add a route' : 'Edit ' + modelEdit.original"></h5>
+                <h5 class="modal-title" x-show="modelEdit.intent === 'rest'">Every other name</h5>
+                <h5 class="modal-title" x-show="modelEdit.intent !== 'rest'" x-text="modelEdit.original === null ? intentTitle(modelEdit.intent) : 'Edit ' + modelEdit.original"></h5>
                 <button type="button" class="btn-close" @click="modelEdit = null"></button>
               </div>
               <div class="modal-body">
-                <div class="mb-3">
+                <div class="mb-3" x-show="modelEdit.intent === 'rest'">
+                  <div class="text-secondary">A name no route takes goes here, a mistyped one too.</div>
+                </div>
+                <div class="mb-3" x-show="modelEdit.intent !== 'rest'">
                   <label class="form-label">Clients ask for</label>
-                  <input class="form-control mono" x-model="modelEdit.name" placeholder="claude-*, fast, *" x-init="modelEdit.original === null && $nextTick(() => $el.focus())">
-                  <div class="form-hint">A star stands for any run of characters: claude-* takes every name that starts with claude-, and a star alone takes every name no other route takes.</div>
+                  <input class="form-control mono" x-model="modelEdit.name" :placeholder="modelEdit.intent === 'pattern' ? 'claude-*' : 'fast'" x-init="modelEdit.original === null && !modelEdit.name && $nextTick(() => $el.focus())">
+                  <div class="form-hint" x-show="modelEdit.intent === 'pattern' || modelEdit.name.includes('*')">A star stands for any run of characters: claude-* takes every name that starts with claude-.</div>
+                  <div class="form-hint" x-show="modelEdit.intent !== 'pattern' && !modelEdit.name.includes('*')">The model name a tool is set to ask for.</div>
                 </div>
                 <template x-if="modelEdit.raw !== undefined">
                   <div>
@@ -1098,68 +1308,39 @@
                     <label class="form-label">Answered by</label>
                     <div class="form-hint mt-0 mb-2" x-show="modelEdit.targets.length > 1">Tried in order: the next one answers only when every account of the one before it fails.</div>
                     <template x-for="(target, i) in modelEdit.targets" :key="target.uid">
-                      <div class="card card-sm mb-2">
-                        <div class="card-body">
-                          <div class="d-flex align-items-center mb-2">
-                            <span class="fw-bold me-auto" x-text="modelEdit.targets.length === 1 ? 'Target' : i === 0 ? 'First' : 'Then'"></span>
-                            <template x-if="modelEdit.targets.length > 1">
-                              <div class="text-nowrap">
-                                <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Move up" :disabled="i === 0" @click="moveTarget(i, -1)"><i class="ti ti-arrow-up"></i></button>
-                                <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Move down" :disabled="i === modelEdit.targets.length - 1" @click="moveTarget(i, 1)"><i class="ti ti-arrow-down"></i></button>
-                                <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="removeTarget(i)"><i class="ti ti-trash"></i></button>
-                              </div>
+                      <div class="d-flex align-items-start mb-2">
+                        <span class="text-secondary small me-2 mt-2 text-nowrap" style="min-width: 2.5rem" x-show="modelEdit.targets.length > 1" x-text="i === 0 ? 'First' : 'Then'"></span>
+                        <div class="position-relative flex-fill" @click.outside="open = false"
+                             x-data="combo({ items: () => targetChoices(), load: () => loadTargets(), get: () => target.text, set: v => target.text = v })">
+                          <div class="input-icon">
+                            <input class="form-control mono" x-model="text" placeholder="Search every provider's models" autocomplete="off" spellcheck="false" @focus="show()" @click="show()" @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)" @keydown.enter.prevent="enter()" @keydown.escape.stop="open = false" @keydown.tab="open = false">
+                            <span class="input-icon-addon"><i class="ti" :class="open && targetsLoading() ? 'ti-loader-2' : 'ti-selector'"></i></span>
+                          </div>
+                          <div class="dropdown-menu w-100 combo-menu" :class="{ show: open }" x-ref="list">
+                            <div class="dropdown-item disabled" x-show="targetsLoading()">Asking the providers for their models…</div>
+                            <div class="dropdown-item disabled" x-show="!targetsLoading() && !count">No list to pick from: type provider/model.</div>
+                            <div class="dropdown-item disabled" x-show="count && !matches.length">No model matches.</div>
+                            <template x-for="(name, i) in shown" :key="name">
+                              <a href="#" class="dropdown-item" :class="{ active: i === active }" @mousedown.prevent @mousemove="active = i" @click.prevent="choose(name)">
+                                <span class="text-truncate me-auto" x-show="name.startsWith('@')"><i class="ti ti-corner-down-right me-1"></i><span>the same as</span> <span class="mono" x-text="name.slice(1)"></span></span>
+                                <span class="text-truncate me-auto" x-show="!name.startsWith('@') && !name.includes('/')"><span class="mono" x-text="name"></span> <span class="text-secondary ms-1">the name asked for</span></span>
+                                <span class="mono text-truncate me-auto" x-show="!name.startsWith('@') && name.includes('/')" x-text="name"></span>
+                                <i class="ti ti-check ms-2" x-show="chosen(name)"></i>
+                              </a>
                             </template>
-                          </div>
-                          <div class="form-selectgroup w-100 mb-2">
-                            <label class="form-selectgroup-item flex-fill">
-                              <input type="radio" class="form-selectgroup-input" value="provider" x-model="target.kind">
-                              <span class="form-selectgroup-label"><i class="ti ti-building-store me-1"></i>A provider</span>
-                            </label>
-                            <label class="form-selectgroup-item flex-fill">
-                              <input type="radio" class="form-selectgroup-input" value="alias" x-model="target.kind" :disabled="!aliasNames().length">
-                              <span class="form-selectgroup-label"><i class="ti ti-corner-down-right me-1"></i>Another route</span>
-                            </label>
-                          </div>
-                          <div class="form-hint mt-0 mb-2" x-show="!aliasNames().length">Another route can be chosen once there is one without a star besides this one: a name with a star passes on the name the client asked for, and cannot stand for another.</div>
-                          <div x-show="target.kind === 'provider'">
-                            <select class="form-select mb-2" x-model="target.provider">
-                              <template x-for="id in targetProviders()" :key="id">
-                                <option :value="id" :selected="target.provider === id" x-text="brandName(id) === id ? id : brandName(id) + ' (' + id + ')'"></option>
-                              </template>
-                            </select>
-                            <label class="form-label">Model the provider is asked for</label>
-                            <div class="position-relative" @click.outside="open = false"
-                                 x-data="combo({ items: () => modelsOf(target.provider), load: () => askModels(target.provider), get: () => target.upstream, set: v => target.upstream = v })">
-                              <div class="input-icon">
-                                <input class="form-control mono" x-model="text" placeholder="deepseek-chat" autocomplete="off" spellcheck="false" @focus="show()" @click="show()" @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)" @keydown.enter.prevent="enter()" @keydown.escape.stop="open = false" @keydown.tab="open = false">
-                                <span class="input-icon-addon"><i class="ti" :class="open && loading ? 'ti-loader-2' : 'ti-selector'"></i></span>
-                              </div>
-                              <div class="dropdown-menu w-100 combo-menu" :class="{ show: open }" x-ref="list">
-                                <div class="dropdown-item disabled" x-show="loading">Asking the provider for its models…</div>
-                                <div class="dropdown-item disabled" x-show="!loading && !count">The provider gave no list.</div>
-                                <div class="dropdown-item disabled" x-show="count && !matches.length">No model matches.</div>
-                                <template x-for="(name, i) in shown" :key="name">
-                                  <a href="#" class="dropdown-item" :class="{ active: i === active }" @mousedown.prevent @mousemove="active = i" @click.prevent="choose(name)">
-                                    <span class="mono text-truncate me-auto" x-text="name"></span><i class="ti ti-check ms-2" x-show="chosen(name)"></i>
-                                  </a>
-                                </template>
-                                <div class="dropdown-item disabled" x-show="matches.length > shown.length" x-text="(matches.length - shown.length) + ' more: type to narrow the list.'"></div>
-                              </div>
-                            </div>
-                            <div class="form-hint">Pick from the provider's list or type a name. Leave it empty to pass on the name the client asked for.</div>
-                          </div>
-                          <div x-show="target.kind === 'alias'">
-                            <select class="form-select mono" x-model="target.alias">
-                              <option value="" :selected="!target.alias">–</option>
-                              <template x-for="name in aliasNames()" :key="name">
-                                <option :value="name" :selected="target.alias === name" x-text="name"></option>
-                              </template>
-                            </select>
-                            <div class="form-hint">Asking for this name is the same as asking for that one.</div>
+                            <div class="dropdown-item disabled" x-show="matches.length > shown.length" x-text="(matches.length - shown.length) + ' more: type to narrow the list.'"></div>
                           </div>
                         </div>
+                        <template x-if="modelEdit.targets.length > 1">
+                          <div class="text-nowrap ms-1">
+                            <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Move up" :disabled="i === 0" @click="moveTarget(i, -1)"><i class="ti ti-arrow-up"></i></button>
+                            <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Move down" :disabled="i === modelEdit.targets.length - 1" @click="moveTarget(i, 1)"><i class="ti ti-arrow-down"></i></button>
+                            <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="removeTarget(i)"><i class="ti ti-trash"></i></button>
+                          </div>
+                        </template>
                       </div>
                     </template>
+                    <div class="form-hint mb-2">Pick a model, or type it as provider/model.<span x-show="modelEdit.name.includes('*')"> A provider alone is asked for the name the client asked for.</span></div>
                     <button class="btn btn-sm btn-outline-secondary" @click="addTarget()"><i class="ti ti-plus me-1"></i>Add a fallback</button>
                     <div class="mt-3" x-show="modelEdit.targets.length > 1 || modelEdit.limit.trim()">
                       <label class="form-label">Longest conversation to move</label>
