@@ -519,8 +519,10 @@
                     <div class="list-group list-group-flush" style="max-height: 26rem; overflow-y: auto">
                       <template x-for="row in shownRows(p)" :key="row.name">
                         <label class="list-group-item d-flex align-items-center py-2 mb-0">
-                          <input type="checkbox" class="form-check-input m-0 me-3" :checked="row.checked" :disabled="row.locked || saving" @change="toggleOffer(p, row)">
+                          <input type="checkbox" class="form-check-input m-0 me-3" x-show="!row.locked" :checked="row.checked" :disabled="saving" @change="toggleOffer(p, row, $event)">
+                          <i class="ti me-3 text-secondary" style="width: 1rem" x-show="row.locked" :class="row.checked ? 'ti-check' : 'ti-arrow-forward'"></i>
                           <span class="mono me-2 text-truncate" x-text="row.name"></span>
+                          <span class="me-2" x-show="row.name === '*'">every other name</span>
                           <span class="badge bg-secondary-lt me-2" x-show="row.star">new names too</span>
                           <span class="badge bg-yellow-lt me-2" x-show="row.unlisted">not in the provider's list</span>
                           <span class="text-secondary small ms-auto text-end">
@@ -1127,6 +1129,7 @@
                           <input class="form-check-input" type="checkbox" x-model="s.chosen">
                           <span class="form-check-label">
                             <code x-text="s.name"></code>
+                            <span x-show="s.name === '*'">every other name, its models by their own names</span>
                             <span class="text-secondary" x-show="s.current" x-text="'(now ' + s.current + ')'"></span>
                           </span>
                         </label>

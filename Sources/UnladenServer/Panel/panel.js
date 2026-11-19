@@ -11,6 +11,8 @@ const SECTIONS = ['accounts', 'models', 'clients', 'advanced'];
 const ADVANCED = ['strict', 'keepalive', 'head_timeout', 'idle_timeout', 'max_request_bytes', 'fallback_max_context'];
 // The names a provider's own models go by, offered as models when an
 // account of it is added.
+// What a first start sends every name to, until an account takes them.
+const PLACEHOLDER = 'kilo/kilo-auto/free';
 const FAMILIES = {
   anthropic: ['claude-*'], openai: ['gpt-*', 'o3*', 'o4*'], gemini: ['gemini-*'], deepseek: ['deepseek-*'],
   xai: ['grok-*'], moonshot: ['kimi-*'], mistral: ['mistral-*', 'codestral-*'], chatgpt: ['gpt-*'],
@@ -1063,6 +1065,11 @@ function panel() {
         d.suggestions.push({ name, target: provider, current, chosen: before.get(name) ?? (picked || !existing) });
       };
       for (const name of FAMILIES[d.provider] || []) add(name, false);
+      // A provider whose names share no family takes every other name,
+      // while none does or only the first start's free model.
+      const rest = this.restRoute();
+      const free = !rest || (rest.raw === undefined && rest.targets.length === 1 && rest.targets[0].trim() === PLACEHOLDER);
+      if (!(FAMILIES[d.provider] || []).length && provider && provider !== 'kilo' && free) add('*', true);
       for (const name of d.picked) add(name, true);
     },
     // The provider the account being added belongs to.
@@ -1208,7 +1215,7 @@ function panel() {
     // target, the provider asked for the name the client asked for.
     offerOf(r) {
       const name = r.name.trim();
-      if (r.raw !== undefined || r.targets.length !== 1 || name === '*' || (r.limit || '').trim()) return '';
+      if (r.raw !== undefined || r.targets.length !== 1 || (r.limit || '').trim()) return '';
       const parts = this.targetParts(r.targets[0]);
       if (parts.kind !== 'provider' || !parts.provider) return '';
       const same = !parts.upstream || parts.upstream === '$model' || (!name.includes('*') && parts.upstream.toLowerCase() === name.toLowerCase());
@@ -1229,13 +1236,15 @@ function panel() {
     // when `p` does; locked when ticking cannot change it here.
     nameState(p, name) {
       const exact = this.routeNamed(name);
+      const rest = this.restRoute();
       const r = exact || (name.includes('*') ? null : this.patternFor(name));
-      if (!r) return { checked: false };
+      if (!r) return rest && !name.includes('*') && this.offerOf(rest) === p ? { checked: true, locked: true, note: 'through', who: '*' } : { checked: false };
       const first = r.raw === undefined ? this.targetParts(r.targets[0]) : null;
       const here = !!first && first.kind === 'provider' && first.provider === p;
       const who = r.raw === undefined ? r.targets.join(', ') : '';
       if (exact) {
         if (this.offerOf(r) === p) return { checked: true };
+        if (name === '*') return { checked: false, note: 'now answered by', who: who || 'a route of its own', taken: true };
         if (here) return { checked: true, locked: true, note: 'in a route of its own', edit: r };
         return { checked: false, locked: true, note: who ? 'answered by' : 'answered by a route of its own', who, edit: r };
       }
@@ -1252,6 +1261,7 @@ function panel() {
         seen.add(key);
         rows.push({ ...this.nameState(p, name), name, ...more });
       };
+      add('*', { star: true });
       for (const name of this.starOffers(p)) add(name, { star: true });
       for (const name of FAMILIES[p] || []) add(name, { star: true });
       for (const name of listed || []) add(name, {});
@@ -1266,13 +1276,26 @@ function panel() {
     // The rows in view that ticking would offer, and those it would take back.
     offerable(p) { return this.filteredRows(p).filter(row => !row.star && !row.checked && !row.locked); },
     withdrawable(p) { return this.filteredRows(p).filter(row => !row.star && row.checked && !row.locked); },
-    offer(p, name) { this.model.models.push({ uid: ++counter, name, targets: [p], limit: '', raw: undefined }); },
+    offer(p, name) {
+      const r = this.routeNamed(name);
+      if (r) Object.assign(r, { targets: [p], limit: '', raw: undefined });
+      else this.model.models.push({ uid: ++counter, name, targets: [p], limit: '', raw: undefined });
+    },
     withdraw(p, name) {
       const r = this.routeNamed(name);
       if (r && this.offerOf(r) === p) this.model.models.splice(this.model.models.indexOf(r), 1);
     },
-    async toggleOffer(p, row) {
+    async toggleOffer(p, row, event) {
       if (row.locked) return;
+      if (row.taken) {
+        // Another route has every other name: taking them is asked first.
+        this.ask('Give every other name to ' + this.brandName(p) + '?', 'They now go to ' + row.who + '.', 'Give them', async () => {
+          this.offer(p, row.name);
+          await this.apply();
+        });
+        if (event) event.target.checked = false;
+        return;
+      }
       if (row.checked) this.withdraw(p, row.name); else this.offer(p, row.name);
       await this.apply();
     },
