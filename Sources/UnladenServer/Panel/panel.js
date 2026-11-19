@@ -1,4 +1,5 @@
 const TOKEN_KEY = 'unladen.adminToken';
+const SET_ASIDE_KEY = 'unladen.setAside';
 const THEME_KEY = 'unladen.theme';
 const HIDDEN = /^<hidden (key-[0-9a-f]{8})>$/;
 // Each usage grouping's names and their color slot, kept while the panel
@@ -107,6 +108,8 @@ function panel() {
     original: null,
     model: null,
     status: null,
+    // The things needing attention this browser was told to leave out.
+    setAside: storedList(SET_ASIDE_KEY),
     presets: [],
     // Presets that serve some models to accounts without a key.
     keylessPresets: [],
@@ -524,7 +527,7 @@ function panel() {
       this.quotasBusy = true;
       try {
         const result = await this.api('GET', 'quotas' + (refresh ? '?refresh=1' : ''));
-        if (result.status === 200) this.quotas = result.json.accounts || [];
+        if (result.status === 200) { this.quotas = result.json.accounts || []; this.pruneAside(); }
       } finally {
         this.quotasBusy = false;
       }
@@ -694,6 +697,7 @@ function panel() {
       const result = await this.api('GET', 'status');
       if (result.status === 200) {
         this.status = result.json;
+        this.pruneAside();
         this.presets = result.json.presets || [];
         this.keylessPresets = result.json.keyless_presets || [];
       }
@@ -802,42 +806,63 @@ function panel() {
 
     // Home
 
+    // What needs attention and was not set aside.
+    attention() { return this.problems().filter(item => !this.setAside.includes(item.id)); },
+    // How many of them are set aside.
+    asideCount() { return this.problems().filter(item => this.setAside.includes(item.id)).length; },
+    // Leaves `item` out, in this browser, for as long as it stays true:
+    // once it is over it is forgotten, and shows again if it comes back.
+    dismiss(item) { this.keepAside([...this.setAside, item.id]); },
+    showAside() { this.keepAside([]); },
+    keepAside(ids) {
+      this.setAside = ids;
+      try { localStorage.setItem(SET_ASIDE_KEY, JSON.stringify(ids)); } catch { /* kept for this visit only */ }
+    },
+    // Forgets what was set aside and is over. An allowance not read yet
+    // says nothing about its account.
+    pruneAside() {
+      if (!this.status || !this.setAside.length) return;
+      const now = new Set(this.problems().map(item => item.id));
+      const unread = id => id.startsWith('quota:') && !(this.quotas || []).some(q => id.startsWith('quota:' + q.provider + '/' + q.account + ':'));
+      const kept = this.setAside.filter(id => now.has(id) || unread(id));
+      if (kept.length !== this.setAside.length) this.keepAside(kept);
+    },
     // What is wrong or about to be, each with what to do about it.
-    attention() {
+    problems() {
       const items = [];
       for (const a of this.status?.accounts || []) {
         const who = a.provider + '/' + a.name;
         if (a.sign_in && a.sign_in.state !== 'signed in') {
           items.push({
-            kind: 'danger', icon: 'ti-login-2', text: who + (a.sign_in.state === 'lapsed' ? ': the sign-in has lapsed' : ': not signed in yet'),
+            id: 'sign-in:' + who, kind: 'danger', icon: 'ti-login-2', text: who + (a.sign_in.state === 'lapsed' ? ': the sign-in has lapsed' : ': not signed in yet'),
             action: 'Sign in', run: () => this.startSignIn(a.provider, a.name),
           });
         } else if (a.state === 'disabled') {
           items.push({
-            kind: 'danger', icon: 'ti-key-off', text: who + ': the key was refused repeatedly and is no longer tried',
+            id: 'disabled:' + who, kind: 'danger', icon: 'ti-key-off', text: who + ': the key was refused repeatedly and is no longer tried',
             action: 'Try it again', run: () => this.resetKey(a.provider, a.name),
           });
         } else if (a.state === 'cooling') {
-          items.push({ kind: 'warning', icon: 'ti-snowflake', text: who + ': cooling down, tried again in ' + a.cooling_seconds + 's', action: 'Try it now', run: () => this.resetKey(a.provider, a.name) });
+          items.push({ id: 'cooling:' + who, kind: 'warning', icon: 'ti-snowflake', text: who + ': cooling down, tried again in ' + a.cooling_seconds + 's', action: 'Try it now', run: () => this.resetKey(a.provider, a.name) });
         }
         for (const w of this.quotaOf(a.provider, a.name)?.windows || []) {
-          if (w.used >= 90) items.push({ kind: 'warning', icon: 'ti-gauge', text: who + ': ' + Math.round(100 - w.used) + '% left of ' + t(w.name), action: '', run: null });
+          if (w.used >= 90) items.push({ id: 'quota:' + who + ':' + w.name, kind: 'warning', icon: 'ti-gauge', text: who + ': ' + Math.round(100 - w.used) + '% left of ' + t(w.name), action: '', run: null });
         }
       }
       for (const c of this.status?.cooling || []) {
-        items.push({ kind: 'warning', icon: 'ti-plug-connected-x', text: c.provider + ': ' + c.what + ', retried in ' + c.cooling_seconds + 's', action: '', run: null });
+        items.push({ id: 'provider:' + c.provider + ':' + c.what, kind: 'warning', icon: 'ti-plug-connected-x', text: c.provider + ': ' + c.what + ', retried in ' + c.cooling_seconds + 's', action: '', run: null });
       }
       const unserved = this.unserved();
       if (unserved.length) {
         items.push({
-          kind: 'warning', icon: 'ti-route-off',
+          id: 'unserved:' + unserved.map(u => u.name).sort().join(' '), kind: 'warning', icon: 'ti-route-off',
           text: unserved.length === 1 ? 'A model name was asked for and nothing answers it: ' + unserved[0].name : unserved.length + ' model names were asked for and nothing answers them',
           action: 'Choose who answers', run: () => this.go('models'),
         });
       }
       if (this.exposed()) {
         items.push({
-          kind: 'warning', icon: 'ti-lock-open', text: 'No client key is set: anyone who reaches the gateway can spend from your accounts.',
+          id: 'exposed', kind: 'warning', icon: 'ti-lock-open', text: 'No client key is set: anyone who reaches the gateway can spend from your accounts.',
           action: 'Add a client key', run: () => { this.go('clients'); this.startClient(null); },
         });
       }
@@ -1578,6 +1603,14 @@ function globs(value) {
 
 // A models entry the form can edit: a target, a list of them, or `try`
 // with `fallback_max_context`; `null` for anything else, kept as written.
+// A list of strings kept in the browser, empty when there is none.
+function storedList(key) {
+  try {
+    const list = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(list) ? list.filter(id => typeof id === 'string') : [];
+  } catch { return []; }
+}
+
 function menuEntry(value) {
   const targets = v => typeof v === 'string' ? [v] : Array.isArray(v) && v.length && v.every(t => typeof t === 'string') ? v : null;
   if (typeof value === 'string' || Array.isArray(value)) {

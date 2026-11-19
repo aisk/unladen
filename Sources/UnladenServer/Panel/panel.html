@@ -169,18 +169,23 @@
               </div>
             </div>
 
-            <div class="card mb-3" x-show="attention().length">
+            <div class="card mb-3" x-show="attention().length || asideCount()">
               <div class="card-header"><h3 class="card-title"><i class="ti ti-alert-triangle me-2 text-warning"></i>Needs attention</h3></div>
               <div class="list-group list-group-flush">
-                <template x-for="(item, i) in attention()" :key="i">
+                <template x-for="item in attention()" :key="item.id">
                   <div class="list-group-item">
                     <div class="row align-items-center g-3">
                       <div class="col-auto"><i class="ti" :class="item.icon + ' text-' + item.kind"></i></div>
                       <div class="col" x-text="item.text"></div>
                       <div class="col-auto" x-show="item.action"><button class="btn btn-sm" @click="item.run()" x-text="item.action"></button></div>
+                      <div class="col-auto"><button class="btn btn-sm btn-ghost-secondary btn-icon" title="Set aside" @click="dismiss(item)"><i class="ti ti-x"></i></button></div>
                     </div>
                   </div>
                 </template>
+                <div class="list-group-item d-flex align-items-center text-secondary small py-2" x-show="asideCount()">
+                  <span class="me-auto" x-text="asideCount() + ' set aside in this browser'"></span>
+                  <button class="btn btn-sm btn-ghost-secondary" @click="showAside()">Show again</button>
+                </div>
               </div>
             </div>
 
