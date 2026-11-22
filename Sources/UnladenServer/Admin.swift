@@ -179,6 +179,7 @@ enum AdminStatus {
             return .number(JSONNumber(seconds))
         }
 
+        let builtIn = ProviderRegistry.builtIn
         var accounts: [JSONValue] = []
         var cooling: [JSONValue] = []
         for id in configuration.registry.providers.keys.sorted() {
@@ -200,6 +201,21 @@ enum AdminStatus {
                     }
                     accounts.append(.object(account))
                 }
+            }
+            // An account that defines its own provider without a key has no
+            // key in a pool; the provider bears the account's name. A
+            // built-in provider that needs no key, as it is, is no account.
+            if configuration.keyPools[id]?.keys.isEmpty ?? true, provider != builtIn[id],
+               provider.endpoints.contains(where: { configuration.goesWithoutKey(id, at: $0) })
+            {
+                accounts.append([
+                    "name": .string(id),
+                    "provider": .string(id),
+                    "source": "file",
+                    "pool": .string(KeyPool.Strategy.order.rawValue),
+                    "state": "ready",
+                    "cooling_seconds": .null,
+                ])
             }
             for endpoint in provider.endpoints {
                 let scope = HealthScope.endpoint(Candidate.endpointID(provider: id, endpoint))

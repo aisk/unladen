@@ -220,6 +220,23 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         }
     }
 
+    @Test func anAccountWithoutAKeyIsInForce() throws {
+        let loaded = try ConfigFile.parse(#"""
+        { "accounts": {
+            "local": { "endpoints": { "chat": "http://127.0.0.1:8080/v1" } },
+            "deepseek": "sk-1",
+          },
+          "models": { "*": "local/qwen" } }
+        """#, environment: environment)
+        let gateway = Gateway(configuration: loaded.gateway, transport: MockUpstream { _ in reply("{}") }.transport)
+        let accounts = AdminStatus.json(gateway: gateway, path: nil, server: loaded.server)["accounts"]?.arrayValue ?? []
+        let local = try #require(accounts.first { $0["name"] == "local" })
+        #expect(local["provider"] == "local" && local["state"] == "ready" && local["source"] == "file")
+        // A built-in provider that needs no key is no account.
+        #expect(!accounts.contains { $0["provider"] == "kilo" })
+        #expect(accounts.filter { $0["provider"] == "deepseek" }.count == 1)
+    }
+
     @Test func thePageSaysWhatItMayLoad() async throws {
         let manager = try makeManager(sample)
         try await app(manager).test(.router) { client in
