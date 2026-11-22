@@ -1233,8 +1233,9 @@
                 <div class="text-danger mt-3" x-show="saveError" x-text="saveError"></div>
               </div>
               <div class="modal-footer">
+                <span class="text-secondary me-auto" x-text="accountProblem()"></span>
                 <button class="btn btn-ghost-secondary" @click="accountEdit = null">Cancel</button>
-                <button class="btn btn-primary" :disabled="!accountEdit.name.trim() || saving" @click="saveAccount()"><i class="ti ti-device-floppy me-1"></i>Save</button>
+                <button class="btn btn-primary" :disabled="!!accountProblem() || saving" @click="saveAccount()"><i class="ti ti-device-floppy me-1"></i>Save</button>
               </div>
             </div>
           </div>

@@ -997,8 +997,22 @@ function panel() {
         endpoints: a.endpoints.map(e => ({ ...e })), headers: a.headers.map(h => ({ ...h })),
       };
     },
+    // A new name follows the rules a new account's does: the file keys
+    // accounts by name, so a name taken by another would replace it.
+    accountProblem() {
+      const e = this.accountEdit;
+      if (!e) return '';
+      const name = e.name.trim();
+      if (!name) return 'Give the account a name.';
+      if (name === e.original) return '';
+      if (/[\/*]/.test(name) || name.startsWith('@')) return 'A name cannot contain / or * or start with @.';
+      if (this.model.accounts.some(a => a.name !== e.original && a.name.trim() === name)) return 'Another account has this name.';
+      if (!e.custom && name !== e.provider && this.presets.includes(name)) return name + ' is a provider: give this account another name.';
+      return '';
+    },
     async saveAccount() {
       const e = this.accountEdit;
+      if (this.accountProblem()) return;
       const a = this.model.accounts.find(a => a.name === e.original);
       if (!a) { this.accountEdit = null; return; }
       const name = e.name.trim();
