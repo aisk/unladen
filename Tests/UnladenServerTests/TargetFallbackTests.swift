@@ -236,6 +236,14 @@ private let session: HTTPFields = [HTTPField.Name("x-session-id")!: "s-1"]
         #expect(placements.placement(for: "c")?.reportedInput == 5200)
     }
 
+    @Test func aConversationTakenUpAfterAWeekendIsStillPlaced() {
+        let placements = Placements()
+        placements.answering(primary, estimate: 100_000, for: placements.ticket(for: "c"))
+        let now = ContinuousClock.now
+        #expect(placements.placement(for: "c", now: now + .seconds(3 * 24 * 3600))?.reference == primary)
+        #expect(placements.placement(for: "c", now: now + .seconds(31 * 24 * 3600)) == nil)
+    }
+
     @Test func theRecordSaysWhyATargetWasPassedOver() async throws {
         let upstream = primaryRateLimited()
         let gateway = fallbackGateway(upstream)

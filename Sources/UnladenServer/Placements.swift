@@ -42,8 +42,10 @@ final class Placements: Sendable {
     }
 
     /// How long a placement is kept: well past the longest a prompt cache
-    /// is assumed to live, so that one gone cold is known as such.
-    static let retention: Duration = .seconds(24 * 3600)
+    /// is assumed to live, so that one gone cold is known as such, and long
+    /// enough that a conversation taken up again days later is still known
+    /// (its sealed reasoning only the target that wrote it reads).
+    static let retention: Duration = .seconds(30 * 24 * 3600)
     /// How many conversations are kept.
     static let limit = 4096
 
@@ -73,9 +75,8 @@ final class Placements: Sendable {
     }
 
     /// Where `conversation` was last answered, within ``retention``.
-    func placement(for conversation: String) -> Placement? {
-        let now = ContinuousClock.now
-        return state.withLockedValue { state in
+    func placement(for conversation: String, now: ContinuousClock.Instant = .now) -> Placement? {
+        state.withLockedValue { state in
             guard let placement = state.placements[conversation], placement.at + Self.retention > now else { return nil }
             return placement
         }
