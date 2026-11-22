@@ -1642,7 +1642,11 @@ function fromDocument(doc) {
     pools: { ...(advanced.pools || {}) },
     accounts: [], models: [], clients: [],
   };
-  for (const field of ADVANCED) model.advanced[field] = field === 'strict' ? advanced.strict === true : text(advanced[field]);
+  // A limit turned off may be written `false`, which the form shows as off.
+  for (const field of ADVANCED) {
+    const value = advanced[field];
+    model.advanced[field] = field === 'strict' ? value === true : value === false ? 'off' : text(value);
+  }
 
   for (const [name, a] of Object.entries(doc.accounts || {})) {
     if (typeof a !== 'object' || a === null) {
