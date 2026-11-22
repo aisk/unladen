@@ -10,6 +10,8 @@ import Foundation
 #endif
 #if canImport(Glibc)
 import Glibc
+#elseif canImport(Musl)
+import Musl
 #elseif canImport(Darwin)
 import Darwin
 #endif

@@ -15,6 +15,9 @@ import NIOConcurrencyHelpers
 #if canImport(Glibc)
 import Glibc
 private let systemWrite = Glibc.write
+#elseif canImport(Musl)
+import Musl
+private let systemWrite = Musl.write
 #elseif canImport(Darwin)
 import Darwin
 private let systemWrite = Darwin.write
