@@ -439,6 +439,11 @@ const TRANSLATIONS = {
       'It was edited outside the panel after this page read it. Load the file to see it as it is now, without your change; or save your change over it, and what was edited there is lost.':
         '本页面读取之后，文件在面板之外被改过。可以读取文件查看现在的内容，你的这次修改会丢弃；也可以用你的修改覆盖它，文件里改过的内容会丢失。',
       'Load the file': '读取文件',
+
+      // Before the file is first written over
+      'Save over the configuration file?': '覆盖保存配置文件？',
+      'Saving from the panel writes the whole file again: comments in it are not kept. This is asked once for each file in this browser.':
+        '从面板保存会重写整个文件：文件里的注释不会保留。在这个浏览器里，每个文件只问一次。',
       'Save over it': '覆盖保存',
 
       // Placeholders

@@ -1516,6 +1516,34 @@
       </div>
     </template>
 
+    <!-- Before the file is first written over from this browser -->
+    <template x-if="rewriteQuestion">
+      <div>
+        <div class="modal modal-blur show d-block" tabindex="-1" @keydown.escape.window="answerRewrite(false)">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-status bg-warning"></div>
+              <div class="modal-body text-center py-4">
+                <i class="ti ti-file-pencil text-warning fs-1 mb-2"></i>
+                <h3>Save over the configuration file?</h3>
+                <div class="text-secondary">Saving from the panel writes the whole file again: comments in it are not kept. This is asked once for each file in this browser.</div>
+                <div class="mono text-secondary small mt-2" x-text="rewriteQuestion.path"></div>
+              </div>
+              <div class="modal-footer">
+                <div class="w-100">
+                  <div class="row">
+                    <div class="col"><button class="btn w-100" @click="answerRewrite(false)">Cancel</button></div>
+                    <div class="col"><button class="btn btn-warning w-100" @click="answerRewrite(true)"><i class="ti ti-device-floppy me-1"></i>Save</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop show"></div>
+      </div>
+    </template>
+
     <!-- The file changed elsewhere -->
     <template x-if="conflict">
       <div>

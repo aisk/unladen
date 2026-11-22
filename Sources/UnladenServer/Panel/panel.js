@@ -1,6 +1,8 @@
 const TOKEN_KEY = 'unladen.adminToken';
 const SET_ASIDE_KEY = 'unladen.setAside';
 const THEME_KEY = 'unladen.theme';
+// The configuration files this browser was told are written over, comments lost.
+const REWRITE_KEY = 'unladen.rewriteAgreed';
 const HIDDEN = /^<hidden (key-[0-9a-f]{8})>$/;
 // Each usage grouping's names and their color slot, kept while the panel
 // is open; outside the panel's state, as charts assign them as they draw.
@@ -69,6 +71,8 @@ let counter = 0;
 let saveQueue = Promise.resolve();
 let pendingSaves = 0;
 let saveRound = 0;
+// The answer awaited to the question before the file is first written over.
+let rewriteAnswer = null;
 
 function panel() {
   return {
@@ -130,6 +134,8 @@ function panel() {
     conflict: null,
     // A question before something is removed: {title, text, action, run}.
     question: null,
+    // The question before the file is first written over: {path, resolve}.
+    rewriteQuestion: null,
     navOpen: false,
     // The add dialog's account, the accounts, models and clients being edited.
     draft: null,
@@ -739,7 +745,31 @@ function panel() {
     // told in `saveError`; a file changed elsewhere asks what to do.
     async persist(document) {
       document = document || toDocument(this.model, this.original);
+      if (!(await this.mayRewrite())) {
+        this.saveError = '';
+        this.model = fromDocument(this.original);
+        return false;
+      }
       return this.write(document, false);
+    },
+
+    // Whether the file may be written over. The panel sees the file only
+    // as JSON: the first save of a path from this browser asks first, as
+    // comments in the file are not kept.
+    mayRewrite() {
+      if (!this.path || storedList(REWRITE_KEY).includes(this.path)) return Promise.resolve(true);
+      if (!rewriteAnswer) rewriteAnswer = new Promise(resolve => { this.rewriteQuestion = { path: this.path, resolve }; });
+      return rewriteAnswer;
+    },
+    answerRewrite(yes) {
+      const question = this.rewriteQuestion;
+      if (!question) return;
+      this.rewriteQuestion = null;
+      rewriteAnswer = null;
+      if (yes) {
+        try { localStorage.setItem(REWRITE_KEY, JSON.stringify([...storedList(REWRITE_KEY), question.path])); } catch { /* asked again next time */ }
+      }
+      question.resolve(yes);
     },
 
     // Saves run one at a time, in the order they were asked for, each
