@@ -285,7 +285,9 @@
         if case .string(let text)? = delta["refusal"], !text.isEmpty {
             appendText(.refusal, text, sourceKey: nil, into: &events)
         }
-        if case .array(let calls)? = delta["tool_calls"] {
+        // Some relays send `"tool_calls": []` beside text: no call, so the
+        // text block stays open.
+        if case .array(let calls)? = delta["tool_calls"], !calls.isEmpty {
             closeOpen(into: &events)
             for (position, call) in calls.enumerated() {
                 if case .object(let fragment) = call {

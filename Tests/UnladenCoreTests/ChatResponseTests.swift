@@ -269,6 +269,17 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
         #expect(finish.reason == WireFinishReason(.toolCalls, raw: "stop"))
     }
 
+    @Test func emptyToolCallsKeepTheTextBlockOpen() throws {
+        let chunks = [
+            #"{"id":"x","choices":[{"index":0,"delta":{"content":"Hel","tool_calls":[]}}]}"#,
+            #"{"id":"x","choices":[{"index":0,"delta":{"content":"lo","tool_calls":[]}}]}"#,
+            #"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+        ]
+        let (events, _) = try decodeChatStream(chunks.map { .event(SSEEvent(data: $0)) } + [.event(SSEEvent(data: "[DONE]"))])
+        let starts = events.filter { if case .textStart = $0 { true } else { false } }
+        #expect(starts.count == 1)
+    }
+
     @Test func invalidJSONInStreamThrows() {
         var decoder = ChatCompletionsStreamDecoder()
         #expect(throws: WireDecodingError.self) {
