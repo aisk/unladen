@@ -57,6 +57,8 @@ extension Gateway {
     static let longestRetryWait: Duration = .seconds(10)
     /// What ``prime(_:)`` says of a stream that ends before any content.
     static let endedWithoutContent = "the stream ended without content"
+    /// How a decoder's error for a stream cut short before its end begins.
+    static let endedEarlyPrefix = "upstream stream ended early"
 
     /// Statuses after which the next candidate is tried: rate limits,
     /// server errors, timeouts, key problems and a model the key cannot
@@ -198,7 +200,7 @@ extension Gateway {
                     health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "failed before any content")
                     last = .gateway(status: 502, message: "\(candidate.reference) failed before any content: \(message)", candidate: candidate)
                     outcome = "failed before any content: \(message)"
-                    if message == Self.endedWithoutContent { tryAgain(candidate) }
+                    if message == Self.endedWithoutContent || message.hasPrefix(Self.endedEarlyPrefix) { tryAgain(candidate) }
                     continue
                 case (.events, nil):
                     continue // not reached: an event stream is always primed
