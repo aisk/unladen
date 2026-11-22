@@ -47,8 +47,9 @@
 @_spi(Wire) public struct AnthropicRequestOptions: Hashable, Sendable {
     /// `max_tokens` to send when ``WireRequest/maxOutputTokens`` is `nil`
     /// (Anthropic requires the field). When a thinking budget is set and is
-    /// not below this value, the budget is added to it, since Anthropic
-    /// requires `max_tokens` > `budget_tokens`.
+    /// not below this value (or the client's own `max_tokens`), the budget
+    /// is added to it, since Anthropic requires `max_tokens` >
+    /// `budget_tokens`.
     public var defaultMaxTokens: Int
     /// Systems whose thinking signatures and redacted data the upstream
     /// accepts (the endpoint trust set). Reasoning from other systems is
@@ -275,7 +276,10 @@ extension AnthropicMessagesCodec {
     ///   ``AnthropicRequestOptions/trustedReasoningOrigins``).
     /// An Anthropic-sourced request is written as it came: no reordering.
     ///
-    /// `max_tokens` falls back to ``AnthropicRequestOptions/defaultMaxTokens``.
+    /// `max_tokens` falls back to ``AnthropicRequestOptions/defaultMaxTokens``;
+    /// a thinking budget not below it is added to it (see
+    /// ``AnthropicRequestOptions/maxTokensCap``). A budget of 0 is thinking
+    /// off, and a negative one adaptive thinking.
     public static func buildRequest(_ request: WireRequest, options: AnthropicRequestOptions = .init()) -> WireEncoded {
         var warnings: [WireWarning] = []
         let include = request.source == .anthropicMessages
@@ -310,7 +314,22 @@ extension AnthropicMessagesCodec {
 
         var maxTokens = request.maxOutputTokens ?? options.defaultMaxTokens
         var reasoning = request.reasoning
-        if request.maxOutputTokens == nil, let budget = reasoning?.budgetTokens, budget >= maxTokens {
+        // A budget of 0 is thinking off; a negative one (Gemini's -1) leaves
+        // the amount to the model. Neither is a `budget_tokens`.
+        if let budget = reasoning?.budgetTokens, budget <= 0 {
+            reasoning?.budgetTokens = nil
+            if budget == 0 {
+                reasoning?.enabled = false
+                warnings.append(WireWarning(.adjusted, "thinking budget 0 sent as thinking off", path: "thinking"))
+            } else if reasoning?.enabled != false {
+                reasoning?.enabled = true
+                warnings.append(WireWarning(.adjusted, "thinking budget \(budget) sent as adaptive thinking", path: "thinking"))
+            }
+        }
+        // Anthropic requires max_tokens > budget_tokens: the budget is added
+        // to the limit, within the model's cap, else lowered under the cap.
+        if reasoning?.enabled != false, let budget = reasoning?.budgetTokens, budget >= maxTokens {
+            let asked = maxTokens
             maxTokens += budget
             if let cap = options.maxTokensCap, maxTokens > cap {
                 maxTokens = cap
@@ -321,6 +340,11 @@ extension AnthropicMessagesCodec {
                         path: "thinking.budget_tokens",
                     ))
                 }
+            }
+            if request.maxOutputTokens != nil {
+                warnings.append(WireWarning(
+                    .adjusted, "max_tokens \(asked) sent as \(maxTokens) to fit the thinking budget", path: "max_tokens",
+                ))
             }
         }
         object["max_tokens"] = .number(JSONNumber(maxTokens))

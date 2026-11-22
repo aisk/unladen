@@ -207,6 +207,11 @@ private func isSynthetic(_ part: WirePart) -> Bool {
         request.reasoning = WireReasoningConfig(budgetTokens: 0)
         WireTransforms.mapReasoningEffort(&request, profile: profile, warnings: &warnings)
         #expect(request.reasoning == WireReasoningConfig(enabled: false))
+
+        // Gemini's dynamic budget: reasoning on, at the model's default.
+        request.reasoning = WireReasoningConfig(budgetTokens: -1)
+        WireTransforms.mapReasoningEffort(&request, profile: profile, warnings: &warnings)
+        #expect(request.reasoning == WireReasoningConfig(enabled: true))
     }
 
     @Test func budgetProfileConvertsEfforts() throws {

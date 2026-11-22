@@ -418,10 +418,14 @@
         case .effort?, .thinkingLevel?:
             if reasoning.effort == nil, let budget = reasoning.budgetTokens {
                 reasoning.budgetTokens = nil
-                if budget <= 0 {
+                if budget == 0 {
                     reasoning.enabled = false
                     if profile.effortLevels?.contains("none") == true { reasoning.effort = "none" }
                     warnings.append(WireWarning(.adjusted, "thinking budget 0 sent as reasoning off", path: path))
+                } else if budget < 0 {
+                    // Gemini's -1: the model decides how much to think.
+                    if reasoning.enabled == nil { reasoning.enabled = true }
+                    warnings.append(WireWarning(.adjusted, "thinking budget \(budget) sent as reasoning at the model's default effort", path: path))
                 } else if let level = effort(forBudget: budget, table: table, levels: profile.effortLevels) {
                     reasoning.effort = level
                     if reasoning.enabled == nil { reasoning.enabled = true }

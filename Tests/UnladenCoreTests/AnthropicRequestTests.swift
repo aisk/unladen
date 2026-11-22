@@ -248,6 +248,29 @@ private func parse(_ text: String) throws(WireDecodingError) -> WireDecoded<Wire
         #expect(lowered.warnings.contains { $0.code == .adjusted })
     }
 
+    @Test func aClientMaxTokensIsRaisedAboveTheBudget() {
+        var request = WireRequest(model: "m", messages: [WireMessage(role: .user, parts: [.text(WireText("hi"))])])
+        request.maxOutputTokens = 4000
+        request.reasoning = WireReasoningConfig(budgetTokens: 8000, enabled: true)
+        let raised = AnthropicMessagesCodec.buildRequest(request, options: .init(maxTokensCap: 64000))
+        #expect(raised.json["max_tokens"] == 12000)
+        #expect(raised.json["thinking"] == ["type": "enabled", "budget_tokens": 8000])
+        #expect(raised.warnings.contains { $0.code == .adjusted && $0.path == "max_tokens" })
+        let capped = AnthropicMessagesCodec.buildRequest(request, options: .init(maxTokensCap: 6000))
+        #expect(capped.json["max_tokens"] == 6000)
+        #expect(capped.json["thinking"] == ["type": "enabled", "budget_tokens": 5999])
+    }
+
+    @Test func nonPositiveBudgetsAreNotBudgets() {
+        var request = WireRequest(model: "m", messages: [WireMessage(role: .user, parts: [.text(WireText("hi"))])], source: .gemini)
+        request.reasoning = WireReasoningConfig(budgetTokens: -1)
+        let dynamic = AnthropicMessagesCodec.buildRequest(request)
+        #expect(dynamic.json["thinking"] == ["type": "adaptive"])
+        #expect(dynamic.json["max_tokens"] == 4096)
+        request.reasoning = WireReasoningConfig(budgetTokens: 0)
+        #expect(AnthropicMessagesCodec.buildRequest(request).json["thinking"] == ["type": "disabled"])
+    }
+
     @Test func reasoningReplayFollowsTheTrustSet() {
         let request = WireRequest(model: "m", messages: [
             WireMessage(role: .assistant, parts: [
