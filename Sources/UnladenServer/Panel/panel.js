@@ -64,6 +64,11 @@ const BRANDS = {
   cherryin: ['CherryIN', 'cherrystudio-color'], pipellm: ['PipeLLM', ''], lmstudio: ['LM Studio', 'lmstudio'],
 };
 let counter = 0;
+// The saves to the file: the last one queued, how many are queued or
+// running, and a count of failures, which drop the saves queued before them.
+let saveQueue = Promise.resolve();
+let pendingSaves = 0;
+let saveRound = 0;
 
 function panel() {
   return {
@@ -734,33 +739,55 @@ function panel() {
     // told in `saveError`; a file changed elsewhere asks what to do.
     async persist(document) {
       document = document || toDocument(this.model, this.original);
-      return this.write({ document, hash: this.hash }, document);
+      return this.write(document, false);
     },
 
-    async write(body, document) {
+    // Saves run one at a time, in the order they were asked for, each
+    // with the hash the one before it left. One that fails drops those
+    // queued behind it, which were made on top of it.
+    write(document, overwrite) {
+      const round = saveRound;
+      pendingSaves++;
       this.saving = true;
+      const run = async () => {
+        try {
+          return round === saveRound ? await this.send(document, overwrite) : false;
+        } finally {
+          pendingSaves--;
+          this.saving = pendingSaves > 0;
+        }
+      };
+      const result = saveQueue.then(run);
+      saveQueue = result.catch(() => {});
+      return result;
+    },
+
+    async send(document, overwrite) {
       this.saveError = '';
-      try {
-        const result = await this.api('PUT', 'config', body);
-        if (result.status === 200) {
-          this.conflict = null;
-          const warnings = result.json.warnings || [];
-          if (warnings.length) this.say('warning', 'Saved, with a warning', warnings.join('\n'));
-          await this.load();
-          return true;
-        }
-        this.model = fromDocument(this.original);
-        if (result.status === 409) {
-          this.draft = this.accountEdit = this.modelEdit = this.clientEdit = this.question = null;
-          this.conflict = { document };
-        } else if (result.status !== 401) {
-          const where = result.json.location ? result.json.location + ': ' : '';
-          this.saveError = where + (result.json.error || 'HTTP ' + result.status);
-        }
-        return false;
-      } finally {
-        this.saving = false;
+      const result = await this.api('PUT', 'config', overwrite ? { document, overwrite: true } : { document, hash: this.hash });
+      if (result.status === 200) {
+        this.conflict = null;
+        if (result.json.hash) this.hash = result.json.hash;
+        // A provider's list holds while its accounts do.
+        if (JSON.stringify(document.accounts) !== JSON.stringify(this.original?.accounts)) this.providerModels = {};
+        this.original = document;
+        const warnings = result.json.warnings || [];
+        if (warnings.length) this.say('warning', 'Saved, with a warning', warnings.join('\n'));
+        // The last save queued reads the file back; one with saves behind
+        // it leaves the forms holding their changes.
+        if (pendingSaves === 1) await this.load();
+        return true;
       }
+      saveRound++;
+      this.model = fromDocument(this.original);
+      if (result.status === 409) {
+        this.draft = this.accountEdit = this.modelEdit = this.clientEdit = this.question = null;
+        this.conflict = { document };
+      } else if (result.status !== 401) {
+        const where = result.json.location ? result.json.location + ': ' : '';
+        this.saveError = where + (result.json.error || 'HTTP ' + result.status);
+      }
+      return false;
     },
 
     // A change made outside a dialog: a refusal is told in a message.
@@ -771,7 +798,7 @@ function panel() {
     // The answers to a file changed elsewhere.
     async overwrite() {
       const document = this.conflict.document;
-      if (await this.write({ document, overwrite: true }, document)) this.say('success', 'Saved over the file', '');
+      if (await this.write(document, true)) this.say('success', 'Saved over the file', '');
       else if (this.saveError) { this.conflict = null; this.say('danger', 'Not saved', this.saveError); }
     },
     async takeFile() {
