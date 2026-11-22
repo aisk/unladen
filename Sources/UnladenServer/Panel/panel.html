@@ -7,10 +7,12 @@
 <!-- The navbar's feather (Tabler Icons, MIT), in the panel's blue. -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23066fd1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20l10 -10m0 -5v5h5m-9 -1v5h5m-9 -1v5h5m-5 -5l4 -4l4 -4'/%3E%3Cpath d='M19 10c.638 -.636 1 -1.515 1 -2.486a3.515 3.515 0 0 0 -3.517 -3.514c-.97 0 -1.847 .367 -2.483 1m-3 13l4 -4l4 -4'/%3E%3C/g%3E%3C/svg%3E">
 <script>
+  // Where the theme chosen in the panel is kept; panel.js keeps it there too.
+  const THEME_KEY = 'unladen.theme';
   // Before the page is drawn: the theme chosen in the panel, else the system's.
   (() => {
     let theme = null;
-    try { theme = localStorage.getItem('unladen.theme'); } catch { /* the system's */ }
+    try { theme = localStorage.getItem(THEME_KEY); } catch { /* the system's */ }
     document.documentElement.setAttribute('data-bs-theme', theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   })();
 </script>

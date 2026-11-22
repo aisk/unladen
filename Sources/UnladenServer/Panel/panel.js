@@ -1,6 +1,7 @@
 const TOKEN_KEY = 'unladen.adminToken';
 const SET_ASIDE_KEY = 'unladen.setAside';
-const THEME_KEY = 'unladen.theme';
+// THEME_KEY is declared in panel.html's head, whose script reads it
+// before the page is drawn.
 // The configuration files this browser was told are written over, comments lost.
 const REWRITE_KEY = 'unladen.rewriteAgreed';
 const HIDDEN = /^<hidden (key-[0-9a-f]{8})>$/;
@@ -11,10 +12,10 @@ const SERIES_SLOTS = {};
 // alone and carried back as they are.
 const SECTIONS = ['accounts', 'models', 'clients', 'advanced'];
 const ADVANCED = ['strict', 'keepalive', 'head_timeout', 'idle_timeout', 'max_request_bytes', 'fallback_max_context'];
-// The names a provider's own models go by, offered as models when an
-// account of it is added.
 // What a first start sends every name to, until an account takes them.
 const PLACEHOLDER = 'kilo/kilo-auto/free';
+// The names a provider's own models go by, offered as models when an
+// account of it is added.
 const FAMILIES = {
   anthropic: ['claude-*'], openai: ['gpt-*', 'o3*', 'o4*'], gemini: ['gemini-*'], deepseek: ['deepseek-*'],
   xai: ['grok-*'], moonshot: ['kimi-*'], mistral: ['mistral-*', 'codestral-*'], chatgpt: ['gpt-*'],
@@ -1105,12 +1106,6 @@ function panel() {
       if (await this.persist()) this.accountEdit = null;
     },
 
-    // Presets, and the accounts that are providers of their own.
-    providerIds() {
-      const ids = new Set(this.presets);
-      for (const a of this.model.accounts) if (a.custom && a.name.trim()) ids.add(a.name.trim());
-      return [...ids].sort();
-    },
     // The add dialog's providers, as the search narrows them: those that
     // sign in, those of your own addresses, and the rest.
     providerChoices() {
@@ -1280,8 +1275,6 @@ function panel() {
       const slash = text.indexOf('/');
       return { kind: 'provider', alias: '', provider: slash < 0 ? text : text.slice(0, slash), upstream: slash < 0 ? '' : text.slice(slash + 1) };
     },
-    // What the gateway resolves a name to, once in force.
-    resolved(name) { return (this.status?.models || []).find(r => r.name === name)?.targets || []; },
     // The models `provider` lists: names, `null` while asking, or
     // `undefined` before. `accounts`: in place of the accounts in force.
     modelsOf(provider, accounts) { return this.providerModels[listKey(provider, accounts)]; },
@@ -1725,8 +1718,6 @@ function globs(value) {
   return value.split(',').map(s => s.trim()).filter(Boolean);
 }
 
-// A models entry the form can edit: a target, a list of them, or `try`
-// with `fallback_max_context`; `null` for anything else, kept as written.
 // A list of strings kept in the browser, empty when there is none.
 function storedList(key) {
   try {
@@ -1735,6 +1726,8 @@ function storedList(key) {
   } catch { return []; }
 }
 
+// A models entry the form can edit: a target, a list of them, or `try`
+// with `fallback_max_context`; `null` for anything else, kept as written.
 function menuEntry(value) {
   const targets = v => typeof v === 'string' ? [v] : Array.isArray(v) && v.length && v.every(t => typeof t === 'string') ? v : null;
   if (typeof value === 'string' || Array.isArray(value)) {
