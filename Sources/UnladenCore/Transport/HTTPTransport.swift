@@ -7,6 +7,9 @@ public import HTTPTypes
 ///   returned, whatever its status, so callers can forward provider error
 ///   bodies verbatim. Throw only when no response head was obtained
 ///   (connection failure, TLS error, cancellation, timeout).
+/// - **Redirects are not followed.** A 3xx is returned as the response:
+///   the request carries an API key, which must not go to whatever host a
+///   redirect names.
 /// - **Streaming.** `send` returns as soon as the response head arrives; the
 ///   body is delivered incrementally through ``HTTPResponseBody``.
 /// - **Cancellation.** Cancelling the task awaiting `send`, or the task

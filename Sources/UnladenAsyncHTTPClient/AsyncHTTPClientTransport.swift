@@ -10,6 +10,11 @@ public import UnladenCore
 /// backpressure: if the consumer stops reading, the connection stops reading.
 /// Cancelling the task awaiting ``send(_:body:)`` or iterating the body, or
 /// dropping the body iterator, cancels the request.
+///
+/// Redirects are the client's to follow or not: ``defaultClient`` returns a
+/// 3xx as the response, so a request's API key never reaches the host it
+/// names. A client of your own should set `redirectConfiguration` to
+/// `.disallow` for the same.
 public struct AsyncHTTPClientTransport: HTTPTransport {
     public let client: HTTPClient
     /// Deadline for the whole exchange, **including reading the body**.
@@ -19,13 +24,21 @@ public struct AsyncHTTPClientTransport: HTTPTransport {
     public var timeout: Duration?
 
     /// - Parameters:
-    ///   - client: The client to use; defaults to the process-wide
-    ///     `HTTPClient.shared`. The caller owns the client's lifecycle.
+    ///   - client: The client to use; defaults to ``defaultClient``. The
+    ///     caller owns the lifecycle of a client it passes.
     ///   - timeout: See ``timeout``.
-    public init(client: HTTPClient = .shared, timeout: Duration? = nil) {
+    public init(client: HTTPClient = Self.defaultClient, timeout: Duration? = nil) {
         self.client = client
         self.timeout = timeout
     }
+
+    /// A process-wide client with `HTTPClient.shared`'s settings, except
+    /// that it does not follow redirects. It is never shut down.
+    public static let defaultClient: HTTPClient = {
+        var configuration = HTTPClient.Configuration.singletonConfiguration
+        configuration.redirectConfiguration = .disallow
+        return HTTPClient(eventLoopGroup: HTTPClient.defaultEventLoopGroup, configuration: configuration)
+    }()
 
     public func send(_ request: HTTPRequest, body: [UInt8]?) async throws -> HTTPTransportResponse {
         let clientRequest = try Self.makeClientRequest(request, body: body)

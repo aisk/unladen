@@ -38,6 +38,9 @@ private func makeApplication(probe: StreamProbe) -> some ApplicationProtocol {
             body: ResponseBody(byteBuffer: ByteBuffer(string: #"{"error":{"message":"rate limited"}}"#)),
         )
     }
+    router.get("redirect") { _, _ -> Response in
+        Response(status: .found, headers: [.location: "/error"])
+    }
     router.get("stream") { _, _ -> Response in
         Response(
             status: .ok,
@@ -95,6 +98,15 @@ struct AsyncHTTPClientTransportTests {
             #expect(response.response.headerFields[.contentType] == "application/json")
             let body = try await response.body.collect(upTo: 1 << 20)
             #expect(String(decoding: body, as: UTF8.self) == #"{"error":{"message":"rate limited"}}"#)
+        }
+    }
+
+    @Test func redirectIsReturnedNotFollowed() async throws {
+        try await makeApplication(probe: StreamProbe()).test(.live) { client in
+            let port = try #require(client.port)
+            let response = try await AsyncHTTPClientTransport(timeout: .seconds(20)).send(request(.get, "/redirect", port: port), body: nil)
+            #expect(response.status == .found)
+            #expect(response.response.headerFields[.location] == "/error")
         }
     }
 

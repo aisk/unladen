@@ -8,7 +8,8 @@ import HTTPTypesFoundation
 /// Uses a per-task data delegate rather than `bytes(for:)`, so body chunks
 /// arrive as URLSession delivers them instead of one byte at a time.
 /// URLSession offers no read-side backpressure through this API, so chunks
-/// are buffered until the consumer reads them.
+/// are buffered until the consumer reads them. The delegate declines
+/// redirects, so a 3xx is the response.
 public struct URLSessionTransport: HTTPTransport {
     public let session: URLSession
 
@@ -77,6 +78,18 @@ private final class StreamingDataDelegate: NSObject, URLSessionDataDelegate, @un
         }
         takeHead()?.resume(returning: httpResponse)
         completionHandler(.allow)
+    }
+
+    /// Declining the redirect makes URLSession deliver the 3xx itself, and
+    /// keeps the request's credentials from the host it names.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void,
+    ) {
+        completionHandler(nil)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
