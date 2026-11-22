@@ -314,7 +314,8 @@ function panel() {
       }
       return [...groups.values()].sort((a, b) => b.turns.length - a.turns.length);
     },
-    conversationLabel(c) { return (c.subagent ? 'subagent ' + this.short(c.subagent) : 'main') + ' · ' + c.model; },
+    // Shown in a monospace font, which is not translated: the words go through `t` here.
+    conversationLabel(c) { return (c.subagent ? t('subagent') + ' ' + this.short(c.subagent) : t('main')) + ' · ' + c.model; },
     shownConversation() { return this.conversations().find(c => c.key === this.conversation) || null; },
     // Where the conversation stands: what answered it last, how much context
     // it carries, and whether its prompt cache is likely still warm.
@@ -514,7 +515,8 @@ function panel() {
       if (slot == null) return null;
       const series = this.usageSeries();
       const value = v => (this.usageMetric === 'tokens' ? this.count(v) : String(v));
-      const rows = series.filter(s => s.values[i]).map(s => [s.name, value(s.values[i]), s.color]).reverse();
+      // Each row: the name, the value, the color, and whether the name is the panel's (`N others`).
+      const rows = series.filter(s => s.values[i]).map(s => [s.name, value(s.values[i]), s.color, !!s.other]).reverse();
       const total = series.reduce((sum, s) => sum + (s.values[i] || 0), 0);
       return {
         title: this.usage.days === 1 ? this.slotLabel(slot) + '–' + String((slot + 1) % 24).padStart(2, '0') + ':00' : this.slotLabel(slot),
@@ -1339,7 +1341,7 @@ function panel() {
       const who = r.raw === undefined ? r.targets.join(', ') : '';
       if (exact) {
         if (this.offerOf(r) === p) return { checked: true };
-        if (name === '*') return { checked: false, note: 'now answered by', who: who || 'a route of its own', taken: true };
+        if (name === '*') return { checked: false, note: who ? 'now answered by' : 'now answered by a route of its own', who, taken: true };
         if (here) return { checked: true, locked: true, note: 'in a route of its own', edit: r };
         return { checked: false, locked: true, note: who ? 'answered by' : 'answered by a route of its own', who, edit: r };
       }
@@ -1384,7 +1386,7 @@ function panel() {
       if (row.locked) return;
       if (row.taken) {
         // Another route has every other name: taking them is asked first.
-        this.ask('Give every other name to ' + this.brandName(p) + '?', 'They now go to ' + row.who + '.', 'Give them', async () => {
+        this.ask('Give every other name to ' + this.brandName(p) + '?', 'They now go to ' + (row.who || 'a route of its own') + '.', 'Give them', async () => {
           this.offer(p, row.name);
           await this.apply();
         });

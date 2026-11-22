@@ -612,7 +612,12 @@
                   <div class="d-flex align-items-center flex-wrap flex-fill">
                     <i class="ti ti-arrow-right me-2 text-secondary"></i>
                     <span class="me-2">Goes to</span>
-                    <span class="mono me-auto" x-text="restRoute().raw === undefined ? restRoute().targets.join(', then ') : JSON.stringify(restRoute().raw)"></span>
+                    <span class="me-auto">
+                      <template x-if="restRoute().raw === undefined">
+                        <span><template x-for="(target, i) in restRoute().targets" :key="i"><span><span x-show="i > 0">, then </span><span class="mono" x-text="target"></span></span></template></span>
+                      </template>
+                      <template x-if="restRoute().raw !== undefined"><span class="mono" x-text="JSON.stringify(restRoute().raw)"></span></template>
+                    </span>
                     <button class="btn btn-sm btn-ghost-secondary btn-icon" title="Edit" @click="startModel(restRoute())"><i class="ti ti-pencil"></i></button>
                     <button class="btn btn-sm btn-ghost-danger btn-icon" title="Remove" @click="removeModel(restRoute())"><i class="ti ti-trash"></i></button>
                   </div>
@@ -698,7 +703,7 @@
                       <td class="text-end" x-text="count(s.tokens.input)"></td>
                       <td class="text-end" x-text="count(s.tokens.output)"></td>
                       <td class="text-end" x-text="cacheShare(s.tokens)"></td>
-                      <td class="mono"><span x-text="s.accounts.join(', ')"></span> <span class="badge bg-orange-lt" x-show="s.switches" x-text="s.switches + ' switches'"></span></td>
+                      <td><span class="mono" x-text="s.accounts.join(', ')"></span> <span class="badge bg-orange-lt" x-show="s.switches" x-text="s.switches + ' switches'"></span></td>
                     </tr>
                   </template>
                 </tbody>
@@ -800,7 +805,7 @@
                         <div class="small text-danger" x-show="noteOf(r) && storyIsTrouble(r)" x-text="noteOf(r)"></div>
                         <div x-show="expanded[r.id]" class="small mt-2">
                           <div class="text-secondary" x-text="r.protocol + (r.stream ? ', streamed' : '')"></div>
-                          <div class="text-secondary mono" x-show="r.session" x-text="'session ' + r.session + (r.subagent ? ', subagent ' + r.subagent : '')"></div>
+                          <div class="text-secondary mono" x-show="r.session" x-text="t('session') + ' ' + r.session + (r.subagent ? ', ' + t('subagent') + ' ' + r.subagent : '')"></div>
                           <div class="text-secondary" x-show="r.route" x-text="'Route ' + r.route + ': ' + (r.targets || []).join(' → ')"></div>
                           <div class="mt-1" x-show="(r.attempt_list || []).length">
                             <div class="fw-bold">Tried</div>
@@ -896,7 +901,7 @@
                       <div class="card-body p-2 small" x-data="{ get tip() { return usageTip(hover.i) } }">
                         <div class="fw-bold" x-text="tip.title"></div>
                         <template x-for="row in tip.rows">
-                          <div class="d-flex justify-content-between gap-3"><span><span class="swatch me-1" :style="'background: var(' + row[2] + ')'"></span><span class="mono" x-text="row[0]"></span></span><span x-text="row[1]"></span></div>
+                          <div class="d-flex justify-content-between gap-3"><span><span class="swatch me-1" :style="'background: var(' + row[2] + ')'"></span><span :class="!row[3] && 'mono'" x-text="row[0]"></span></span><span x-text="row[1]"></span></div>
                         </template>
                         <div class="d-flex justify-content-between gap-3 border-top mt-1 pt-1"><span class="text-secondary">Total</span><span x-text="tip.total"></span></div>
                       </div>
