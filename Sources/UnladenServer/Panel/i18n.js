@@ -454,6 +454,8 @@ const TRANSLATIONS = {
       'Not saved': '未保存',
       'The file was read again and is in force': '文件已重新读取并生效',
       'The file does not load': '文件无法加载',
+      'cannot reach the gateway': '连不上网关',
+      'The gateway cannot be reached. The page shows what it read last, and changes are not saved.': '连不上网关。页面显示的是最后一次读到的内容，修改不会被保存。',
       'the file changed since it was loaded': '文件在读取之后被修改了',
       'the configuration is larger than 4 MiB': '配置超过 4 MiB',
     },

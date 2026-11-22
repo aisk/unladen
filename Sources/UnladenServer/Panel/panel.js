@@ -73,6 +73,8 @@ function panel() {
     providerModels: {},
     tokenInput: '',
     signInError: '',
+    // The last request did not reach the gateway.
+    unreachable: false,
     tab: 'home',
     languages: LANGUAGES,
     language,
@@ -180,13 +182,26 @@ function panel() {
       this.readHash();
       window.addEventListener('hashchange', () => this.readHash());
       for (const name of ['tab', 'usageDays', 'usageBy', 'session']) this.$watch(name, () => this.writeHash());
-      if (this.token) await this.load();
-      this.refreshTab();
-      setInterval(() => { if (this.token && ['home', 'accounts'].includes(this.tab)) this.refreshTab(); }, 5000);
-      setInterval(() => { if (this.token && this.tab === 'models') this.refreshStatus(); }, 10000);
-      setInterval(() => { if (this.token && this.tab === 'activity') this.refreshActivity(); }, 2000);
-      setInterval(() => { if (this.token && this.tab === 'usage') this.refreshUsage(); }, 10000);
+      this.every(5000, () => ['home', 'accounts'].includes(this.tab), () => this.refreshTab());
+      this.every(10000, () => this.tab === 'models', () => this.refreshStatus());
+      this.every(2000, () => this.tab === 'activity', () => this.refreshActivity());
+      this.every(10000, () => this.tab === 'usage', () => this.refreshUsage());
+      // A first read that failed is tried again.
+      this.every(5000, () => !this.model, () => this.load());
       this.$watch('tab', () => { this.navOpen = false; this.refreshTab(); });
+      if (this.token) {
+        try { await this.load(); } catch (e) { console.error(e); }
+      }
+      this.refreshTab();
+    },
+
+    // Runs `run` every `ms` while signed in and `when()` holds; what it
+    // throws is logged, not left unhandled.
+    every(ms, when, run) {
+      setInterval(() => {
+        if (!this.token || !when()) return;
+        Promise.resolve().then(run).catch(e => console.error(e));
+      }, ms);
     },
 
     pages() { return this.navigation.filter(p => p.id); },
@@ -647,12 +662,21 @@ function panel() {
 
     // The panel's own sign-in, and the file
 
+    // A request that does not reach the gateway answers with status 0
+    // and sets `unreachable` until a request reaches it again.
     async api(method, path, body) {
-      const response = await fetch('/admin/api/' + path, {
-        method,
-        headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
+      let response;
+      try {
+        response = await fetch('/admin/api/' + path, {
+          method,
+          headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+      } catch {
+        this.unreachable = true;
+        return { status: 0, json: { error: 'cannot reach the gateway' } };
+      }
+      this.unreachable = false;
       let json = {};
       try { json = await response.json(); } catch (e) {}
       if (response.status === 401) { this.signOut('The panel token was refused.'); }
