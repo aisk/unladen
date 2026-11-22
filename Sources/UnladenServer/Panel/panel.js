@@ -700,7 +700,7 @@ function panel() {
         response = await fetch('/admin/api/' + path, {
           method,
           headers: { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' },
-          body: body === undefined ? undefined : JSON.stringify(body),
+          body: body === undefined ? undefined : stringifyOrdered(body),
         });
       } catch {
         this.unreachable = true;
@@ -708,7 +708,9 @@ function panel() {
       }
       this.unreachable = false;
       let json = {};
-      try { json = await response.json(); } catch (e) {}
+      // The configuration keeps its keys' order: accounts' is the order
+      // they are tried in, which a plain object loses for names like 10.
+      try { json = path === 'config' ? parseOrdered(await response.text()) : await response.json(); } catch (e) {}
       if (response.status === 401) { this.signOut('The panel token was refused.'); }
       return { status: response.status, json };
     },
@@ -743,11 +745,11 @@ function panel() {
       this.signInError = '';
       this.path = config.json.path;
       this.hash = config.json.hash;
-      const accounts = JSON.stringify(this.original?.accounts);
+      const accounts = stringifyOrdered(this.original?.accounts);
       this.original = config.json.document || {};
       this.model = fromDocument(this.original);
       // A provider's list holds while its accounts do.
-      if (JSON.stringify(this.original.accounts) !== accounts) this.providerModels = {};
+      if (stringifyOrdered(this.original.accounts) !== accounts) this.providerModels = {};
       this.settings = null;
       if (this.tab === 'settings') this.showSettings();
       await this.refreshStatus();
@@ -823,7 +825,7 @@ function panel() {
         this.conflict = null;
         if (result.json.hash) this.hash = result.json.hash;
         // A provider's list holds while its accounts do.
-        if (JSON.stringify(document.accounts) !== JSON.stringify(this.original?.accounts)) this.providerModels = {};
+        if (stringifyOrdered(document.accounts) !== stringifyOrdered(this.original?.accounts)) this.providerModels = {};
         this.original = document;
         const warnings = result.json.warnings || [];
         if (warnings.length) this.say('warning', 'Saved, with a warning', warnings.join('\n'));
@@ -1560,7 +1562,7 @@ function panel() {
     showSettings() {
       if (!this.model) return;
       if (!this.settings) this.settings = { ...this.model.advanced };
-      this.jsonText = JSON.stringify(this.original, null, 2);
+      this.jsonText = stringifyOrdered(this.original, 2);
       this.jsonError = '';
     },
     settingsChanged() { return !!this.settings && JSON.stringify(this.settings) !== JSON.stringify(this.model.advanced); },
@@ -1569,12 +1571,14 @@ function panel() {
       if (await this.persist()) this.say('success', 'Saved and in force', '');
       else if (this.saveError) this.say('danger', 'Not saved', this.saveError);
     },
-    jsonChanged() { return this.jsonText !== JSON.stringify(this.original, null, 2); },
+    jsonChanged() { return this.jsonText !== stringifyOrdered(this.original, 2); },
     async saveJSON() {
       let document;
       try {
+        // The browser's parser tells what is wrong; the panel's keeps the order.
         document = JSON.parse(this.jsonText);
         if (typeof document !== 'object' || document === null || Array.isArray(document)) throw new Error('expected an object');
+        document = parseOrdered(this.jsonText);
       } catch (e) {
         this.jsonError = 'Not valid JSON: ' + e.message;
         return;
@@ -1667,9 +1671,108 @@ function generateSecret() {
 // do not know are carried in `rest` (or `raw`) and written back as they were.
 
 function omit(object, keys) {
-  const rest = {};
-  for (const [k, v] of Object.entries(object || {})) if (!keys.includes(k)) rest[k] = v;
-  return rest;
+  return orderedObject(keysOf(object || {}).filter(k => !keys.includes(k)).map(k => [k, object[k]]));
+}
+
+// Objects keep the order their keys were read or written in: JavaScript
+// puts keys like 10 before the others, and the order of accounts is the
+// order they are tried in. The order is kept under ORDER, which neither
+// JSON.stringify nor a spread copies; `stringifyOrdered` writes it.
+const ORDER = Symbol('order');
+
+// An object of `entries` in their order; a repeated key keeps its first
+// place and its last value.
+function orderedObject(entries) {
+  const object = {}, order = [];
+  for (const [key, value] of entries) {
+    if (!Object.prototype.hasOwnProperty.call(object, key)) order.push(key);
+    Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+  }
+  Object.defineProperty(object, ORDER, { value: order, writable: true });
+  return object;
+}
+
+// The keys of `object` in their kept order, then any added since.
+function keysOf(object) {
+  const keys = Object.keys(object);
+  const order = object[ORDER];
+  if (!order) return keys;
+  const present = new Set(keys);
+  const kept = order.filter(k => present.has(k));
+  const known = new Set(kept);
+  return kept.concat(keys.filter(k => !known.has(k)));
+}
+
+// JSON.parse, keeping each object's order of keys.
+function parseOrdered(text) {
+  let i = 0;
+  const fail = () => { throw new SyntaxError('unexpected character at ' + i); };
+  const space = () => { while (i < text.length && ' \t\n\r'.includes(text[i])) i++; };
+  const literal = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/y;
+  const quoted = /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"/y;
+  const match = pattern => {
+    pattern.lastIndex = i;
+    const found = pattern.exec(text);
+    if (!found) fail();
+    i = pattern.lastIndex;
+    return JSON.parse(found[0]);
+  };
+  const value = () => {
+    space();
+    if (text[i] === '{') {
+      i++;
+      const entries = [];
+      space();
+      if (text[i] === '}') { i++; return orderedObject(entries); }
+      for (;;) {
+        space();
+        const key = match(quoted);
+        space();
+        if (text[i++] !== ':') fail();
+        entries.push([key, value()]);
+        space();
+        const next = text[i++];
+        if (next === '}') return orderedObject(entries);
+        if (next !== ',') fail();
+      }
+    }
+    if (text[i] === '[') {
+      i++;
+      const items = [];
+      space();
+      if (text[i] === ']') { i++; return items; }
+      for (;;) {
+        items.push(value());
+        space();
+        const next = text[i++];
+        if (next === ']') return items;
+        if (next !== ',') fail();
+      }
+    }
+    return match(text[i] === '"' ? quoted : literal);
+  };
+  const result = value();
+  space();
+  if (i < text.length) fail();
+  return result;
+}
+
+// JSON.stringify, writing each object's keys in their kept order;
+// `indent` spaces a level, as JSON.stringify(value, null, indent) does.
+function stringifyOrdered(value, indent = 0, depth = 0) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  const inner = indent ? '\n' + ' '.repeat(indent * (depth + 1)) : '';
+  const outer = indent ? '\n' + ' '.repeat(indent * depth) : '';
+  if (Array.isArray(value)) {
+    if (!value.length) return '[]';
+    return '[' + value.map(item => inner + (stringifyOrdered(item, indent, depth + 1) ?? 'null')).join(',') + outer + ']';
+  }
+  const parts = [];
+  for (const key of keysOf(value)) {
+    const written = stringifyOrdered(value[key], indent, depth + 1);
+    if (written !== undefined) parts.push(inner + JSON.stringify(key) + (indent ? ': ' : ':') + written);
+  }
+  return parts.length ? '{' + parts.join(',') + outer + '}' : '{}';
 }
 
 function list(value) {
@@ -1686,7 +1789,7 @@ function fromDocument(doc) {
   const model = {
     advanced: {},
     advancedRest: omit(advanced, [...ADVANCED, 'pools']),
-    pools: { ...(advanced.pools || {}) },
+    pools: omit(advanced.pools, []),
     accounts: [], models: [], clients: [],
   };
   // A limit turned off may be written `false`, which the form shows as off.
@@ -1695,7 +1798,9 @@ function fromDocument(doc) {
     model.advanced[field] = field === 'strict' ? value === true : value === false ? 'off' : text(value);
   }
 
-  for (const [name, a] of Object.entries(doc.accounts || {})) {
+  const accounts = doc.accounts || {};
+  for (const name of keysOf(accounts)) {
+    const a = accounts[name];
     if (typeof a !== 'object' || a === null) {
       model.accounts.push({ uid: ++counter, name, provider: '', key: text(a), enabled: true, custom: false, preset: '', endpoints: [], headers: [], rest: {} });
       continue;
@@ -1707,19 +1812,23 @@ function fromDocument(doc) {
       enabled: a.enabled !== false,
       custom: 'preset' in a || 'endpoints' in a || 'headers' in a,
       preset: a.preset || '',
-      endpoints: Object.entries(a.endpoints || {}).map(([protocol, url]) => ({ uid: ++counter, protocol, url: String(url) })),
-      headers: Object.entries(a.headers || {}).map(([name, value]) => ({ uid: ++counter, name, value: String(value) })),
+      endpoints: keysOf(a.endpoints || {}).map(protocol => ({ uid: ++counter, protocol, url: String(a.endpoints[protocol]) })),
+      headers: keysOf(a.headers || {}).map(name => ({ uid: ++counter, name, value: String(a.headers[name]) })),
       rest: omit(a, ['provider', 'key', 'enabled', 'preset', 'endpoints', 'headers']),
     });
   }
 
-  for (const [name, r] of Object.entries(doc.models || {})) {
+  const models = doc.models || {};
+  for (const name of keysOf(models)) {
+    const r = models[name];
     const entry = menuEntry(r);
     model.models.push(entry ? { uid: ++counter, name, ...entry, raw: undefined } : { uid: ++counter, name, targets: [], limit: '', raw: r });
   }
   const menu = model.models.map(r => r.name);
 
-  for (const [name, c] of Object.entries(doc.clients || {})) {
+  const clients = doc.clients || {};
+  for (const name of keysOf(clients)) {
+    const c = clients[name];
     const client = c || {};
     const models = client.models === undefined ? null : list(client.models).map(String);
     const access = models === null ? 'menu' : models.includes('*') ? 'all' : 'some';
@@ -1781,57 +1890,60 @@ function scalar(value) {
 function toDocument(model, original) {
   const sections = {};
 
-  const accounts = {};
+  const accounts = [];
   for (const a of model.accounts) {
     const name = a.name.trim();
     const key = a.key.trim();
-    if (!a.custom && !a.provider && a.enabled && key && !Object.keys(a.rest).length) { accounts[name] = key; continue; }
+    if (!a.custom && !a.provider && a.enabled && key && !Object.keys(a.rest).length) { accounts.push([name, key]); continue; }
     const entry = {};
     if (a.provider && !a.custom) entry.provider = a.provider;
     if (a.custom) {
       if (a.preset) entry.preset = a.preset;
-      if (a.endpoints.length) entry.endpoints = Object.fromEntries(a.endpoints.map(e => [e.protocol, e.url.trim()]));
+      if (a.endpoints.length) entry.endpoints = orderedObject(a.endpoints.map(e => [e.protocol, e.url.trim()]));
       const headers = a.headers.filter(h => h.name.trim());
-      if (headers.length) entry.headers = Object.fromEntries(headers.map(h => [h.name.trim(), h.value]));
+      if (headers.length) entry.headers = orderedObject(headers.map(h => [h.name.trim(), h.value]));
     }
     if (key) entry.key = key;
     if (!a.enabled) entry.enabled = false;
-    accounts[name] = { ...entry, ...a.rest };
+    accounts.push([name, withRest(entry, a.rest)]);
   }
-  if (model.accounts.length) sections.accounts = accounts;
+  if (model.accounts.length) sections.accounts = orderedObject(accounts);
 
-  const models = {};
-  for (const r of model.models) models[r.name.trim()] = menuValue(r);
-  if (model.models.length) sections.models = models;
+  if (model.models.length) sections.models = orderedObject(model.models.map(r => [r.name.trim(), menuValue(r)]));
 
-  const clients = {};
+  const clients = [];
   for (const c of model.clients) {
     const entry = { key: c.key.trim() };
     if (c.access === 'all') entry.models = '*';
     if (c.access === 'some') entry.models = [...c.chosen, ...globs(c.extra)];
     if (!c.enabled) entry.enabled = false;
-    clients[c.name.trim()] = { ...entry, ...c.rest };
+    clients.push([c.name.trim(), withRest(entry, c.rest)]);
   }
-  if (model.clients.length) sections.clients = clients;
+  if (model.clients.length) sections.clients = orderedObject(clients);
 
   let advanced = {};
   for (const field of ADVANCED) {
     if (field === 'strict') { if (model.advanced.strict) advanced.strict = true; continue; }
     if (String(model.advanced[field]).trim() !== '') advanced[field] = scalar(model.advanced[field]);
   }
-  const pools = Object.fromEntries(Object.entries(model.pools).filter(([, pick]) => pick && pick !== 'order'));
+  const pools = orderedObject(keysOf(model.pools).map(p => [p, model.pools[p]]).filter(([, pick]) => pick && pick !== 'order'));
   if (Object.keys(pools).length) advanced.pools = pools;
-  advanced = { ...advanced, ...model.advancedRest };
+  advanced = withRest(advanced, model.advancedRest);
   if (Object.keys(advanced).length) sections.advanced = advanced;
 
   // The file's order of sections, then the usual one; sections the forms
   // do not edit (listen, panel, and any the panel does not know) are kept.
-  const doc = {};
-  const order = Object.keys(original || {});
+  const order = keysOf(original || {});
   for (const key of SECTIONS) if (!order.includes(key)) order.push(key);
+  const entries = [];
   for (const key of order) {
-    if (key in sections) doc[key] = sections[key];
-    else if (!SECTIONS.includes(key)) doc[key] = original[key];
+    if (key in sections) entries.push([key, sections[key]]);
+    else if (!SECTIONS.includes(key)) entries.push([key, original[key]]);
   }
-  return doc;
+  return orderedObject(entries);
+}
+
+// The fields the form writes, then those it carries as they were.
+function withRest(entry, rest) {
+  return orderedObject([...keysOf(entry).map(k => [k, entry[k]]), ...keysOf(rest || {}).map(k => [k, rest[k]])]);
 }
