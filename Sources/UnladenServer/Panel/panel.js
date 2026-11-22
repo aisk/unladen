@@ -74,6 +74,9 @@ let pendingSaves = 0;
 let saveRound = 0;
 // The answer awaited to the question before the file is first written over.
 let rewriteAnswer = null;
+// How many times activity and usage were asked for: only the latest answer is shown.
+let activityAsked = 0;
+let usageAsked = 0;
 
 function panel() {
   return {
@@ -201,18 +204,22 @@ function panel() {
       // A first read that failed is tried again.
       this.every(5000, () => !this.model, () => this.load());
       this.$watch('tab', () => { this.navOpen = false; this.refreshTab(); });
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) this.refreshTab(); });
       if (this.token) {
         try { await this.load(); } catch (e) { console.error(e); }
       }
       this.refreshTab();
     },
 
-    // Runs `run` every `ms` while signed in and `when()` holds; what it
+    // Runs `run` every `ms` while signed in, the page is in view and
+    // `when()` holds, and not while its last run is still going; what it
     // throws is logged, not left unhandled.
     every(ms, when, run) {
+      let running = false;
       setInterval(() => {
-        if (!this.token || !when()) return;
-        Promise.resolve().then(run).catch(e => console.error(e));
+        if (running || document.hidden || !this.token || !when()) return;
+        running = true;
+        Promise.resolve().then(run).catch(e => console.error(e)).finally(() => { running = false; });
       }, ms);
     },
 
@@ -220,16 +227,18 @@ function panel() {
     page() { return this.pages().find(p => p.id === this.tab); },
     go(tab) { this.tab = tab; },
 
-    // What the page in view shows, read again.
+    // What the page in view shows, read again; done when all of it is.
     refreshTab() {
-      if (!this.token || !this.model) return;
-      if (this.tab === 'home') { this.refreshStatus(); this.refreshActivity(); this.refreshToday(); this.refreshQuotas(false); }
-      if (this.tab === 'accounts') { this.refreshStatus(); this.refreshQuotas(false); }
-      if (this.tab === 'models' || this.tab === 'clients') this.refreshStatus();
-      if (this.tab === 'models') this.runTry();
-      if (this.tab === 'activity') this.refreshActivity();
-      if (this.tab === 'usage') this.refreshUsage();
+      if (!this.token || !this.model) return Promise.resolve();
+      const reads = [];
+      if (this.tab === 'home') reads.push(this.refreshStatus(), this.refreshActivity(), this.refreshToday(), this.refreshQuotas(false));
+      if (this.tab === 'accounts') reads.push(this.refreshStatus(), this.refreshQuotas(false));
+      if (this.tab === 'models' || this.tab === 'clients') reads.push(this.refreshStatus());
+      if (this.tab === 'models') reads.push(this.runTry());
+      if (this.tab === 'activity') reads.push(this.refreshActivity());
+      if (this.tab === 'usage') reads.push(this.refreshUsage());
       if (this.tab === 'settings') this.showSettings();
+      return Promise.all(reads.map(read => read.catch(e => console.error(e))));
     },
 
     readHash() {
@@ -272,11 +281,16 @@ function panel() {
 
     // Activity and usage
 
+    // An answer that comes after a later one was asked for is dropped.
     async refreshActivity() {
+      const asked = ++activityAsked;
       const result = await this.api('GET', 'activity');
+      if (asked !== activityAsked) return;
       if (result.status === 200) this.activity = result.json;
-      if (this.session) {
-        const requests = await this.api('GET', 'sessions/' + encodeURIComponent(this.session.id));
+      const session = this.session;
+      if (session) {
+        const requests = await this.api('GET', 'sessions/' + encodeURIComponent(session.id));
+        if (asked !== activityAsked || this.session?.id !== session.id) return;
         if (requests.status === 200) {
           this.sessionRequests = requests.json.requests || [];
           this.sessionDetail = requests.json;
@@ -544,7 +558,9 @@ function panel() {
     },
 
     async refreshUsage() {
-      const result = await this.api('GET', 'usage?days=' + this.usageDays);
+      const asked = ++usageAsked, days = this.usageDays;
+      const result = await this.api('GET', 'usage?days=' + days);
+      if (asked !== usageAsked || days !== this.usageDays) return;
       if (result.status === 200) this.usage = result.json;
     },
 
@@ -715,7 +731,12 @@ function panel() {
     async load() {
       const config = await this.api('GET', 'config');
       if (config.status !== 200) {
-        if (config.status !== 401) this.signInError = config.json.error || ('HTTP ' + config.status);
+        const error = config.json.error || 'HTTP ' + config.status;
+        // Signed in, the sign-in page is not in view: a message says it,
+        // and the banner says when the gateway cannot be reached.
+        if (config.status === 401) return;
+        if (!this.model) this.signInError = error;
+        else if (config.status !== 0) this.say('danger', 'The file cannot be read', error);
         return;
       }
       localStorage.setItem(TOKEN_KEY, this.token);
@@ -842,6 +863,7 @@ function panel() {
     async reloadFile() {
       const result = await this.api('POST', 'reload');
       if (result.status === 200) this.say('success', 'The file was read again and is in force', '');
+      else if (result.status === 0) this.say('danger', 'The file was not read again', result.json.error);
       else if (result.status !== 401) this.say('danger', 'The file does not load', result.json.error || '');
       this.providerModels = {};
       await this.load();
