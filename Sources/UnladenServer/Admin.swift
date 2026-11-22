@@ -556,6 +556,7 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         var headers: HTTPFields = [.contentType: "text/html; charset=utf-8", .cacheControl: "no-store"]
         headers[HTTPField.Name("x-frame-options")!] = "DENY"
         headers[HTTPField.Name("referrer-policy")!] = "no-referrer"
+        headers[HTTPField.Name("content-security-policy")!] = AdminPage.contentSecurityPolicy
         return Response(status: .ok, headers: headers, body: ResponseBody(byteBuffer: ByteBuffer(string: AdminPage.html)))
     }
     router.get("/admin") { request, _ in page(request) }

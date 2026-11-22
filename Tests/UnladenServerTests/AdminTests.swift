@@ -220,6 +220,25 @@ private let environment: @Sendable (String) -> String? = { $0 == "DEEPSEEK_KEY" 
         }
     }
 
+    @Test func thePageSaysWhatItMayLoad() async throws {
+        let manager = try makeManager(sample)
+        try await app(manager).test(.router) { client in
+            let page = try await client.execute(uri: "/admin", method: .get)
+            let policy = try #require(page.headers[HTTPField.Name("content-security-policy")!])
+            for directive in [
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net", "connect-src 'self'",
+                "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'",
+            ] {
+                #expect(policy.contains(directive))
+            }
+            // Everything the page loads from elsewhere is allowed.
+            let html = String(buffer: page.body)
+            for origin in ["https://cdn.jsdelivr.net/npm/@tabler", "https://cdn.jsdelivr.net/npm/alpinejs", "https://cdn.jsdelivr.net/npm/@lobehub"] {
+                #expect(html.contains(origin))
+            }
+        }
+    }
+
     @Test func theApiNeedsTheToken() async throws {
         let manager = try makeManager(sample)
         try await app(manager).test(.router) { client in
