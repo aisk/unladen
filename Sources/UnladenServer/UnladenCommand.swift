@@ -118,14 +118,17 @@ struct Serve: AsyncParsableCommand {
         Serves OpenAI Chat Completions (/v1/chat/completions), OpenAI Responses \
         (/v1/responses), Anthropic Messages (/v1/messages) and Gemini \
         (/v1beta/models/{model}:generateContent, :streamGenerateContent) and \
-        translates each to whatever protocol the chosen upstream speaks.
+        translates each to whatever protocol the chosen upstream speaks. \
+        /v1/messages/count_tokens answers an estimate, without calling an upstream.
 
-        Models: a client model name is looked up in the configuration's menu \
+        Models: a client model name is looked up in the configuration's models \
         (exact names, then patterns such as claude-*); else a provider/model \
         reference (e.g. deepseek/deepseek-chat) is used as is; else the `*` \
         entry (--model) serves it. When an account fails (rate limit, server \
-        error, refused key), the provider's next account is tried; the \
-        gateway never switches to another provider or model by itself.
+        error, refused key), the provider's next account is tried. An entry \
+        written { "try": [...] } lists models, of any providers, tried in \
+        order when one fails; past its fallback_max_context, a conversation \
+        under way stays on the model that last answered it.
 
         Upstream keys come from the configuration file's accounts, else the environment: \
         UNLADEN_<PROVIDER>_API_KEY, else the provider's usual variable \

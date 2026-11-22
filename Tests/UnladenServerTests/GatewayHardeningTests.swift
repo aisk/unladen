@@ -197,4 +197,10 @@ private func message(_ response: TestResponse) -> String {
     @Test func helpExplainsHalfCloseIsADisconnect() {
         #expect(Serve.configuration.discussion.contains("half-close"))
     }
+
+    @Test func helpExplainsFallbackAcrossProviders() {
+        let help = Serve.configuration.discussion
+        #expect(help.contains(#"{ "try": [...] }"#) && help.contains("fallback_max_context"))
+        #expect(!help.contains("never switches"))
+    }
 }

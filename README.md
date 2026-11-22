@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/aisk/unladen/actions/workflows/ci.yml/badge.svg)](https://github.com/aisk/unladen/actions/workflows/ci.yml)
 
-Unladen is a local LLM gateway written in Swift. Point your clients at one endpoint and speak the OpenAI Chat Completions, OpenAI Responses, Anthropic Messages or Gemini protocol. Unladen translates each request to the protocol of the upstream that serves the model, and translates the reply back. Built-in providers are OpenAI, Anthropic, Gemini, DeepSeek, Moonshot, OpenRouter, Groq, Mistral, xAI, Together and Ollama.
+Unladen is a local LLM gateway written in Swift. Point your clients at one endpoint and speak the OpenAI Chat Completions, OpenAI Responses, Anthropic Messages or Gemini protocol. Unladen translates each request to the protocol of the upstream that serves the model, and translates the reply back. About sixty providers are built in: model makers such as OpenAI, Anthropic, Gemini, DeepSeek, Moonshot, Z.ai and Mistral, several of their coding plans, relays such as OpenRouter, and local Ollama and LM Studio. `unladen serve --help` lists them, as does the control panel when you add an account, and `unladen check-config` names them when an account's provider is unknown. Any other endpoint that speaks one of the four protocols can be added as an account with its own `endpoints`.
 
 Its routing and account design draws on ideas from [claude-code-router](https://github.com/musistudio/claude-code-router), [cc-switch](https://github.com/farion1231/cc-switch) and [magpie](https://github.com/yetone/magpie).
 
@@ -46,7 +46,7 @@ The configuration is JSON with comments and trailing commas, read from `--config
 
 **What you get**
 
-- **Four client protocols over one port.** A Claude Code or OpenCode client, a Gemini CLI and a plain OpenAI SDK can all talk to the same gateway, each in its own protocol, and share the accounts and model names configured there.
+- **Four client protocols over one port.** A Claude Code or OpenCode client, a Gemini CLI and a plain OpenAI SDK can all talk to the same gateway, each in its own protocol, and share the accounts and model names configured there. `/v1/messages/count_tokens` answers with an estimate made locally, without calling an upstream.
 - **Model mapping and fallback.** `models` maps the names clients ask for to the accounts that answer. A name can pass through to its own provider, point at a fixed upstream model or another mapping, or list several of these to try in order when one fails. Past `fallback_max_context`, a conversation under way stays on the model that answered it last, and a failure there goes back to the client to retry, instead of paying for the whole context again uncached elsewhere.
 - **Account pools.** Accounts of one provider form a pool; when one fails, the next one is tried.
 - **Client keys.** Clients present a key from `clients`, and a client can be limited to a subset of the model names.
