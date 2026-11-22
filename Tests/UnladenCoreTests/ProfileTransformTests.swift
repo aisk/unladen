@@ -70,6 +70,53 @@ private func isSynthetic(_ part: WirePart) -> Bool {
         #expect(warnings.isEmpty)
     }
 
+    @Test func systemMessageBetweenCallAndResultMovesAfterTheResult() {
+        let reminder = WireMessage(role: .system, parts: [text("Reminder.")])
+        var request = WireRequest(model: "m", messages: [
+            user("ls"),
+            WireMessage(role: .assistant, parts: [text("Listing."), call("toolu_a")]),
+            reminder,
+            WireMessage(role: .user, parts: [result("toolu_a")]),
+        ], source: .anthropicMessages)
+        var warnings: [WireWarning] = []
+        WireTransforms.pairToolCalls(&request, warnings: &warnings)
+        #expect(request.messages.map(\.role) == [.user, .assistant, .user, .system])
+        #expect(resultIDs(request.messages[2]) == ["toolu_a"])
+        #expect(!isSynthetic(request.messages[2].parts[0]))
+        #expect(request.messages[3] == reminder)
+        #expect(warnings.isEmpty)
+    }
+
+    @Test func opaqueItemInsideATurnKeepsItsPlace() {
+        let search = WireMessage(role: .item, parts: [.opaque(WireOpaque(protocol: .responses, value: ["type": "web_search_call", "id": "ws_1"], slot: "item"))])
+        let messages = [
+            user("hi"),
+            WireMessage(role: .assistant, parts: [call("c1")]),
+            search,
+            WireMessage(role: .assistant, parts: [call("c2")]),
+            WireMessage(role: .item, parts: [result("c1")]),
+            WireMessage(role: .item, parts: [result("c2")]),
+        ]
+        var request = WireRequest(model: "m", messages: messages, source: .responses)
+        var warnings: [WireWarning] = []
+        WireTransforms.pairToolCalls(&request, warnings: &warnings)
+        #expect(request.messages == messages)
+        #expect(warnings.isEmpty)
+    }
+
+    @Test func systemMessageAfterAnUnansweredCallStillCloses() {
+        var request = WireRequest(model: "m", messages: [
+            WireMessage(role: .assistant, parts: [call("a")]),
+            WireMessage(role: .system, parts: [text("Reminder.")]),
+            user("next"),
+        ], source: .chatCompletions)
+        var warnings: [WireWarning] = []
+        WireTransforms.pairToolCalls(&request, warnings: &warnings)
+        #expect(request.messages.map(\.role) == [.assistant, .tool, .system, .user])
+        #expect(isSynthetic(request.messages[1].parts[0]))
+        #expect(warnings.count == 1)
+    }
+
     @Test func trailingCallAndDuplicateResult() {
         var request = WireRequest(model: "m", messages: [
             WireMessage(role: .assistant, parts: [call("a")]),

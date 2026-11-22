@@ -39,13 +39,44 @@
     /// (Anthropic/Gemini style), else as new messages in the style the
     /// request uses (`tool` messages for Chat, role-less items for
     /// Responses, one `user` message otherwise).
+    ///
+    /// A `system` or `developer` message, or a role-less item that is not a
+    /// result (a Responses `web_search_call`), inside an exchange whose
+    /// results still come does not close it: an item keeps its place, and
+    /// a system or developer message moves after the results (Claude Code
+    /// sends system messages between a call and its result; Anthropic-style
+    /// upstreams want the result right after the call).
     public static func pairToolCalls(_ request: inout WireRequest, warnings: inout [WireWarning]) {
         let style: WireRole = request.messages.last { $0.role != .assistant && $0.parts.contains(where: isResult) }?.role
             ?? (request.source == .chatCompletions ? .tool : request.source == .responses ? .item : .user)
         var out: [WireMessage] = []
         var pending: [WireToolCall] = []
         var answered: Set<String> = []
+        var held: [WireMessage] = []
         var previousWasAssistant = false
+
+        func isInterlude(_ message: WireMessage) -> Bool {
+            if message.role == .system || message.role == .developer { return true }
+            return message.role == .item && !message.parts.contains(where: isResult)
+        }
+        func isResultsOnly(_ message: WireMessage) -> Bool {
+            message.role != .assistant && !message.parts.isEmpty && message.parts.allSatisfy(isResult)
+        }
+        /// Whether a result for an open call comes after `i`, before the
+        /// exchange would close anyway.
+        func resultsFollow(_ i: Int) -> Bool {
+            let open = Set(pending.lazy.map(\.id).filter { !answered.contains($0) })
+            guard !open.isEmpty else { return false }
+            for next in request.messages[(i + 1)...] {
+                let answers = next.parts.contains { part in
+                    if case .toolResult(let result) = part { return open.contains(result.callID) }
+                    return false
+                }
+                if answers, next.role != .assistant { return true }
+                guard next.role == .assistant || isInterlude(next) || isResultsOnly(next) else { return false }
+            }
+            return false
+        }
 
         func missingResults() -> [WirePart] {
             let missing = pending.filter { !answered.contains($0.id) }
@@ -72,6 +103,8 @@
             }
             pending = []
             answered = []
+            out += held
+            held = []
         }
 
         for (i, message) in request.messages.enumerated() {
@@ -82,6 +115,10 @@
                 }
                 out.append(message)
                 previousWasAssistant = true
+                continue
+            }
+            if isInterlude(message), resultsFollow(i) {
+                if message.role == .item { out.append(message) } else { held.append(message) }
                 continue
             }
             previousWasAssistant = false
@@ -108,8 +145,8 @@
                     ))
                 }
             }
-            let next = request.messages.indices.contains(i + 1) ? request.messages[i + 1] : nil
-            let continues = next.map { $0.role != .assistant && $0.parts.allSatisfy(isResult) && !$0.parts.isEmpty } ?? false
+            let next = request.messages[(i + 1)...].first { !isInterlude($0) }
+            let continues = next.map(isResultsOnly) ?? false
             let hasOther = parts.contains { !isResult($0) }
             let closes = hasOther || !continues
             if closes, message.role == .user {
