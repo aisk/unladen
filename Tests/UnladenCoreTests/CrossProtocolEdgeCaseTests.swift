@@ -157,6 +157,31 @@ private func expectFailed(_ events: [WireEvent], sourceLocation: SourceLocation 
         #expect(finishes(decoded.events).map(\.reason?.raw) == ["stop"])
     }
 
+    @Test func chatDoneAfterNothingFails() throws {
+        let decoded = try decodeChatStream([
+            sse(nil, #"{"id":"c1","object":"chat.completion.chunk","model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}"#),
+            sse(nil, #"{"id":"c1","object":"chat.completion.chunk","model":"m","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":0}}"#),
+            sse(nil, "[DONE]"),
+        ])
+        expectFailed(decoded.events)
+    }
+
+    @Test func chatEmptyReplyWithFinishReasonIsClean() throws {
+        let decoded = try decodeChatStream([
+            sse(nil, #"{"id":"c1","object":"chat.completion.chunk","model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":"stop"}]}"#),
+            sse(nil, "[DONE]"),
+        ])
+        #expect(errors(decoded.events).isEmpty)
+        #expect(finishes(decoded.events).map(\.reason?.raw) == ["stop"])
+    }
+
+    @Test func streamsWithoutEventsFail() throws {
+        expectFailed(try decodeChatStream([]).events)
+        expectFailed(try decodeResponsesStream([]).events)
+        expectFailed(try decodeAnthropicStream([]).events)
+        expectFailed(try decodeGeminiStream([]).events)
+    }
+
     @Test func upstreamErrorIsNotReportedTwice() throws {
         let decoded = try decodeAnthropicStream([
             sse("message_start", #"{"type":"message_start","message":{"id":"msg_1","model":"c","usage":{"input_tokens":3}}}"#),

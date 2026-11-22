@@ -170,15 +170,16 @@
 
     /// Ends the stream: closes open blocks and emits the finish event, unless
     /// a final response event (`response.completed`, `.incomplete` or
-    /// `.failed`, the terminal events) already did. A stream that started
-    /// and ends without one, and without an error event, was cut short: it
+    /// `.failed`, the terminal events) already did. A stream that ends
+    /// without one, and without an error event, was cut short (or never
+    /// began): it
     /// gets a warning and an ``WireEvent/error(_:)`` before the finish,
     /// whose reason is ``WireFinishReason/Unified/error``.
     public mutating func finish() -> [WireEvent] {
         guard !done else { return [] }
         var events: [WireEvent] = []
         closeAll(into: &events)
-        if started, !errored {
+        if !errored {
             warnings.append(WireWarning(.malformedStream, "stream ended without response.completed"))
             events.append(.error(.endedEarly(missing: "response.completed")))
             errored = true

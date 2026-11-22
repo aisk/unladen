@@ -29,8 +29,10 @@
 ///   ``WireFinish/extra``). Content after it is still decoded, with a warning;
 /// - tool-call fragments without `index` (their position in the array is used)
 ///   and without `id` (a position-based id is synthesized, marked as such);
-/// - in-stream `{"error": …}` objects, and a stream cut short (see
-///   ``finish()``), as ``WireEvent/error(_:)``;
+/// - in-stream `{"error": …}` objects, a stream cut short (see
+///   ``finish()``), and a `[DONE]` after nothing (no content, tool call or
+///   `finish_reason`: a role chunk and usage at most), as
+///   ``WireEvent/error(_:)``;
 /// - SSE comments as ``WireEvent/ping``.
 ///
 /// Only the first choice index seen is followed; others produce a warning.
@@ -113,7 +115,7 @@
             return []
         }
         let data = event.data
-        if data.trimmingASCIIWhitespace() == "[DONE]" { return finishEvents() }
+        if data.trimmingASCIIWhitespace() == "[DONE]" { return doneEvents() }
         if data.trimmingASCIIWhitespace().isEmpty { return [] }
 
         let json = try JSONValue.parseWire(Array(data.utf8))
@@ -183,24 +185,32 @@
     ///
     /// The terminal signal is a `finish_reason` (or an in-stream error), not
     /// `[DONE]`: several Chat-compatible upstreams never send `[DONE]`, and
-    /// a reply with a finish reason is complete. A stream that started and
-    /// ends without either was cut short: an ``WireEvent/error(_:)``
-    /// precedes the finish, whose reason is ``WireFinishReason/Unified/error``.
+    /// a reply with a finish reason is complete. A stream that ends without
+    /// either, including one that sent nothing at all, was cut short: an
+    /// ``WireEvent/error(_:)`` precedes the finish, whose reason is
+    /// ``WireFinishReason/Unified/error``.
     public mutating func finish() -> [WireEvent] {
         guard !done else { return [] }
         var events: [WireEvent] = []
-        if started {
-            warnings.append(WireWarning(.malformedStream, "stream ended without [DONE]"))
-            if finishReason == nil {
-                closeAll(into: &events)
-                events.append(.error(.endedEarly(missing: "finish_reason")))
-                finishReason = WireFinishReason(.error)
-            }
+        warnings.append(WireWarning(.malformedStream, "stream ended without [DONE]"))
+        if finishReason == nil {
+            closeAll(into: &events)
+            events.append(.error(.endedEarly(missing: "finish_reason")))
+            finishReason = WireFinishReason(.error)
         }
         return events + finishEvents()
     }
 
     // MARK: Internals
+
+    /// The events for `[DONE]`. A stream that carried no content, tool call
+    /// or finish reason before it is not an empty reply but a failed one.
+    private mutating func doneEvents() -> [WireEvent] {
+        guard finishReason == nil, nextBlock == 0 else { return finishEvents() }
+        warnings.append(WireWarning(.malformedStream, "stream ended with [DONE] before any content or finish_reason"))
+        finishReason = WireFinishReason(.error)
+        return [.error(.endedEarly(missing: "content or finish_reason"))] + finishEvents()
+    }
 
     private mutating func finishEvents() -> [WireEvent] {
         var events: [WireEvent] = []

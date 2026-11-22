@@ -113,8 +113,9 @@
 
     /// Ends the stream: closes the open block and emits the finish event.
     /// Gemini has no end event, so a `finishReason` (or a prompt
-    /// `blockReason`) is what marks a complete stream: one that started and
-    /// ends without it, and without an error, was cut short. It gets a
+    /// `blockReason`) is what marks a complete stream: one that ends
+    /// without it, and without an error, was cut short or never began. It
+    /// gets a
     /// warning and an ``WireEvent/error(_:)`` before the finish, whose
     /// reason is ``WireFinishReason/Unified/error``. Idempotent.
     public mutating func finish() -> [WireEvent] {
@@ -122,7 +123,7 @@
         var events: [WireEvent] = []
         close(into: &events)
         done = true
-        if started, finishReason == nil, !errored {
+        if finishReason == nil, !errored {
             warnings.append(WireWarning(.malformedStream, "stream ended without finishReason"))
             events.append(.error(.endedEarly(missing: "finishReason")))
             errored = true
