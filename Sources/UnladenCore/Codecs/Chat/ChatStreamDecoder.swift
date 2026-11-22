@@ -167,7 +167,7 @@
                 }
                 if let finishing {
                     closeAll(into: &events)
-                    finishReason = ChatFinish.decode(finishing)
+                    finishReason = ChatFinish.decode(finishing, hasToolCalls: !tools.isEmpty)
                 }
             }
         }

@@ -925,9 +925,11 @@ enum ChatEncode {
 // MARK: - Finish reasons and usage
 
 enum ChatFinish {
-    static func decode(_ raw: String) -> WireFinishReason {
+    /// `"stop"` on a reply that carries tool calls is a tool-call finish,
+    /// as some vendors report it so.
+    static func decode(_ raw: String, hasToolCalls: Bool) -> WireFinishReason {
         let unified: WireFinishReason.Unified = switch raw {
-        case "stop": .stop
+        case "stop": hasToolCalls ? .toolCalls : .stop
         case "length": .length
         case "tool_calls", "function_call": .toolCalls
         case "content_filter": .contentFilter

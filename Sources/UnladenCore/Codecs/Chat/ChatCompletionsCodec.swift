@@ -501,7 +501,7 @@ extension ChatCompletionsCodec {
                 message, path: "choices[0].message", idPrefix: "call", warnings: &warnings,
             )
             if let reason = try choiceReader.string("finish_reason") {
-                response.finishReason = ChatFinish.decode(reason)
+                response.finishReason = ChatFinish.decode(reason, hasToolCalls: response.message.parts.contains { if case .toolCall = $0 { true } else { false } })
             }
             response.choiceExtra = choiceReader.remaining(warnings: &warnings)
         }

@@ -39,6 +39,15 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
         #expect(response.message.parts.count == 2)
     }
 
+    @Test func stopWithToolCallsIsAToolCallFinish() throws {
+        let body = #"""
+        {"id":"c","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":null,
+         "tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":"stop"}]}
+        """#
+        let response = try ChatCompletionsCodec.parseResponse(Array(body.utf8)).value
+        #expect(response.finishReason == WireFinishReason(.toolCalls, raw: "stop"))
+    }
+
     @Test func crossProtocolResponseUsesChatSpellings() {
         var response = WireResponse(
             message: WireMessage(role: .assistant, parts: [
@@ -248,6 +257,16 @@ private let streamFixtures = (try? Fixtures.names("Chat/streams", extension: "ss
             WireToolCall(id: "c1", name: "f", arguments: #"{"a":1}"#),
             WireToolCall(id: "c2", name: "g", arguments: "{}"),
         ])
+    }
+
+    @Test func stopAfterToolCallsIsAToolCallFinish() throws {
+        let chunks = [
+            #"{"id":"x","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"f","arguments":"{}"}}]}}]}"#,
+            #"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+        ]
+        let (events, _) = try decodeChatStream(chunks.map { .event(SSEEvent(data: $0)) } + [.event(SSEEvent(data: "[DONE]"))])
+        guard case .finish(let finish)? = events.last else { Issue.record("no finish"); return }
+        #expect(finish.reason == WireFinishReason(.toolCalls, raw: "stop"))
     }
 
     @Test func invalidJSONInStreamThrows() {
