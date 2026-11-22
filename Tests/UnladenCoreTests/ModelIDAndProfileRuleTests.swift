@@ -209,3 +209,38 @@ private func rejectsModelID(_ body: () throws(ModelReferenceError) -> ResolvedMo
         #expect(gpt5.unsupportedParameters?.contains(.temperature) == true)
     }
 }
+
+@Suite struct GenerationRuleTests {
+    @Test func generationMatchesANumberAtLeastItsFloor() {
+        let rule = ModelRule(.generation("gemini-", from: 3), Profile(supportsTools: true))
+        let provider = Provider(id: "p", endpoints: [], models: [rule])
+        for model in ["gemini-3-pro-preview", "Gemini-4-flash", "gemini-10"] {
+            #expect(provider.rule(for: model) == rule, "\(model)")
+        }
+        for model in ["gemini-2.5-pro", "gemini-exp-1206", "gemini-"] {
+            #expect(provider.rule(for: model) == nil, "\(model)")
+        }
+    }
+
+    @Test func laterGeminiGenerationsTakeAThinkingLevel() throws {
+        for reference in ["gemini/gemini-3-flash", "gemini/gemini-4-pro", "antigravity/gemini-4-flash"] {
+            let profile = try ProviderRegistry.builtIn.resolve(reference).profile
+            #expect(profile.reasoningControl == .thinkingLevel, "\(reference)")
+        }
+        #expect(try ProviderRegistry.builtIn.resolve("gemini/gemini-2.5-pro").profile.reasoningControl == .budget)
+        // The longer prefix still wins over a generation.
+        #expect(try ProviderRegistry.builtIn.resolve("gemini/gemini-3-pro-preview").profile.effortLevels == ["low", "high"])
+    }
+
+    @Test func laterGPTGenerationsReason() throws {
+        let levels = ["none", "low", "medium", "high", "xhigh"]
+        for reference in ["openai/gpt-5.2", "openai/gpt-5.4-mini", "openai/gpt-6", "openrouter/openai/gpt-7-pro"] {
+            let profile = try ProviderRegistry.builtIn.resolve(reference).profile
+            #expect(profile.reasoningControl == .effort, "\(reference)")
+            #expect(profile.effortLevels == levels, "\(reference)")
+            #expect(profile.unsupportedParameters?.contains(.temperature) == true, "\(reference)")
+        }
+        #expect(try ProviderRegistry.builtIn.resolve("openai/gpt-5.1").profile.effortLevels == ["none", "low", "medium", "high"])
+        #expect(try ProviderRegistry.builtIn.resolve("openai/gpt-4o").profile.reasoningControl == nil)
+    }
+}

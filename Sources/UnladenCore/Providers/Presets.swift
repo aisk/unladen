@@ -113,20 +113,23 @@ public enum Presets {
         ]
     }
 
-    /// OpenAI reasoning families.
+    /// OpenAI reasoning families. GPT-5.2's levels go to every later
+    /// generation (5.3 and on, 6 and on).
     static func openAIRules(prefix: String) -> [ModelRule] {
         let reasoning = Profile(
             supportsReasoning: true,
             unsupportedParameters: [.temperature, .topP, .presencePenalty, .frequencyPenalty],
             reasoningControl: .effort,
         )
+        let latest = Profile(effortLevels: ["none", "low", "medium", "high", "xhigh"]).merged(over: reasoning)
         return [
             ModelRule(.prefix(prefix + "gpt-5"), Profile(effortLevels: ["minimal", "low", "medium", "high"]).merged(over: reasoning)),
             // The ChatGPT model (`gpt-5-chat-latest`): no reasoning, sampling
             // parameters as usual.
             ModelRule(.prefix(prefix + "gpt-5-chat"), Profile(supportsReasoning: false)),
             ModelRule(.prefix(prefix + "gpt-5.1"), Profile(effortLevels: ["none", "low", "medium", "high"]).merged(over: reasoning)),
-            ModelRule(.prefix(prefix + "gpt-5.2"), Profile(effortLevels: ["none", "low", "medium", "high", "xhigh"]).merged(over: reasoning)),
+            ModelRule(.generation(prefix + "gpt-5.", from: 2), latest),
+            ModelRule(.generation(prefix + "gpt-", from: 6), latest),
             ModelRule(.prefix(prefix + "o1"), Profile(effortLevels: ["low", "medium", "high"]).merged(over: reasoning)),
             ModelRule(.prefix(prefix + "o3"), Profile(effortLevels: ["low", "medium", "high"]).merged(over: reasoning)),
             ModelRule(.prefix(prefix + "o4"), Profile(effortLevels: ["low", "medium", "high"]).merged(over: reasoning)),
@@ -181,7 +184,8 @@ public enum Presets {
             reasoningControl: .budget, effortBudgets: Profile.standardEffortBudgets,
         )),
     ], models: [
-        ModelRule(.prefix("gemini-3"), Profile(
+        // Gemini 3 and later take a thinking level, and refuse a budget.
+        ModelRule(.generation("gemini-", from: 3), Profile(
             reasoningControl: .thinkingLevel,
             effortLevels: ["minimal", "low", "medium", "high"],
             geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator,
@@ -205,7 +209,7 @@ public enum Presets {
             geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator, geminiSchemaKey: .parameters,
         ), auth: .bearer),
     ], models: [
-        ModelRule(.prefix("gemini-3"), Profile(reasoningControl: .thinkingLevel, effortLevels: ["minimal", "low", "medium", "high"])),
+        ModelRule(.generation("gemini-", from: 3), Profile(reasoningControl: .thinkingLevel, effortLevels: ["minimal", "low", "medium", "high"])),
         ModelRule(.prefix("gemini-pro-agent"), Profile(reasoningControl: .thinkingLevel, effortLevels: ["low", "high"])),
         ModelRule(.prefix("gpt-oss"), Profile(supportsReasoning: false)),
     ])

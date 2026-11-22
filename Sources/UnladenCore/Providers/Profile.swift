@@ -253,6 +253,9 @@ public enum ModelMatch: Hashable, Sendable {
     case prefix(String)
     /// A glob: `*` matches any run of characters, `?` one character.
     case pattern(String)
+    /// A prefix followed by a number at least `from`: `generation("gemini-",
+    /// from: 3)` matches `gemini-3-pro` and `gemini-4`, not `gemini-2.5`.
+    case generation(String, from: Int)
 
     func matches(_ model: String) -> Bool {
         let model = model.lowercased()
@@ -260,6 +263,11 @@ public enum ModelMatch: Hashable, Sendable {
         case .exact(let value): return model == value.lowercased()
         case .prefix(let value): return model.hasPrefix(value.lowercased())
         case .pattern(let value): return Glob.matches(Array(value.lowercased()), Array(model))
+        case .generation(let value, let from):
+            guard model.hasPrefix(value.lowercased()) else { return false }
+            let digits = model.dropFirst(value.count).prefix(while: \.isASCIIDigit)
+            guard !digits.isEmpty, let number = Int(digits) else { return false }
+            return number >= from
         }
     }
 }
@@ -298,4 +306,8 @@ enum Glob {
         while p < pattern.count, pattern[p] == "*" { p += 1 }
         return p == pattern.count
     }
+}
+
+extension Character {
+    var isASCIIDigit: Bool { ("0"..."9").contains(self) }
 }

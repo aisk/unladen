@@ -6,7 +6,9 @@
 ///
 /// **Profile resolution** for a model id:
 /// 1. Pick the model rule: an ``ModelMatch/exact(_:)`` match wins; else the
-///    *longest* matching ``ModelMatch/prefix(_:)``; else the first matching
+///    *longest* matching ``ModelMatch/prefix(_:)`` or
+///    ``ModelMatch/generation(_:from:)`` (whose length is its prefix's plus
+///    the number's digits); else the first matching
 ///    ``ModelMatch/pattern(_:)`` in declaration order; else none. Matching
 ///    ignores ASCII case.
 /// 2. Pick the endpoint: the rule's ``Profile/forcedProtocol`` if the
@@ -52,6 +54,9 @@ public struct Provider: Hashable, Sendable {
                 return rule
             case .prefix(let value):
                 if value.count > bestPrefix?.length ?? -1 { bestPrefix = (rule, value.count) }
+            case .generation(let value, _):
+                let length = value.count + model.dropFirst(value.count).prefix(while: \.isASCIIDigit).count
+                if length > bestPrefix?.length ?? -1 { bestPrefix = (rule, length) }
             case .pattern:
                 if firstPattern == nil { firstPattern = rule }
             }
