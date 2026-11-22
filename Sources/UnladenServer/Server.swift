@@ -22,7 +22,8 @@ struct GatewayRequestContext: RequestContext {
 /// - `POST /v1/chat/completions` (Chat), `POST /v1/responses` (Responses),
 ///   `POST /v1/messages` (Anthropic), `POST /v1beta/models/{model}:generateContent`
 ///   and `:streamGenerateContent` (Gemini; also under `/v1/models/`);
-/// - `POST /v1/messages/count_tokens`: 501 (not supported);
+/// - `POST /v1/messages/count_tokens`: an estimate of the request's input
+///   tokens, without calling an upstream;
 /// - `GET /v1/models`: the configured models, in a shape OpenAI and
 ///   Anthropic clients both read;
 /// - `GET /health`: `ok`, without authentication.
@@ -53,8 +54,7 @@ func buildRouter(gateway: Gateway, manager: ConfigManager? = nil) -> Router<Gate
         try await serve(.anthropicMessages, request: request, context: context, gateway: gateway)
     }
     router.post("/v1/messages/count_tokens") { request, _ in
-        if case .denied(let response) = authenticate(request, configuration: gateway.configuration, as: .anthropicMessages) { return response }
-        return Gateway.errorResponse(.anthropicMessages, status: 501, message: "count_tokens is not supported by this gateway")
+        await countTokens(request, gateway: gateway)
     }
     for prefix in ["/v1beta/models/**", "/v1/models/**"] {
         router.post(RouterPath(prefix)) { request, context in
@@ -82,15 +82,10 @@ private func serve(
     case .denied(let response): return response
     case .allowed(let allowed): access = allowed
     }
-    var request = request
     let body: [UInt8]
-    do {
-        let buffer = try await request.collectBody(upTo: configuration.maxRequestBytes)
-        body = Array(buffer.readableBytesView)
-    } catch is NIOTooManyBytesError {
-        return Gateway.errorResponse(clientProtocol, status: 413, message: "request body larger than \(configuration.maxRequestBytes) bytes")
-    } catch {
-        return Gateway.errorResponse(clientProtocol, status: 400, message: "cannot read the request body: \(error)")
+    switch await readBody(request, clientProtocol, configuration: configuration) {
+    case .success(let bytes): body = bytes
+    case .failure(let refusal): return refusal.response
     }
     let monitor = await DisconnectMonitor.install(on: context.channel)
     let logger = context.logger
@@ -103,6 +98,67 @@ private func serve(
         configuration: configuration,
         monitor: monitor,
         log: RequestLog { logger.info("\($0)") },
+    )
+}
+
+/// An error response, as a `Result` failure.
+private struct Refusal: Error {
+    var response: Response
+}
+
+/// The request's body, up to the configuration's limit.
+private func readBody(
+    _ request: Request, _ clientProtocol: WireProtocol, configuration: GatewayConfiguration,
+) async -> Result<[UInt8], Refusal> {
+    var request = request
+    do {
+        let buffer = try await request.collectBody(upTo: configuration.maxRequestBytes)
+        return .success(Array(buffer.readableBytesView))
+    } catch is NIOTooManyBytesError {
+        return .failure(Refusal(response: Gateway.errorResponse(
+            clientProtocol, status: 413, message: "request body larger than \(configuration.maxRequestBytes) bytes",
+        )))
+    } catch {
+        return .failure(Refusal(response: Gateway.errorResponse(clientProtocol, status: 400, message: "cannot read the request body: \(error)")))
+    }
+}
+
+/// `POST /v1/messages/count_tokens`: a Messages request without
+/// `max_tokens`, answered with `{"input_tokens": N}`, N being
+/// ``ConversationContext/estimatedTokens(_:)`` of it. The client's key must
+/// be allowed the model, as for `/v1/messages`; no upstream is called.
+private func countTokens(_ request: Request, gateway: Gateway) async -> Response {
+    let configuration = gateway.configuration
+    let access: ClientAccess
+    switch authenticate(request, configuration: configuration, as: .anthropicMessages) {
+    case .denied(let response): return response
+    case .allowed(let allowed): access = allowed
+    }
+    let body: [UInt8]
+    switch await readBody(request, .anthropicMessages, configuration: configuration) {
+    case .success(let bytes): body = bytes
+    case .failure(let refusal): return refusal.response
+    }
+    // The Messages decoder requires `max_tokens`, which a count has no
+    // use for.
+    guard var object = (try? JSONValue(parsing: body))?.objectValue else {
+        return Gateway.errorResponse(.anthropicMessages, status: 400, message: "invalid request: expected a JSON object")
+    }
+    if object["max_tokens"] == nil { object["max_tokens"] = 1 }
+    let decoded: WireRequest
+    do {
+        decoded = try ClientCodec.parseRequest(.anthropicMessages, body: JSONValue.object(object).encoded()).value
+    } catch {
+        return Gateway.errorResponse(.anthropicMessages, status: 400, message: "invalid request: \(error)")
+    }
+    do {
+        _ = try CandidatePlanner(configuration: configuration).plan(for: decoded.model, access: access)
+    } catch {
+        return Gateway.errorResponse(.anthropicMessages, status: error.status, message: error.message)
+    }
+    let reply: JSONValue = ["input_tokens": .number(JSONNumber(ConversationContext.estimatedTokens(decoded)))]
+    return Response(
+        status: .ok, headers: [.contentType: "application/json"], body: ResponseBody(byteBuffer: ByteBuffer(bytes: reply.encoded())),
     )
 }
 

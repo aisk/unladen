@@ -299,13 +299,34 @@ private func canonical(_ value: JSONValue) -> JSONValue {
         }
     }
 
-    @Test func countTokensIsNotImplemented() async throws {
+    @Test func countTokensIsAnEstimateWithoutAnUpstream() async throws {
         let upstream = MockUpstream { _ in reply("{}") }
+        let request = #"{"model":"x","system":"Be brief.","messages":[{"role":"user","content":"Hello there, how are you?"}]}"#
         try await makeApp(makeGateway(upstream)).test(.router) { client in
-            let response = try await client.post("/v1/messages/count_tokens", ClientRequest.anthropic(model: "x"))
-            #expect(response.status == .notImplemented)
-            #expect(json(response.body)["type"] == "error")
+            let response = try await client.post("/v1/messages/count_tokens", request)
+            #expect(response.status == .ok)
+            let tokens = json(response.body)["input_tokens"]?.numberValue?.double ?? 0
+            let expected = ConversationContext.estimatedTokens("Be brief.") + ConversationContext.estimatedTokens("Hello there, how are you?")
+            #expect(Int(tokens) == expected)
+
+            let invalid = try await client.post("/v1/messages/count_tokens", #"{"model":"x"}"#)
+            #expect(invalid.status == .badRequest)
+            #expect(json(invalid.body)["type"] == "error")
         }
+        #expect(upstream.requests.isEmpty)
+    }
+
+    @Test func countTokensChecksTheClientsKeyAndModels() async throws {
+        let upstream = MockUpstream { _ in reply("{}") }
+        let gateway = makeGateway(upstream, clientKeys: [ClientKey(name: "narrow", secret: "secret-narrow", models: ["fast"])])
+        try await makeApp(gateway).test(.router) { client in
+            let request = ClientRequest.anthropic(model: "other")
+            let anonymous = try await client.post("/v1/messages/count_tokens", request)
+            #expect(anonymous.status == .unauthorized)
+            let refused = try await client.post("/v1/messages/count_tokens", request, headers: [.authorization: "Bearer secret-narrow"])
+            #expect(refused.status == .forbidden)
+        }
+        #expect(upstream.requests.isEmpty)
     }
 }
 
