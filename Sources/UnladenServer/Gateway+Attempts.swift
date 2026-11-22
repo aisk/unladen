@@ -194,7 +194,7 @@ extension Gateway {
                         continue
                     }
                     guard Self.isRetryable(status) else { return .failure(.upstream(candidate, http)) }
-                    recordFailure(status: status, retryAfter: http.retryAfter, of: candidate, log: log)
+                    recordFailure(http, of: candidate, log: log)
                     last = .upstream(candidate, http)
                 case .decoding(let decoding, _):
                     health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "reply cannot be decoded")
@@ -240,11 +240,20 @@ extension Gateway {
     }
 
     /// Records an upstream error status against what it is about: the key
-    /// (refused, out of credit, rate limited) or the model at its address.
-    func recordFailure(status: Int, retryAfter: String?, of candidate: Candidate, log: RequestLog) {
+    /// (refused, out of credit, suspended, rate limited), the model through
+    /// the key (a rate limit whose message names the model), or the model
+    /// at its address.
+    func recordFailure(_ http: UpstreamHTTPError, of candidate: Candidate, log: RequestLog) {
+        let status = http.status.code
+        let retryAfter = http.retryAfter
         let key = candidate.keyScope ?? candidate.modelScope
         let reason = "\(status)"
         switch status {
+        case 403 where Self.saysSuspended(http.body):
+            health.recordFailure(key, base: HealthStore.suspendedCooldown, reason: "403: suspended")
+        case 429 where Self.names(http.body, model: candidate.target.model):
+            let scope = candidate.keyModelScope ?? key
+            health.recordFailure(scope, base: HealthStore.rateLimitCooldown, retryAfter: HealthStore.retryAfter(retryAfter), reason: reason)
         case 401:
             if let scope = candidate.keyScope, health.recordUnauthorized(scope) {
                 log.emit(
@@ -260,6 +269,47 @@ extension Gateway {
         default:
             health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, retryAfter: HealthStore.retryAfter(retryAfter), reason: reason)
         }
+    }
+
+    /// Whether an error body says the account is disabled or suspended for
+    /// breaking the terms of service ("This service has been disabled in
+    /// this account for violation of Terms of Service").
+    static func saysSuspended(_ body: [UInt8]) -> Bool {
+        let text = String(decoding: body, as: UTF8.self).lowercased()
+        guard text.contains("disabled") || text.contains("suspended") else { return false }
+        return text.contains("terms of service") || text.contains("terms of use")
+    }
+
+    /// Whether an error body names `model` as a word of its own: providers
+    /// that count rate limits per model say which ("Rate limit reached for
+    /// model `llama-3.3-70b-versatile` … tokens per day", "… for gpt-4o in
+    /// organization …", "Quota exceeded for metric … model: gemini-2.5-pro").
+    static func names(_ body: [UInt8], model: String) -> Bool {
+        let model = Array(model.lowercased().utf8)
+        guard !model.isEmpty else { return false }
+        let text = Array(String(decoding: body, as: UTF8.self).lowercased().utf8)
+        func isAlphanumeric(_ index: Int) -> Bool {
+            guard text.indices.contains(index) else { return false }
+            return (UInt8(ascii: "a")...UInt8(ascii: "z")).contains(text[index]) || (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(text[index])
+        }
+        // Part of the same id: letters, digits, `-`, `_`, and a dot that
+        // more of the id follows (not a sentence's end).
+        func continuesID(_ index: Int) -> Bool {
+            guard text.indices.contains(index) else { return false }
+            switch text[index] {
+            case UInt8(ascii: "-"), UInt8(ascii: "_"): return true
+            case UInt8(ascii: "."): return isAlphanumeric(index + 1)
+            default: return isAlphanumeric(index)
+            }
+        }
+        var start = 0
+        while start + model.count <= text.count {
+            if text[start..<start + model.count].elementsEqual(model), !continuesID(start - 1), !continuesID(start + model.count) {
+                return true
+            }
+            start += 1
+        }
+        return false
     }
 
     // MARK: First content

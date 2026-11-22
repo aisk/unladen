@@ -190,6 +190,66 @@ private func keyScope(_ secret: String) -> HealthScope { .key(provider: "togethe
         #expect(gateway.health.snapshot().isCooling(candidate.modelScope))
     }
 
+    @Test func aRateLimitNamingTheModelCoolsTheModelThroughTheKey() async throws {
+        let limited = #"{"error":{"message":"Rate limit reached for model `llama-3.3-70b` in organization `org_1` on tokens per day (TPD)","type":"tokens"}}"#
+        let upstream = MockUpstream([
+            { _ in reply(status: .tooManyRequests, limited) },
+            { _ in reply(fixture("Chat/responses/text.json")) },
+        ])
+        let gateway = makeGateway(upstream, keys: keys)
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+            #expect(response.status == .ok)
+        }
+        #expect(upstream.requests.count == 2)
+        let health = gateway.health.snapshot()
+        let k1 = UpstreamKey(secret: "k1").name
+        #expect(health.isCooling(.keyModel(provider: "together", keyName: k1, model: "llama-3.3-70b")))
+        #expect(!health.isCooling(keyScope("k1")))
+        #expect(!health.isCooling(.keyModel(provider: "together", keyName: k1, model: "other-model")))
+    }
+
+    @Test func aRateLimitNotNamingTheModelCoolsTheKey() async throws {
+        let upstream = MockUpstream([
+            { _ in reply(status: .tooManyRequests, #"{"error":{"message":"Rate limit reached for llama-3.3-70b-versatile"}}"#) },
+            { _ in reply(fixture("Chat/responses/text.json")) },
+        ])
+        let gateway = makeGateway(upstream, keys: keys)
+        try await makeApp(gateway).test(.router) { client in
+            _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+        }
+        #expect(gateway.health.snapshot().isCooling(keyScope("k1")))
+    }
+
+    @Test func errorBodiesNamingAModel() {
+        func names(_ text: String, _ model: String) -> Bool { Gateway.names(Array(text.utf8), model: model) }
+        #expect(names("Rate limit reached for gpt-4o in organization org-x on tokens per min (TPM).", "gpt-4o"))
+        #expect(names("Quota exceeded for metric: generate_content_free_tier_requests, limit: 50, model: gemini-2.5-pro", "gemini-2.5-pro"))
+        #expect(names("limit for models/gemini-2.5-flash.", "gemini-2.5-flash"))
+        #expect(names("Rate limit for Claude-Sonnet-4-5 exceeded", "claude-sonnet-4-5"))
+        #expect(!names("Rate limit reached for gpt-4o-mini in organization org-x", "gpt-4o"))
+        #expect(!names("model: gemini-2.5-pro-preview", "gemini-2.5-pro"))
+        #expect(!names("model: gemini-2.5.1", "gemini-2.5"))
+        #expect(!names("Rate limit reached", ""))
+    }
+
+    @Test func aSuspendedAccountRestsForHours() async throws {
+        let suspended = #"{"error":{"code":403,"message":"This service has been disabled in this account for violation of Terms of Service.","status":"PERMISSION_DENIED"}}"#
+        let upstream = MockUpstream([
+            { _ in reply(status: .forbidden, suspended) },
+            { _ in reply(fixture("Chat/responses/text.json")) },
+        ])
+        let gateway = makeGateway(upstream, keys: keys)
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+            #expect(response.status == .ok)
+        }
+        let health = gateway.health.snapshot()
+        let until = try #require(health.cooldowns[keyScope("k1")])
+        #expect(until - health.now > .seconds(3600))
+        #expect(health.reasons[keyScope("k1")] == "403: suspended")
+    }
+
     @Test func cooldownsDoubleAndRetryAfterWins() {
         let health = HealthStore()
         let scope = keyScope("k1")

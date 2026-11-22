@@ -51,14 +51,14 @@ struct Gateway: Sendable {
     /// forgotten. Keys disabled after repeated 401s get another chance.
     func replace(_ configuration: GatewayConfiguration) {
         let old = store.replace(configuration)
-        var changed: Set<HealthScope> = []
+        var changed: [(provider: String, keyName: String)] = []
         for (provider, pool) in old.keyPools {
             let now = configuration.keyPools[provider]?.keys ?? []
             for key in pool.keys where !now.contains(where: { $0.name == key.name && $0.secret == key.secret }) {
-                changed.insert(.key(provider: provider, keyName: key.name))
+                changed.append((provider, key.name))
             }
         }
-        if !changed.isEmpty { health.forget { changed.contains($0) } }
+        if !changed.isEmpty { health.forget { scope in changed.contains { scope.concerns(provider: $0.provider, keyName: $0.keyName) } } }
         health.enableDisabledKeys()
         // An account as it was keeps what was read of its allowance: a
         // save of something else does not ask its provider again.

@@ -211,8 +211,15 @@ enum AdminStatus {
                 ])
             }
             for (scope, _) in health.cooldowns {
-                guard case .model(let endpoint, let model) = scope, endpoint.hasPrefix(id + " ") else { continue }
-                cooling.append(["provider": .string(id), "what": .string("\(model) failing"), "cooling_seconds": remaining(scope)])
+                switch scope {
+                case .model(let endpoint, let model) where endpoint.hasPrefix(id + " "):
+                    cooling.append(["provider": .string(id), "what": .string("\(model) failing"), "cooling_seconds": remaining(scope)])
+                case .keyModel(id, let keyName, let model):
+                    cooling.append([
+                        "provider": .string(id), "what": .string("\(model) rate limited for \(keyName)"), "cooling_seconds": remaining(scope),
+                    ])
+                default: continue
+                }
             }
         }
         /// No token is included.
@@ -677,8 +684,8 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
         return manager.reload() ? adminJSON(200, ["reloaded": true]) : adminError(422, "the file does not load; see the log")
     }
 
-    /// Clears what is recorded against one key: its cooldown, its 401
-    /// count, and its being disabled.
+    /// Clears what is recorded against one key: its cooldowns (its own and
+    /// its models'), its 401 count, and its being disabled.
     router.post("/admin/api/keys/reset") { request, _ in
         if let denied = adminDenied(request, gateway: gateway) { return denied }
         var request = request
@@ -686,8 +693,7 @@ func addAdminRoutes(to router: Router<GatewayRequestContext>, manager: ConfigMan
               let json = try? JSONValue(parsing: Array(body.readableBytesView)),
               let provider = json["provider"]?.stringValue, let key = json["key"]?.stringValue
         else { return adminError(400, "expected {\"provider\": \"…\", \"key\": \"…\"}") }
-        let scope = HealthScope.key(provider: provider, keyName: key)
-        gateway.health.forget { $0 == scope }
+        gateway.health.forget { $0.concerns(provider: provider, keyName: key) }
         return adminJSON(200, ["reset": true])
     }
 
@@ -734,8 +740,7 @@ private func addSignInRoutes(to router: Router<GatewayRequestContext>, gateway: 
         }
         do throws(SignInError) {
             let (provider, name, credentials) = try await gateway.signIns.finish(id: id, callback: callback, transport: gateway.transport)
-            let scope = HealthScope.key(provider: provider, keyName: name)
-            gateway.health.forget { $0 == scope }
+            gateway.health.forget { $0.concerns(provider: provider, keyName: name) }
             return adminJSON(200, ["user": .string(credentials.user), "plan": credentials.plan.map(JSONValue.string) ?? .null])
         } catch {
             return adminError(422, error.message)

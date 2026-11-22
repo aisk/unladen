@@ -40,11 +40,16 @@ struct Candidate: Sendable, Hashable {
         keyName.isEmpty ? nil : .key(provider: target.provider, keyName: keyName)
     }
 
+    /// Its model through its key, when it has one.
+    var keyModelScope: HealthScope? {
+        keyName.isEmpty ? nil : .keyModel(provider: target.provider, keyName: keyName, model: target.model)
+    }
+
     var endpointScope: HealthScope { .endpoint(endpointID) }
     var modelScope: HealthScope { .model(endpoint: endpointID, model: target.model) }
 
     /// Every scope whose cooldown keeps this candidate back.
-    var scopes: [HealthScope] { (keyScope.map { [$0] } ?? []) + [endpointScope, modelScope] }
+    var scopes: [HealthScope] { [keyScope, keyModelScope].compactMap(\.self) + [endpointScope, modelScope] }
 }
 
 /// What a failure is recorded against: the narrowest thing it says is
@@ -56,6 +61,19 @@ enum HealthScope: Hashable, Sendable {
     case endpoint(String)
     /// A model at an address: server errors, 404, broken replies.
     case model(endpoint: String, model: String)
+    /// A model through one key: a rate limit the upstream counts per model
+    /// (a day's tokens of one model, say). The key's other models, and the
+    /// model through other keys, stay usable.
+    case keyModel(provider: String, keyName: String, model: String)
+
+    /// Whether this is about the key `keyName` of `provider`: the key, or
+    /// one of its models.
+    func concerns(provider: String, keyName: String) -> Bool {
+        switch self {
+        case .key(let p, let k), .keyModel(let p, let k, _): p == provider && k == keyName
+        case .endpoint, .model: false
+        }
+    }
 }
 
 
@@ -173,6 +191,9 @@ final class HealthStore: Sendable {
     static let maxCooldown: Duration = .seconds(300)
     /// After a 402 (out of credit): the key will not recover soon.
     static let paymentCooldown: Duration = .seconds(1800)
+    /// After a 403 saying the account is suspended for its terms of
+    /// service: an appeal takes longer than any retry.
+    static let suspendedCooldown: Duration = .seconds(7200)
     /// Consecutive 401s after which a key is disabled.
     static let unauthorizedLimit = 2
 
