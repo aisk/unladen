@@ -3,8 +3,9 @@
 // is translated as it is drawn: text nodes and the placeholder and title
 // attributes whose whole text has a translation, including what Alpine
 // draws later. Names, keys and code (`code`, `.mono`, inputs) are left as
-// they are. Text built from parts goes through `t`, whose patterns
-// translate the parts they know.
+// they are; a placeholder or title is the panel's own text, so a `.mono`
+// field's is translated too. Text built from parts goes through `t`, whose
+// patterns translate the parts they know.
 
 const LANGUAGE_KEY = 'unladen.language';
 const LANGUAGES = [{ id: 'en', label: 'English' }, { id: 'zh', label: '中文' }];
@@ -578,8 +579,9 @@ function t(text) {
   return text;
 }
 
-// Left as they are: names, keys and code.
+// Left as they are: names, keys and code. Attributes are left only in code.
 const UNTRANSLATED = 'code, pre, textarea, script, style, .mono';
+const UNTRANSLATED_ATTRIBUTES = 'code, pre, script, style';
 
 function translateText(node) {
   const value = node.nodeValue;
@@ -593,7 +595,7 @@ function translateText(node) {
 }
 
 function translateAttributes(element) {
-  if (element.closest(UNTRANSLATED)) return;
+  if (element.closest(UNTRANSLATED_ATTRIBUTES)) return;
   for (const name of ['placeholder', 'title']) {
     const value = element.getAttribute(name);
     if (value) {
