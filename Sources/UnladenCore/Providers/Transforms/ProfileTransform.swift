@@ -115,7 +115,7 @@ extension ProfileTransform {
         case .flattenTextParts:
             guard context.target == .chatCompletions else { return }
             let keeps = context.profile.chatCacheControlOption ?? (request.source == .chatCompletions)
-            WireTransforms.flattenTextParts(&request, keepsCacheControl: keeps, warnings: &outcome.warnings)
+            WireTransforms.flattenTextParts(&request, keepsCacheControl: keeps)
         case .mapReasoningEffort:
             WireTransforms.mapReasoningEffort(&request, profile: context.profile, warnings: &outcome.warnings)
         case .dropUnsupportedParams:

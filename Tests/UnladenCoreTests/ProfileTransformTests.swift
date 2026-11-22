@@ -256,8 +256,7 @@ private func isSynthetic(_ part: WirePart) -> Bool {
             WireMessage(role: .user, parts: [text("Line one"), text("Line two")], contentForm: .parts),
             WireMessage(role: .user, parts: [text("look"), .image(WireMedia(source: .url("https://x/y.png")))], contentForm: .parts),
         ], source: .chatCompletions)
-        var warnings: [WireWarning] = []
-        WireTransforms.flattenTextParts(&request, warnings: &warnings)
+        WireTransforms.flattenTextParts(&request)
         #expect(request.messages[0].parts == [text("Line one\nLine two")])
         #expect(request.messages[0].contentForm == .string)
         #expect(request.messages[1].contentForm == .parts)

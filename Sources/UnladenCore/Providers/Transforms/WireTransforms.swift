@@ -360,7 +360,7 @@
     /// newlines into one part and marked ``WireContentForm/string``. A
     /// breakpoint that would not be written anyway goes on the joined part,
     /// for the encoder to report.
-    public static func flattenTextParts(_ request: inout WireRequest, keepsCacheControl: Bool = false, warnings: inout [WireWarning]) {
+    public static func flattenTextParts(_ request: inout WireRequest, keepsCacheControl: Bool = false) {
         let sameProtocol = request.source == .chatCompletions
         func flatten(_ parts: inout [WirePart], _ form: inout WireContentForm?) {
             var texts: [WireText] = []
