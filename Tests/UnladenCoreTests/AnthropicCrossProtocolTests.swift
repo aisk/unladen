@@ -70,6 +70,24 @@ import UnladenTestSupport
         #expect(built.warnings.map(\.code) == [.droppedContent, .lossyConversion, .droppedField])
     }
 
+    @Test func blankSystemAndToolResultTextIsDropped() {
+        let blank = WireRequest(model: "gpt", messages: [
+            WireMessage(role: .developer, parts: [.text(WireText(" "))], contentForm: .string),
+            WireMessage(role: .user, parts: [.text(WireText("ls"))], contentForm: .string),
+        ], source: .chatCompletions)
+        #expect(AnthropicMessagesCodec.buildRequest(blank).json["system"] == nil)
+
+        let mixed = WireRequest(model: "gpt", messages: [
+            WireMessage(role: .system, parts: [.text(WireText("Be brief.")), .text(WireText("\n"))], contentForm: .parts),
+            WireMessage(role: .user, parts: [.text(WireText("ls"))], contentForm: .string),
+            WireMessage(role: .assistant, parts: [.toolCall(WireToolCall(id: "call_1", name: "ls", arguments: "{}"))], contentForm: .null),
+            WireMessage(role: .tool, parts: [.toolResult(WireToolResult(callID: "call_1", content: [.text(WireText(" "))], contentForm: .string))]),
+        ], source: .chatCompletions)
+        let built = AnthropicMessagesCodec.buildRequest(mixed).json
+        #expect(built["system"] == [["type": "text", "text": "Be brief."]])
+        #expect(built["messages"]?[2] == ["role": "user", "content": [["type": "tool_result", "tool_use_id": "call_1"]]])
+    }
+
     @Test func foreignBagsAndOpaqueContentAreDropped() throws {
         let chat = try ChatCompletionsCodec.parseRequest(Fixtures.bytes("Chat/requests/vendor_extras.json")).value
         let built = AnthropicMessagesCodec.buildRequest(chat)

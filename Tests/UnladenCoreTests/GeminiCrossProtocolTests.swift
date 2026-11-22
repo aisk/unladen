@@ -31,6 +31,20 @@ private func toolCalls(_ parts: [WirePart]) -> [WireToolCall] {
         #expect(declarations[0]["parametersJsonSchema"]?["additionalProperties"] == false)
     }
 
+    @Test func blankSystemTextIsDropped() {
+        let request = WireRequest(model: "gpt", messages: [
+            WireMessage(role: .system, parts: [.text(WireText("Be brief."))], contentForm: .string),
+            WireMessage(role: .developer, parts: [.text(WireText(" "))], contentForm: .string),
+            WireMessage(role: .user, parts: [.text(WireText("hi"))], contentForm: .string),
+        ], source: .chatCompletions)
+        #expect(GeminiCodec.buildRequest(request).json["systemInstruction"] == ["parts": [["text": "Be brief."]]])
+        let blank = WireRequest(model: "gpt", messages: [
+            WireMessage(role: .developer, parts: [.text(WireText("\n"))], contentForm: .string),
+            WireMessage(role: .user, parts: [.text(WireText("hi"))], contentForm: .string),
+        ], source: .chatCompletions)
+        #expect(GeminiCodec.buildRequest(blank).json["systemInstruction"] == nil)
+    }
+
     @Test func claudeCodeRequestToGemini() throws {
         let claude = try AnthropicMessagesCodec.parseRequest(Fixtures.bytes("Anthropic/requests/claude_code.json")).value
         let built = GeminiCodec.buildRequest(claude)

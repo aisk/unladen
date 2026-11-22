@@ -357,12 +357,16 @@ extension AnthropicMessagesCodec {
         if let stop = request.stop { object["stop_sequences"] = .array(stop.sequences.map { .string($0) }) }
         if let value = request.stream { object["stream"] = .bool(value) }
         if let parts = systemParts {
+            // Whitespace-only text is dropped, as in turns (Anthropic
+            // refuses it; a Chat `developer` message of " " is one).
             let blocks = AnthropicEncode.blocks(parts, context: context, path: "system", warnings: &warnings).filter { block in
-                if block.json["type"] == "text" || include { return true }
+                if include { return true }
+                if block.isBlankText { return false }
+                if block.json["type"] == "text" { return true }
                 warnings.append(WireWarning(.droppedContent, "only text can appear in system", path: "system"))
                 return false
             }
-            if let system = AnthropicEncode.content(blocks, form: systemForm, emptyDefault: nil) {
+            if include || !blocks.isEmpty, let system = AnthropicEncode.content(blocks, form: systemForm, emptyDefault: nil) {
                 object["system"] = system
             }
             if !request.instructionsExtra.isEmpty {

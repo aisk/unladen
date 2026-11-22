@@ -472,7 +472,10 @@ extension GeminiCodec {
                     warnings.append(WireWarning(.droppedContent, "only text can appear in systemInstruction", path: path))
                     continue
                 }
-                if let value = GeminiEncode.part(part, context: context, path: path, warnings: &warnings) { encoded.append(value) }
+                guard let value = GeminiEncode.part(part, context: context, path: path, warnings: &warnings) else { continue }
+                // Whitespace-only text is dropped, as in turns.
+                if !include, value.objectValue?.count == 1, value["text"]?.stringValue?.allSatisfy(\.isWhitespace) == true { continue }
+                encoded.append(value)
             }
             let patched = hasPatch(systemPatch, for: .gemini)
             if include, systemForm == .string, encoded.count <= 1, request.instructionsExtra.isEmpty, !patched {

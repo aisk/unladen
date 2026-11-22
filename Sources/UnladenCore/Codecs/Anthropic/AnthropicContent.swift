@@ -437,6 +437,8 @@ enum AnthropicEncode {
                 }
             }
             let inner = blocks(result.content, context: context, path: contentPath, warnings: &warnings).filter { block in
+                // Whitespace-only text is refused here as in turns.
+                if !include, block.isBlankText { return false }
                 let type = block.json["type"]?.stringValue ?? ""
                 if ["text", "image", "document", "search_result"].contains(type) { return true }
                 warnings.append(WireWarning(.droppedContent, "`\(type)` cannot appear in a tool_result", path: contentPath))
