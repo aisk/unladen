@@ -20,6 +20,8 @@ const TRANSLATIONS = {
       'Sign in': '登录',
       'Sign out': '退出',
       'The panel token was refused.': '面板令牌被拒绝。',
+      "The panel's scripts could not be loaded from cdn.jsdelivr.net. The browser needs to reach it to show the panel.":
+        '无法从 cdn.jsdelivr.net 加载面板的脚本。浏览器需要能访问它才能显示面板。',
 
       // Navigation
       'Menu': '菜单',

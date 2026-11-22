@@ -14,10 +14,10 @@
     document.documentElement.setAttribute('data-bs-theme', theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   })();
 </script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/css/tabler.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.49.0/dist/tabler-icons.min.css">
-<script defer src="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/js/tabler.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.5/dist/cdn.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/css/tabler.min.css" integrity="sha384-tT2UAGE9hxG/p5d0iGIvZ/s8El3nWWG3tfG02i8iOY5Pbf8cZZRVmcrrVs+JG5Vw" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.49.0/dist/tabler-icons.min.css" integrity="sha384-IcAOG/1tqv9Qnam+j3mZYPAFcNQMnQpMcafc8Nsvd44AUeTCzhUzdQiJkrROmqW6" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/@tabler/core@1.6.1/dist/js/tabler.min.js" integrity="sha384-1yCHfhyU8+V33urXkAlLLpNYd9jdzXkxdafCg0+auIIEtYFnOuM/DwJQgk5sXY98" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.5/dist/cdn.min.js" integrity="sha384-FYLKjwG3aohNhNZoVG8sY/5ntunm+MqylL90Q+rT3OM7AwV9/BKFjk/RjoIpIgsI" crossorigin="anonymous"></script>
 <style>
   [x-cloak] { display: none !important; }
   .mono { font-family: var(--tblr-font-monospace); }
@@ -1590,5 +1590,16 @@
 
 <script src="i18n.js"></script>
 <script src="panel.js"></script>
+<script>
+  // Alpine draws the page; when it did not load, the page says so instead
+  // of staying blank.
+  window.addEventListener('load', () => setTimeout(() => {
+    if (window.Alpine) return;
+    const note = document.createElement('p');
+    note.style.cssText = 'font-family: system-ui, sans-serif; max-width: 36rem; margin: 4rem auto; padding: 0 1rem';
+    note.textContent = "The panel's scripts could not be loaded from cdn.jsdelivr.net. The browser needs to reach it to show the panel.";
+    document.body.appendChild(note);
+  }, 1000));
+</script>
 </body>
 </html>
