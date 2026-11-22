@@ -266,6 +266,30 @@ private func isSynthetic(_ part: WirePart) -> Bool {
         #expect(body["messages"]?[1]?["content"]?.arrayValue?.count == 2)
     }
 
+    @Test func textAfterAToolCallMovesBeforeIt() throws {
+        let thinking = WirePart.reasoning(WireReasoning(text: "Plan.", signature: "sig", origin: "anthropic"))
+        var request = WireRequest(model: "deepseek-v4-flash", messages: [
+            user("ls"),
+            WireMessage(role: .assistant, parts: [thinking, text("Listing."), call("toolu_a"), text("Then more."), text(" "), call("toolu_b")]),
+            WireMessage(role: .user, parts: [result("toolu_a"), result("toolu_b")]),
+        ], source: .anthropicMessages)
+        var warnings: [WireWarning] = []
+        WireTransforms.textBeforeToolCalls(&request, warnings: &warnings)
+        #expect(request.messages[1].parts == [thinking, text("Listing."), text("Then more."), call("toolu_a"), call("toolu_b")])
+        #expect(warnings.map(\.code) == [.adjusted])
+
+        // A turn with nothing after its calls is left alone.
+        let before = request
+        WireTransforms.textBeforeToolCalls(&request, warnings: &warnings)
+        #expect(request == before)
+
+        // Only DeepSeek's Anthropic endpoint asks for it.
+        let deepSeek = try ProviderRegistry.builtIn.resolve("deepseek/deepseek-v4-flash", preferring: .anthropicMessages).profile
+        #expect(deepSeek.transforms?.contains(.textBeforeToolCalls) == true)
+        let claude = try ProviderRegistry.builtIn.resolve("anthropic/claude-sonnet-4-6").profile
+        #expect(claude.transforms?.contains(.textBeforeToolCalls) != true)
+    }
+
     @Test func replaysReasoningContentOnToolTurns() throws {
         var request = WireRequest(model: "deepseek-reasoner", messages: [
             user("Weather?"),

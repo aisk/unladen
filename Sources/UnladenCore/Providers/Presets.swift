@@ -229,7 +229,7 @@ public enum Presets {
                      auth: .anthropic(), trustedOrigins: ["deepseek", "anthropic"],
                      defaults: Profile(
                         defaultMaxOutputTokens: 8192, reasoningControl: .effort, effortLevels: ["low", "high", "max"],
-                        acceptsUnsignedThinking: true, transforms: base + [.ensureThinkingOnToolTurns],
+                        acceptsUnsignedThinking: true, transforms: base + [.ensureThinkingOnToolTurns, .textBeforeToolCalls],
                      )),
         ],
     ))

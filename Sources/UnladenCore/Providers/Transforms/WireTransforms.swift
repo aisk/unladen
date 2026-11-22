@@ -326,6 +326,32 @@
         }
     }
 
+    // MARK: - textBeforeToolCalls
+
+    /// See ``ProfileTransform/textBeforeToolCalls``. A turn is a run of
+    /// consecutive assistant messages (Responses splits one into items).
+    public static func textBeforeToolCalls(_ request: inout WireRequest, warnings: inout [WireWarning]) {
+        forEachAssistantTurn(&request, afterToolResets: { _ in nil }) { turn, _ in
+            var firstCall: (message: Int, part: Int)?
+            var moved: [WirePart] = []
+            for m in turn.indices {
+                var kept: [WirePart] = []
+                for part in turn[m].parts {
+                    if firstCall == nil, isCall(part) { firstCall = (m, kept.count) }
+                    if firstCall != nil, case .text(let text) = part {
+                        if !text.text.allSatisfy(\.isWhitespace) { moved.append(part) }
+                        continue
+                    }
+                    kept.append(part)
+                }
+                turn[m].parts = kept
+            }
+            guard let (m, p) = firstCall, !moved.isEmpty else { return }
+            turn[m].parts.insert(contentsOf: moved, at: p)
+            warnings.append(WireWarning(.adjusted, "text after a tool call moved before it", path: "messages"))
+        }
+    }
+
     // MARK: - flattenTextParts
 
     /// See ``ProfileTransform/flattenTextParts``: content made only of text

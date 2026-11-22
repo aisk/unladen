@@ -32,6 +32,11 @@ public enum ProfileTransform: String, Hashable, Sendable, CaseIterable {
     /// thinking block, and `redacted_thinking` the upstream cannot read
     /// becomes one (DeepSeek's Anthropic API). Anthropic targets only.
     case ensureThinkingOnToolTurns
+    /// Text an assistant turn writes after its first tool call moves before
+    /// that call (whitespace-only text is dropped; reasoning stays where it
+    /// is). DeepSeek's Anthropic API refuses a turn with text after a
+    /// `tool_use`. Anthropic targets only.
+    case textBeforeToolCalls
     /// Content made only of text parts is written as a plain string, for
     /// compatible servers that reject part arrays. Chat targets only.
     case flattenTextParts
@@ -104,6 +109,9 @@ extension ProfileTransform {
         case .ensureThinkingOnToolTurns:
             guard context.target == .anthropicMessages else { return }
             WireTransforms.ensureThinkingOnToolTurns(&request)
+        case .textBeforeToolCalls:
+            guard context.target == .anthropicMessages else { return }
+            WireTransforms.textBeforeToolCalls(&request, warnings: &outcome.warnings)
         case .flattenTextParts:
             guard context.target == .chatCompletions else { return }
             let keeps = context.profile.chatCacheControlOption ?? (request.source == .chatCompletions)
