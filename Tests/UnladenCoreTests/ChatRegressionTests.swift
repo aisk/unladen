@@ -33,13 +33,13 @@ private func toolCalls(_ events: [WireEvent]) -> [WireToolCall] {
             ], contentForm: .parts),
         ], source: .responses)
         request.reasoning = WireReasoningConfig(effort: "high")
-        request.spellings = [.reasoning: "reasoning", .maxOutputTokens: "max_tokens"]
+        request.spellings = [.reasoning: "reasoning", .maxOutputTokens: "max_completion_tokens"]
         request.maxOutputTokens = 10
         let json = ChatCompletionsCodec.buildRequest(request).json
         #expect(json["reasoning_effort"] == "high")
         #expect(json["reasoning"] == nil)
-        #expect(json["max_completion_tokens"] == 10)
-        #expect(json["max_tokens"] == nil)
+        #expect(json["max_tokens"] == 10)
+        #expect(json["max_completion_tokens"] == nil)
         let message = json["messages"]?[0]
         #expect(message?["reasoning_content"] == "r")
         #expect(message?["reasoning"] == nil)

@@ -102,7 +102,7 @@ import UnladenTestSupport
         #expect(messages[2]["tool_calls"]?[0]?["function"]?["arguments"] == #"{"city":"Paris","unit":"celsius"}"#)
         #expect(messages[3] == ["role": "tool", "content": [["type": "text", "text": "Service unavailable"]], "tool_call_id": "toolu_01A09q90qw90lq917835lq9"])
         #expect(built.json["user"] == "user_abc123_account_def_session_0f1e")
-        #expect(built.json["max_completion_tokens"] == 32000)
+        #expect(built.json["max_tokens"] == 32000)
         let messagesOf = { (code: WireWarning.Code) in built.warnings.filter { $0.code == code }.map(\.message) }
         #expect(messagesOf(.droppedContent).contains("reasoning signature/encrypted data cannot be carried by Chat"))
         #expect(messagesOf(.lossyConversion).contains("Chat tool messages cannot mark an error"))

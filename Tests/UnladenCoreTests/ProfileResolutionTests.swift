@@ -171,6 +171,24 @@ import Testing
         #expect(try ProviderRegistry.builtIn.resolve("openai/gpt-4o", preferring: .chatCompletions).profile.maxTokensField == .maxCompletionTokens)
     }
 
+    @Test func onlyOpenAIsChatEndpointAsksForMaxCompletionTokens() {
+        for provider in Presets.all {
+            for endpoint in provider.endpoints where endpoint.apiProtocol == .chatCompletions {
+                // OpenRouter takes either and keeps the client's.
+                let expected: MaxTokensField? = switch provider.id {
+                case "openai": .maxCompletionTokens
+                case "openrouter": nil
+                default: .maxTokens
+                }
+                #expect(endpoint.defaults.maxTokensField == expected, "\(provider.id)")
+            }
+        }
+        let custom = Presets.customEndpoint(system: "relay", apiProtocol: .chatCompletions, baseURL: "http://relay", auth: .bearer)
+        #expect(custom.defaults.maxTokensField == .maxTokens)
+        let responses = Presets.customEndpoint(system: "relay", apiProtocol: .responses, baseURL: "http://relay", auth: .bearer)
+        #expect(responses.defaults.maxTokensField == nil)
+    }
+
     @Test func runtimeRegistrationIsAValue() throws {
         var registry = ProviderRegistry.builtIn
         registry.register(Provider(id: "lab", endpoints: [Self.chat]))

@@ -46,15 +46,14 @@ public enum Presets {
     }
 
     /// An endpoint for a provider the user describes (a relay, a local
-    /// server): the transforms every preset endpoint gets and its
-    /// protocol's gaps, nothing vendor-specific.
+    /// server): the transforms every preset endpoint gets, its protocol's
+    /// gaps and, for Chat, `max_tokens`; nothing vendor-specific.
     @_spi(Wire) public static func customEndpoint(
         system: String, apiProtocol: APIProtocol, baseURL: String, auth: EndpointAuth, headers: [String: String] = [:],
     ) -> Endpoint {
-        Endpoint(
-            system: system, apiProtocol: apiProtocol, baseURL: baseURL, auth: auth, headers: headers,
-            defaults: Profile(unsupportedParameters: gaps(of: apiProtocol), transforms: base),
-        )
+        var defaults = Profile(unsupportedParameters: gaps(of: apiProtocol), transforms: base)
+        if apiProtocol == .chatCompletions { defaults.maxTokensField = .maxTokens }
+        return Endpoint(system: system, apiProtocol: apiProtocol, baseURL: baseURL, auth: auth, headers: headers, defaults: defaults)
     }
 
     /// `provider` with each endpoint's defaults declaring its protocol's gaps.
@@ -176,54 +175,40 @@ public enum Presets {
         models: claudeRules(prefix: ""),
     ))
 
-    public static let gemini = declaringProtocolGaps(Provider(
-        id: "gemini",
-        apiKeyEnvironmentVariables: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-        endpoints: [
-            Endpoint(system: "gemini", apiProtocol: .gemini, baseURL: "https://generativelanguage.googleapis.com",
-                     auth: .googleAPIKey,
-                     defaults: Profile(
-                        supportsReasoning: true, supportsTools: true, supportsImages: true,
-                        reasoningControl: .budget, effortBudgets: Profile.standardEffortBudgets, transforms: base,
-                     )),
-        ],
-        models: [
-            ModelRule(.prefix("gemini-3"), Profile(
-                reasoningControl: .thinkingLevel,
-                effortLevels: ["minimal", "low", "medium", "high"],
-                geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator,
-            )),
-            ModelRule(.prefix("gemini-3-pro"), Profile(
-                reasoningControl: .thinkingLevel,
-                effortLevels: ["low", "high"],
-                geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator,
-            )),
-        ],
-    ))
+    public static let gemini = vendor("gemini", environment: ["GEMINI_API_KEY", "GOOGLE_API_KEY"], [
+        endpoint("gemini", .gemini, "https://generativelanguage.googleapis.com", Profile(
+            supportsReasoning: true, supportsTools: true, supportsImages: true,
+            reasoningControl: .budget, effortBudgets: Profile.standardEffortBudgets,
+        )),
+    ], models: [
+        ModelRule(.prefix("gemini-3"), Profile(
+            reasoningControl: .thinkingLevel,
+            effortLevels: ["minimal", "low", "medium", "high"],
+            geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator,
+        )),
+        ModelRule(.prefix("gemini-3-pro"), Profile(
+            reasoningControl: .thinkingLevel,
+            effortLevels: ["low", "high"],
+            geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator,
+        )),
+    ])
 
     /// An Antigravity subscription, signed in with Google, through Google's
     /// Code Assist backend: Gemini's API inside an envelope of its own,
     /// which the gateway adds and removes (UnladenServer's
     /// `CodeAssistTransport`). Gemini, Claude and gpt-oss models, by
     /// Antigravity's own ids. Not an API Google offers to other apps.
-    public static let antigravity = declaringProtocolGaps(Provider(
-        id: "antigravity",
-        endpoints: [
-            Endpoint(system: "antigravity", apiProtocol: .gemini, baseURL: "https://daily-cloudcode-pa.googleapis.com",
-                     auth: .bearer,
-                     defaults: Profile(
-                        supportsReasoning: true, supportsTools: true, supportsImages: true,
-                        reasoningControl: .budget, effortBudgets: Profile.standardEffortBudgets, streaming: .always,
-                        geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator, geminiSchemaKey: .parameters,
-                        transforms: base,
-                     )),
-        ],
-        models: [
-            ModelRule(.prefix("gemini-3"), Profile(reasoningControl: .thinkingLevel, effortLevels: ["minimal", "low", "medium", "high"])),
-            ModelRule(.prefix("gemini-pro-agent"), Profile(reasoningControl: .thinkingLevel, effortLevels: ["low", "high"])),
-            ModelRule(.prefix("gpt-oss"), Profile(supportsReasoning: false)),
-        ],
-    ))
+    public static let antigravity = vendor("antigravity", [
+        endpoint("antigravity", .gemini, "https://daily-cloudcode-pa.googleapis.com", Profile(
+            supportsReasoning: true, supportsTools: true, supportsImages: true,
+            reasoningControl: .budget, effortBudgets: Profile.standardEffortBudgets, streaming: .always,
+            geminiMissingSignatureFallback: GeminiRequestOptions.skipSignatureValidator, geminiSchemaKey: .parameters,
+        ), auth: .bearer),
+    ], models: [
+        ModelRule(.prefix("gemini-3"), Profile(reasoningControl: .thinkingLevel, effortLevels: ["minimal", "low", "medium", "high"])),
+        ModelRule(.prefix("gemini-pro-agent"), Profile(reasoningControl: .thinkingLevel, effortLevels: ["low", "high"])),
+        ModelRule(.prefix("gpt-oss"), Profile(supportsReasoning: false)),
+    ])
 
     public static let deepSeek = declaringProtocolGaps(Provider(
         id: "deepseek",
@@ -439,32 +424,24 @@ public enum Presets {
         endpoint("groq", .chatCompletions, "https://api.groq.com/openai/v1", Profile(transforms: base + [.flattenTextParts])),
     ])
 
-    public static let mistral = declaringProtocolGaps(Provider(
-        id: "mistral",
-        apiKeyEnvironmentVariables: ["MISTRAL_API_KEY"],
-        endpoints: [
-            // 422 extra_forbidden on any field it does not know.
-            Endpoint(system: "mistral", apiProtocol: .chatCompletions, baseURL: "https://api.mistral.ai/v1",
-                     defaults: Profile(maxTokensField: .maxTokens, strictUnknownFields: true, chatStreamUsage: false, transforms: base + [.mistralToolIDs])),
-        ],
-    ))
+    public static let mistral = vendor("mistral", environment: ["MISTRAL_API_KEY"], [
+        // 422 extra_forbidden on any field it does not know.
+        endpoint("mistral", .chatCompletions, "https://api.mistral.ai/v1", Profile(
+            strictUnknownFields: true, chatStreamUsage: false, transforms: base + [.mistralToolIDs],
+        )),
+    ])
 
-    public static let xAI = declaringProtocolGaps(Provider(
-        id: "xai",
-        apiKeyEnvironmentVariables: ["XAI_API_KEY"],
-        endpoints: [
-            Endpoint(system: "xai", apiProtocol: .responses, baseURL: "https://api.x.ai/v1", defaults: Profile(transforms: base)),
-            Endpoint(system: "xai", apiProtocol: .chatCompletions, baseURL: "https://api.x.ai/v1", defaults: Profile(transforms: base)),
-        ],
-        models: [
-            // Grok 4 reasons always and takes no effort, penalties or stop.
-            ModelRule(.prefix("grok-4"), Profile(
-                supportsReasoning: true,
-                unsupportedParameters: [.presencePenalty, .frequencyPenalty, .stop],
-                reasoningControl: .uncontrolled,
-            )),
-        ],
-    ))
+    public static let xAI = vendor("xai", environment: ["XAI_API_KEY"], [
+        endpoint("xai", .responses, "https://api.x.ai/v1"),
+        endpoint("xai", .chatCompletions, "https://api.x.ai/v1"),
+    ], models: [
+        // Grok 4 reasons always and takes no effort, penalties or stop.
+        ModelRule(.prefix("grok-4"), Profile(
+            supportsReasoning: true,
+            unsupportedParameters: [.presencePenalty, .frequencyPenalty, .stop],
+            reasoningControl: .uncontrolled,
+        )),
+    ])
 
     public static let together = vendor("together", environment: ["TOGETHER_API_KEY"], [
         endpoint("together", .chatCompletions, "https://api.together.xyz/v1"),
@@ -639,21 +616,12 @@ public enum Presets {
 
     // MARK: - Local servers
 
-    public static let lmStudio = declaringProtocolGaps(Provider(
-        id: "lmstudio",
-        endpoints: [
-            Endpoint(system: "lmstudio", apiProtocol: .chatCompletions, baseURL: "http://localhost:1234/v1",
-                     auth: .none, defaults: Profile(maxTokensField: .maxTokens, transforms: base)),
-        ],
-    ))
+    public static let lmStudio = vendor("lmstudio", [
+        endpoint("lmstudio", .chatCompletions, "http://localhost:1234/v1", auth: EndpointAuth.none),
+    ])
 
-    public static let ollama = declaringProtocolGaps(Provider(
-        id: "ollama",
-        endpoints: [
-            Endpoint(system: "ollama", apiProtocol: .chatCompletions, baseURL: "http://localhost:11434/v1",
-                     auth: .none, defaults: Profile(transforms: base + [.flattenTextParts])),
-            Endpoint(system: "ollama", apiProtocol: .anthropicMessages, baseURL: "http://localhost:11434",
-                     auth: .none, defaults: Profile(acceptsUnsignedThinking: true, transforms: base)),
-        ],
-    ))
+    public static let ollama = vendor("ollama", [
+        endpoint("ollama", .chatCompletions, "http://localhost:11434/v1", Profile(transforms: base + [.flattenTextParts]), auth: EndpointAuth.none),
+        endpoint("ollama", .anthropicMessages, "http://localhost:11434", Profile(acceptsUnsignedThinking: true), auth: EndpointAuth.none),
+    ])
 }

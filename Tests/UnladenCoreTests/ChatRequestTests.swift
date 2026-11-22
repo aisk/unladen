@@ -274,7 +274,7 @@ private func parseFixture(_ name: String) throws -> WireDecoded<WireRequest> {
                 ["role": "tool", "content": "ok", "tool_call_id": "toolu_1"],
                 ["role": "user", "content": "Thanks"],
             ],
-            "max_completion_tokens": 100,
+            "max_tokens": 100,
         ]
         #expect(built.json == expected)
         let codes = built.warnings.map(\.code)

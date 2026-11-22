@@ -33,7 +33,8 @@
     /// The key for ``WireRequest/maxOutputTokens`` (`max_tokens` or
     /// `max_completion_tokens`). When set it wins over the client's own
     /// spelling, since the upstream accepts only this one; `nil` keeps the
-    /// same-protocol spelling, else `max_completion_tokens`.
+    /// same-protocol spelling, else `max_tokens`, the one OpenAI-compatible
+    /// servers read (several ignore `max_completion_tokens`).
     public var maxTokensKey: String?
     /// Systems whose dialect replay data (Gemini `extra_content`
     /// signatures, OpenRouter `reasoning_details`) the upstream accepts
@@ -281,7 +282,7 @@ extension ChatCompletionsCodec {
         if let value = request.frequencyPenalty { object["frequency_penalty"] = .number(value) }
         if let value = request.maxOutputTokens {
             let spelling = spellings[.maxOutputTokens].flatMap { ["max_tokens", "max_completion_tokens"].contains($0) ? $0 : nil }
-            object[options.maxTokensKey ?? spelling ?? "max_completion_tokens"] = .number(JSONNumber(value))
+            object[options.maxTokensKey ?? spelling ?? "max_tokens"] = .number(JSONNumber(value))
         }
         if let value = request.candidateCount { object["n"] = .number(JSONNumber(value)) }
         if let value = request.parallelToolCalls { object["parallel_tool_calls"] = .bool(value) }
