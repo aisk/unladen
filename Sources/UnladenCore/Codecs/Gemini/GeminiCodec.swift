@@ -660,6 +660,11 @@ extension GeminiCodec {
         } else if reasoning.enabled != nil {
             warnings.append(WireWarning(.droppedField, "Gemini thinking has no on/off switch", path: "thinkingConfig"))
         }
+        // Gemini refuses a budget and a level together; the level is kept.
+        if budget != nil, level != nil {
+            warnings.append(WireWarning(.adjusted, "thinking budget left out beside thinkingLevel `\(level ?? "")`", path: "thinkingConfig"))
+            budget = nil
+        }
         if let visible { object["includeThoughts"] = .bool(visible) }
         if let budget { object["thinkingBudget"] = .number(JSONNumber(budget)) }
         if let level { object["thinkingLevel"] = .string(level) }

@@ -45,6 +45,16 @@ private func toolCalls(_ parts: [WirePart]) -> [WireToolCall] {
         #expect(GeminiCodec.buildRequest(blank).json["systemInstruction"] == nil)
     }
 
+    @Test func aLevelAndABudgetAreNotWrittenTogether() {
+        var request = WireRequest(model: "gemini-3-flash", messages: [
+            WireMessage(role: .user, parts: [.text(WireText("hi"))], contentForm: .string),
+        ], source: .anthropicMessages)
+        request.reasoning = WireReasoningConfig(effort: "high", budgetTokens: 8000, enabled: true)
+        let built = GeminiCodec.buildRequest(request)
+        #expect(built.json["generationConfig"]?["thinkingConfig"] == ["includeThoughts": true, "thinkingLevel": "high"])
+        #expect(built.warnings.contains { $0.code == .adjusted && $0.path == "thinkingConfig" })
+    }
+
     @Test func claudeCodeRequestToGemini() throws {
         let claude = try AnthropicMessagesCodec.parseRequest(Fixtures.bytes("Anthropic/requests/claude_code.json")).value
         let built = GeminiCodec.buildRequest(claude)
