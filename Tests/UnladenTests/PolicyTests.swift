@@ -164,6 +164,14 @@ import Unladen
         _ = try none.model("ollama/llama3.2")
     }
 
+    @Test func providerServingWithoutAKeyIsCalledWithout() async throws {
+        let provider = FakeProvider(.json(#"{"id":"c","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}]}"#))
+        let client = ModelClient(transport: provider.transport, environment: [:])
+        let model = try client.model("kilo/kilo-auto/free")
+        _ = try await model.generate("Hi")
+        #expect(provider.requests.first?.headerFields[.authorization] == nil)
+    }
+
     @Test func invalidModelReferences() {
         let client = ModelClient(transport: FakeProvider().transport, environment: [:])
         #expect(throws: UnladenError.self) { try client.model("no-slash") }

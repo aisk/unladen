@@ -120,14 +120,16 @@ public struct ModelClient: Sendable {
     }
 
     /// The key for `target`: ``apiKeys`` by provider id, then the provider's
-    /// environment variables; `nil` for endpoints without auth.
+    /// environment variables; `nil` for endpoints without auth and for
+    /// providers that serve without a key (``Provider/servesWithoutKey``).
     func apiKey(for target: ResolvedModel) throws(UnladenError) -> String? {
         if let key = apiKeys[target.provider], !key.isEmpty { return key }
-        let variables = registry[target.provider]?.apiKeyEnvironmentVariables ?? []
+        let provider = registry[target.provider]
+        let variables = provider?.apiKeyEnvironmentVariables ?? []
         for name in variables {
             if let value = lookup(name), !value.isEmpty { return value }
         }
-        if target.endpoint.auth == .none { return nil }
+        if target.endpoint.auth == .none || provider?.servesWithoutKey == true { return nil }
         throw .missingAPIKey(provider: target.provider, environmentVariables: variables)
     }
 
