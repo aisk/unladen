@@ -68,7 +68,8 @@ const BRANDS = {
 };
 let counter = 0;
 // The saves to the file: the last one queued, how many are queued or
-// running, and a count of failures, which drop the saves queued before them.
+// running, and a count of failures, each of which drops the saves queued
+// behind the one that failed.
 let saveQueue = Promise.resolve();
 let pendingSaves = 0;
 let saveRound = 0;
