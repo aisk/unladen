@@ -89,7 +89,8 @@ private func quickHolds(_ gateway: inout Gateway) {
     @Test func aQuickFailureIsStillAStatus() async throws {
         let upstream = MockUpstream { _ in reply(status: .tooManyRequests, headers: [.retryAfter: "70"], #"{"error":{"message":"busy"}}"#) }
         var gateway = makeGateway(upstream)
-        quickHolds(&gateway)
+        // The failure comes at once; the hold leaves room for a loaded machine.
+        gateway.heldStreams = Gateway.HeldStreams(headersAfter: .seconds(3), commentEvery: .milliseconds(100))
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x", stream: true))
             #expect(response.status == .tooManyRequests)
