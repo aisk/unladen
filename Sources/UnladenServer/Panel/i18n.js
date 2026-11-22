@@ -347,6 +347,7 @@ const TRANSLATIONS = {
       '401: trying again with a refreshed token': '401：用刷新后的令牌重试',
       'failed before any content': '在任何内容之前失败',
       'stream broke off': '流中途断开',
+      '403: suspended': '403：账号被停用',
       'Show all recent': '显示全部最近请求',
       'No request recorded since the gateway started.': '网关启动以来还没有请求。',
       'Sessions': '会话',
@@ -547,6 +548,7 @@ const TRANSLATIONS = {
       [/^(.+) is a provider: give this account another name\.$/, '$1 是一个 provider：请给这个账号换个名字。'],
       [/^(\S+) endpoint unreachable$/, '$1 端点无法连接'],
       [/^(.+) failing$/, '$1 连续失败'],
+      [/^(.+) rate limited for (.+)$/, '$1 在 $2 上被限流'],
     ],
   },
 };
