@@ -271,13 +271,16 @@ extension Gateway {
 
     /// Reads `events` up to the first event worth sending (content, or the
     /// finish of an empty reply): an error event, a stream that ends or
-    /// breaks off before it, is a failure.
+    /// breaks off before it, is a failure. So is a finish without a reason
+    /// before any content (a Chat stream of a role chunk and `[DONE]`): an
+    /// empty reply the upstream meant says why it stopped.
     static func prime(_ events: UpstreamEventStream) async throws -> PrimeOutcome {
         var iterator = events.makeAsyncIterator()
         var buffered: [WireEvent] = []
         do {
             while let event = try await iterator.next() {
                 if case .error(let error) = event { return .failed(error.message) }
+                if case .finish(let finish) = event, finish.reason == nil { return .failed("the stream ended without content") }
                 buffered.append(event)
                 if event.startsTheReply { return .ready(PrimedEvents(buffered: buffered, iterator: iterator)) }
             }

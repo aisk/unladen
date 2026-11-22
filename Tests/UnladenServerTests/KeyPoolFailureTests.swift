@@ -51,6 +51,31 @@ private func keyScope(_ secret: String) -> HealthScope { .key(provider: "togethe
         #expect(upstream.requests.count == 2)
     }
 
+    @Test func doneWithoutContentOrReasonMovesToTheNextKey() async throws {
+        let upstream = MockUpstream([
+            { _ in chatStream([roleChunk]) },
+            { _ in chatStream([roleChunk, textChunk, stopChunk]) },
+        ])
+        try await makeApp(makeGateway(upstream, keys: keys)).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x", stream: true))
+            #expect(response.status == .ok)
+            #expect(decodeStream(response.body, as: .chatCompletions).text == "Hi")
+        }
+        #expect(upstream.requests.map { $0.header("authorization") } == ["Bearer k1", "Bearer k2"])
+    }
+
+    @Test func anEmptyReplyThatSaysWhyItStoppedIsAnswered() async throws {
+        let upstream = MockUpstream { _ in chatStream([roleChunk, stopChunk]) }
+        try await makeApp(makeGateway(upstream, keys: keys)).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x", stream: true))
+            #expect(response.status == .ok)
+            let stream = decodeStream(response.body, as: .chatCompletions)
+            #expect(stream.text.isEmpty)
+            #expect(stream.finish?.reason?.unified == .stop)
+        }
+        #expect(upstream.requests.count == 1)
+    }
+
     @Test func everyKeyFailingBeforeContentIsAnHTTPError() async throws {
         let upstream = MockUpstream { _ in chatStream([roleChunk, errorChunk], done: false) }
         try await makeApp(makeGateway(upstream, keys: keys)).test(.router) { client in
