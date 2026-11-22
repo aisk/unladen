@@ -350,15 +350,16 @@ private func canonical(_ value: JSONValue) -> JSONValue {
     }
 
     @Test func keyFailoverStaysOnTheRoutesModel() async throws {
-        // Every key fails: the client gets the error, no other provider is tried.
+        // Every key fails: the client gets the error, no other provider is
+        // tried (the last key is, again).
         let upstream = MockUpstream { _ in reply(status: .serviceUnavailable, #"{"error":{"message":"down"}}"#) }
         let gateway = makeGateway(upstream, keys: ["together": ["k1", "k2"], "anthropic": ["a"], "openai": ["o"]])
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
             #expect(response.status == .serviceUnavailable)
         }
-        #expect(upstream.requests.map(\.path) == ["/v1/chat/completions", "/v1/chat/completions"])
-        #expect(upstream.requests.map { $0.header("authorization") } == ["Bearer k1", "Bearer k2"])
+        #expect(Set(upstream.requests.map(\.path)) == ["/v1/chat/completions"])
+        #expect(upstream.requests.map { $0.header("authorization") } == ["Bearer k1", "Bearer k2", "Bearer k2", "Bearer k2"])
     }
 
     @Test func orderedPoolStaysOnTheFirstHealthyKey() async throws {

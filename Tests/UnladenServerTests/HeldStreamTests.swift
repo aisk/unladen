@@ -87,13 +87,13 @@ private func quickHolds(_ gateway: inout Gateway) {
     }
 
     @Test func aQuickFailureIsStillAStatus() async throws {
-        let upstream = MockUpstream { _ in reply(status: .tooManyRequests, headers: [.retryAfter: "7"], #"{"error":{"message":"busy"}}"#) }
+        let upstream = MockUpstream { _ in reply(status: .tooManyRequests, headers: [.retryAfter: "70"], #"{"error":{"message":"busy"}}"#) }
         var gateway = makeGateway(upstream)
         quickHolds(&gateway)
         try await makeApp(gateway).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x", stream: true))
             #expect(response.status == .tooManyRequests)
-            #expect(response.headers[.retryAfter] == "7")
+            #expect(response.headers[.retryAfter] == "70")
         }
     }
 

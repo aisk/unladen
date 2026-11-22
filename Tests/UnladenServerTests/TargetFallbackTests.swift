@@ -25,7 +25,7 @@ private func provider(_ hit: UpstreamHit) -> String {
 private func primaryRateLimited() -> MockUpstream {
     MockUpstream { hit in
         provider(hit) == "together"
-            ? reply(status: .tooManyRequests, headers: [.retryAfter: "7"], #"{"error":{"message":"rate limited"}}"#)
+            ? reply(status: .tooManyRequests, headers: [.retryAfter: "70"], #"{"error":{"message":"rate limited"}}"#)
             : reply(fixture("Chat/responses/text.json"))
     }
 }
@@ -66,7 +66,7 @@ private let session: HTTPFields = [HTTPField.Name("x-session-id")!: "s-1"]
         try await makeApp(fallbackGateway(upstream)).test(.router) { client in
             let response = try await client.post("/v1/chat/completions", chat(long))
             #expect(response.status == .tooManyRequests)
-            #expect(response.headers[.retryAfter] == "7")
+            #expect(response.headers[.retryAfter] == "70")
         }
         #expect(upstream.requests.map(provider) == ["together"])
     }

@@ -31,6 +31,9 @@ struct Gateway: Sendable {
     var quotas = QuotaReader()
     /// The target that last answered each conversation.
     var placements = Placements()
+    /// Waits before a candidate is tried again: a sleep, which tests
+    /// replace.
+    var pause: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
 
     init(configuration: GatewayConfiguration, transport: any HTTPTransport) {
         self.store = ConfigurationStore(configuration)

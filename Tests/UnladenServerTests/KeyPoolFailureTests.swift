@@ -122,10 +122,89 @@ private func keyScope(_ secret: String) -> HealthScope { .key(provider: "togethe
             let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
             #expect(response.status == .badGateway)
         }
-        #expect(upstream.requests.count == 1)
+        // The other keys are not tried; the first is, again, as nothing else is left.
+        #expect(upstream.requests.map { $0.header("authorization") } == ["Bearer k1", "Bearer k1", "Bearer k1"])
         let target = try ProviderRegistry.builtIn.resolve(chatOnlyModel)
         let candidate = Candidate(reference: chatOnlyModel, target: target, apiKey: "k2", keyName: "k2")
         #expect(gateway.health.snapshot().isCooling(candidate.endpointScope))
+    }
+
+    @Test func theLastCandidateIsTriedAgainAfterAServerError() async throws {
+        let upstream = MockUpstream([
+            { _ in reply(status: .serviceUnavailable, #"{"error":{"message":"down"}}"#) },
+            { _ in reply(status: .init(code: 529), #"{"error":{"message":"overloaded"}}"#) },
+            { _ in reply(fixture("Chat/responses/text.json")) },
+        ])
+        let pauses = Locked<[Duration]>([])
+        var gateway = makeGateway(upstream, keys: ["together": ["k1"]])
+        gateway.pause = { wait in pauses.withLock { $0.append(wait) } }
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+            #expect(response.status == .ok)
+        }
+        #expect(upstream.requests.count == 3)
+        #expect(pauses.current == [.seconds(1), .seconds(2)])
+        let record = try #require(gateway.activity.snapshot().recent.first)
+        #expect(record.attempts.map(\.outcome) == ["503", "529", "ok"])
+    }
+
+    @Test func theLastCandidateIsTriedTwiceMoreAtMost() async throws {
+        let upstream = MockUpstream { _ in reply(status: .badGateway, #"{"error":{"message":"down"}}"#) }
+        try await makeApp(makeGateway(upstream, keys: ["together": ["k1"]])).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+            #expect(response.status == .badGateway)
+        }
+        #expect(upstream.requests.count == 3)
+    }
+
+    @Test func aTryAgainWaitsAsAskedUpToALimit() async throws {
+        let pauses = Locked<[Duration]>([])
+        let upstream = MockUpstream([
+            { _ in reply(status: .serviceUnavailable, headers: [.retryAfter: "5"], #"{"error":{"message":"down"}}"#) },
+            { _ in reply(status: .tooManyRequests, headers: [.retryAfter: "3"], #"{"error":{"message":"busy"}}"#) },
+            { _ in reply(status: .serviceUnavailable, headers: [.retryAfter: "30"], #"{"error":{"message":"down"}}"#) },
+        ])
+        var gateway = makeGateway(upstream, keys: ["together": ["k1"]])
+        gateway.pause = { wait in pauses.withLock { $0.append(wait) } }
+        try await makeApp(gateway).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+            #expect(response.status == .serviceUnavailable)
+        }
+        // Two tries more at most: the third reply ends the request.
+        #expect(pauses.current == [.seconds(5), .seconds(3)])
+        #expect(upstream.requests.count == 3)
+
+        let long = MockUpstream { _ in reply(status: .serviceUnavailable, headers: [.retryAfter: "30"], #"{"error":{"message":"down"}}"#) }
+        try await makeApp(makeGateway(long, keys: ["together": ["k1"]])).test(.router) { client in
+            _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+        }
+        #expect(long.requests.count == 1)
+    }
+
+    @Test func aRateLimitWithoutAWaitOrAClientErrorIsNotTriedAgain() async throws {
+        let limited = MockUpstream { _ in reply(status: .tooManyRequests, #"{"error":{"message":"busy"}}"#) }
+        try await makeApp(makeGateway(limited, keys: ["together": ["k1"]])).test(.router) { client in
+            _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+        }
+        #expect(limited.requests.count == 1)
+        let refused = MockUpstream { _ in reply(status: .forbidden, #"{"error":{"message":"no"}}"#) }
+        try await makeApp(makeGateway(refused, keys: ["together": ["k1"]])).test(.router) { client in
+            _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+        }
+        #expect(refused.requests.count == 1)
+    }
+
+    @Test func aStreamEndingEmptyIsTriedAgain() async throws {
+        let upstream = MockUpstream([
+            { _ in chatStream([roleChunk]) },
+            { _ in chatStream([roleChunk, textChunk, stopChunk]) },
+        ])
+        try await makeApp(makeGateway(upstream, keys: ["together": ["k1"]])).test(.router) { client in
+            let response = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x", stream: true))
+            #expect(response.status == .ok)
+            #expect(decodeStream(response.body, as: .chatCompletions).text == "Hi")
+        }
+        #expect(upstream.requests.count == 2)
     }
 
     @Test func repeatedRefusalsDisableAKeyUntilReload() async throws {

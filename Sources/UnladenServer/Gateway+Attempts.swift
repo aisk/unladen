@@ -50,6 +50,14 @@ extension Gateway {
         }
     }
 
+    /// The pauses before the last candidate is tried again, one per try.
+    static let retryPauses: [Duration] = [.seconds(1), .seconds(2)]
+    /// The longest wait an upstream may ask for before the last candidate
+    /// is tried again.
+    static let longestRetryWait: Duration = .seconds(10)
+    /// What ``prime(_:)`` says of a stream that ends before any content.
+    static let endedWithoutContent = "the stream ended without content"
+
     /// Statuses after which the next candidate is tried: rate limits,
     /// server errors, timeouts, key problems and a model the key cannot
     /// reach (another key may work). Other 4xx are the request's fault and
@@ -78,6 +86,13 @@ extension Gateway {
     /// Failures are recorded against their scope (``HealthScope``). An
     /// unreachable address is not tried again with the request's other
     /// keys.
+    ///
+    /// The last candidate left is tried again, up to ``retryPauses``'s
+    /// count of times, when it fails in a way that may pass: a 5xx, a
+    /// connection failure, a stream that ends without content, or a 429
+    /// whose wait is short. It goes after the pause ``retryPauses`` gives,
+    /// or the wait the upstream asks for, up to ``longestRetryWait`` (a
+    /// longer one ends the request).
     func attempt(
         _ request: WireRequest,
         decodeWarnings: [WireWarning] = [],
@@ -97,7 +112,24 @@ extension Gateway {
         // Sign-in tokens OpenAI turned away: the account is tried once more
         // with a refreshed one.
         var rejected: [String: String] = [:]
+        var retries = 0
+        var pending: Duration?
+        /// Puts `candidate` back to be tried again after a pause, when
+        /// nothing else would be tried.
+        func tryAgain(_ candidate: Candidate, wait: Duration? = nil) {
+            guard retries < Self.retryPauses.count, remaining.allSatisfy({ unreachable.contains($0.endpointID) }) else { return }
+            let wait = wait ?? Self.retryPauses[retries]
+            guard wait <= Self.longestRetryWait else { return }
+            retries += 1
+            pending = wait
+            unreachable.remove(candidate.endpointID)
+            remaining.insert(candidate, at: remaining.startIndex)
+        }
         while let candidate = remaining.popFirst() {
+            if let wait = pending {
+                pending = nil
+                try await self.pause(wait)
+            }
             try Task.checkCancellation()
             let began = ContinuousClock.now
             var outcome = "skipped"
@@ -166,6 +198,7 @@ extension Gateway {
                     health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "failed before any content")
                     last = .gateway(status: 502, message: "\(candidate.reference) failed before any content: \(message)", candidate: candidate)
                     outcome = "failed before any content: \(message)"
+                    if message == Self.endedWithoutContent { tryAgain(candidate) }
                     continue
                 case (.events, nil):
                     continue // not reached: an event stream is always primed
@@ -196,6 +229,11 @@ extension Gateway {
                     guard Self.isRetryable(status) else { return .failure(.upstream(candidate, http)) }
                     recordFailure(http, of: candidate, log: log)
                     last = .upstream(candidate, http)
+                    if status >= 500 {
+                        tryAgain(candidate, wait: HealthStore.retryAfter(http.retryAfter))
+                    } else if status == 429, let wait = HealthStore.retryAfter(http.headerFields) {
+                        tryAgain(candidate, wait: wait)
+                    }
                 case .decoding(let decoding, _):
                     health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, reason: "reply cannot be decoded")
                     last = .gateway(status: 502, message: "\(candidate.reference) sent a reply that cannot be decoded: \(decoding)", candidate: candidate)
@@ -223,6 +261,7 @@ extension Gateway {
                 health.recordFailure(candidate.endpointScope, base: HealthStore.failureCooldown, reason: "unreachable")
                 unreachable.insert(candidate.endpointID)
                 last = .gateway(status: 502, message: "\(candidate.reference) is unreachable: \(error)", candidate: candidate)
+                tryAgain(candidate)
             }
         }
         if let last { return .failure(last) }
@@ -332,7 +371,7 @@ extension Gateway {
         do {
             while let event = try await iterator.next() {
                 if case .error(let error) = event { return .failed(error.message) }
-                if case .finish(let finish) = event, finish.reason == nil { return .failed("the stream ended without content") }
+                if case .finish(let finish) = event, finish.reason == nil { return .failed(Self.endedWithoutContent) }
                 buffered.append(event)
                 if event.startsTheReply { return .ready(PrimedEvents(buffered: buffered, iterator: iterator)) }
             }
@@ -340,7 +379,7 @@ extension Gateway {
             if Task.isCancelled || error is CancellationError { throw CancellationError() }
             return .failed("the stream broke off: \(error)")
         }
-        return .failed("the stream ended without content")
+        return .failed(Self.endedWithoutContent)
     }
 }
 

@@ -147,7 +147,10 @@ func makeGateway(
     configuration.keyPools = upstreamKeyPools(keys ?? Dictionary(
         uniqueKeysWithValues: configuration.registry.providers.keys.map { ($0, ["key-\($0)"]) },
     ), strategy: strategy)
-    return Gateway(configuration: configuration, transport: upstream.transport)
+    var gateway = Gateway(configuration: configuration, transport: upstream.transport)
+    // A candidate tried again goes at once.
+    gateway.pause = { _ in }
+    return gateway
 }
 
 /// Pools of unnamed keys (named by fingerprint).
