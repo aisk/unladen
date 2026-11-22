@@ -255,6 +255,22 @@ private let streamFixtures = (try? Fixtures.names("Responses/streams", extension
         #expect(responsesPayloads(elements).last?.name == "response.incomplete")
     }
 
+    @Test func messageItemWithoutDeltasKeepsItsText() throws {
+        let frames = [
+            #"{"type":"response.created","sequence_number":0,"response":{"id":"resp_1","model":"m","status":"in_progress","output":[]}}"#,
+            #"{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","status":"in_progress","content":[]}}"#,
+            #"{"type":"response.output_item.done","sequence_number":2,"output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello.","annotations":[]}]}}"#,
+            #"{"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","model":"m","status":"completed","output":[]}}"#,
+        ]
+        let (events, _) = try decodeResponsesStream(frames.map { .event(SSEEvent(data: $0)) })
+        #expect(checkEventSequence(events) == [])
+        let text = events.compactMap { event -> String? in
+            if case .textDelta(_, let delta) = event { return delta }
+            return nil
+        }.joined()
+        #expect(text == "Hello.")
+    }
+
     @Test func invalidJSONInStreamThrows() {
         var decoder = ResponsesStreamDecoder()
         #expect(throws: WireDecodingError.self) {

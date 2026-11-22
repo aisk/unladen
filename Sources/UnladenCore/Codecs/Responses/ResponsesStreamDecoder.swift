@@ -7,7 +7,8 @@
 /// - `message` items: each `output_text`/`refusal` content part is a block
 ///   (`content_part.added` → `output_text.delta`/`refusal.delta` →
 ///   `content_part.done`, whose non-default part keys, e.g. annotations,
-///   arrive in the block's end);
+///   arrive in the block's end); an item whose parts never streamed is
+///   read whole from `output_item.done`;
 /// - `reasoning` items: each summary part (`reasoning_summary_part.added`,
 ///   `reasoning_summary_text.delta`) and each `reasoning_text` content part
 ///   is a block with the item id and its index (see ``WireReasoning``). A
@@ -314,6 +315,12 @@
             }
 
         case "message" where state.type == "message":
+            if state.blocks.isEmpty {
+                // No parts streamed: the done item carries the text.
+                let parts = try ResponsesDecode.outputItem(.object(item), path: "item", origin: origin, warnings: &warnings)
+                emitWhole(parts, into: &events)
+                return
+            }
             close(index, state, late: nil, into: &events)
 
         default:
