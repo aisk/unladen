@@ -6,6 +6,12 @@
 // name routes to a list of models tried in order; each model's provider's
 // key pool supplies its candidates.
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
+import HTTPTypes
 import NIOConcurrencyHelpers
 @_spi(Wire) import UnladenCore
 
@@ -268,10 +274,100 @@ final class HealthStore: Sendable {
         }
     }
 
-    /// A `Retry-After` in seconds (HTTP dates are not parsed).
-    static func retryAfter(_ value: String?) -> Duration? {
-        guard let value, let seconds = Int(value.trimmingBlanks()), seconds >= 0 else { return nil }
-        return .seconds(seconds)
+    /// A `Retry-After`: seconds, or an HTTP date (`nil` once it has passed).
+    static func retryAfter(_ value: String?, now: Date = Date()) -> Duration? {
+        guard let value = value?.trimmingBlanks(), !value.isEmpty else { return nil }
+        if let seconds = Int(value) { return seconds >= 0 ? .seconds(seconds) : nil }
+        guard let date = httpDate(value) else { return nil }
+        return until(date, now: now)
+    }
+
+    /// How long an error reply asks to wait: its `Retry-After`, else its
+    /// rate-limit reset headers (`x-ratelimit-reset-requests`/`-tokens`,
+    /// `anthropic-ratelimit-*-reset`…). Of those, the limits whose
+    /// remaining count is 0 decide (the longest of them); when none says
+    /// so, the soonest reset.
+    static func retryAfter(_ headers: HTTPFields, now: Date = Date()) -> Duration? {
+        if let value = headers[.retryAfter] { return retryAfter(value, now: now) }
+        var exhausted: [Duration] = []
+        var other: [Duration] = []
+        for field in headers {
+            let name = field.name.canonicalName
+            let remaining: String
+            if name.hasPrefix("x-ratelimit-reset") {
+                remaining = "x-ratelimit-remaining" + name.dropFirst("x-ratelimit-reset".count)
+            } else if name.hasPrefix("anthropic-ratelimit-"), name.hasSuffix("-reset") {
+                remaining = String(name.dropLast("reset".count)) + "remaining"
+            } else {
+                continue
+            }
+            guard let wait = reset(field.value, now: now) else { continue }
+            let left = HTTPField.Name(remaining).flatMap { headers[$0] }?.trimmingBlanks()
+            if left == "0" { exhausted.append(wait) } else { other.append(wait) }
+        }
+        return exhausted.max() ?? other.min()
+    }
+
+    /// A rate-limit reset: a duration (`1s`, `6m0s`, `250ms`), an RFC 3339
+    /// time, Unix seconds or milliseconds, or seconds to wait.
+    static func reset(_ value: String, now: Date) -> Duration? {
+        let value = value.trimmingBlanks()
+        if let number = Double(value), number >= 0 {
+            if number > 1e11 { return until(Date(timeIntervalSince1970: number / 1000), now: now) }
+            if number > 1e8 { return until(Date(timeIntervalSince1970: number), now: now) }
+            return .milliseconds(Int64((number * 1000).rounded()))
+        }
+        if let milliseconds = QuotaReader.milliseconds(rfc3339: value) {
+            return until(Date(timeIntervalSince1970: Double(milliseconds) / 1000), now: now)
+        }
+        return goDuration(value)
+    }
+
+    /// The time from `now` to `date`; `nil` once it has passed.
+    static func until(_ date: Date, now: Date) -> Duration? {
+        let seconds = date.timeIntervalSince(now)
+        guard seconds > 0 else { return nil }
+        return .milliseconds(Int64((seconds * 1000).rounded(.up)))
+    }
+
+    /// A duration as Go writes one: numbers each with a unit (`h`, `m`,
+    /// `s`, `ms`, `us`/`µs`, `ns`), as in `1h2m3.5s`.
+    static func goDuration(_ text: String) -> Duration? {
+        let units: [(String, Double)] = [("ms", 1e-3), ("us", 1e-6), ("µs", 1e-6), ("ns", 1e-9), ("h", 3600), ("m", 60), ("s", 1)]
+        var rest = Substring(text)
+        var seconds = 0.0
+        guard !rest.isEmpty else { return nil }
+        while !rest.isEmpty {
+            let number = rest.prefix { $0.isNumber || $0 == "." }
+            guard let value = Double(number) else { return nil }
+            rest = rest.dropFirst(number.count)
+            guard let (unit, scale) = units.first(where: { rest.hasPrefix($0.0) }) else { return nil }
+            rest = rest.dropFirst(unit.count)
+            seconds += value * scale
+        }
+        return .milliseconds(Int64((seconds * 1000).rounded(.up)))
+    }
+
+    /// An HTTP date in its preferred form, IMF-fixdate
+    /// (`Sun, 06 Nov 1994 08:49:37 GMT`).
+    static func httpDate(_ text: String) -> Date? {
+        let parts = text.split(separator: " ")
+        guard parts.count == 6, parts[0].hasSuffix(","), parts[5] == "GMT",
+              let day = Int(parts[1]), (1...31).contains(day),
+              let month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].firstIndex(of: String(parts[2])),
+              let year = Int(parts[3]), year >= 1970
+        else { return nil }
+        let time = parts[4].split(separator: ":").compactMap { Int($0) }
+        guard time.count == 3, (0..<24).contains(time[0]), (0..<60).contains(time[1]), (0...60).contains(time[2]) else { return nil }
+        // Days since 1970-01-01 of a proleptic Gregorian date.
+        let y = month < 2 ? year - 1 : year
+        let era = y / 400
+        let yearOfEra = y - era * 400
+        let shifted = (month + 10) % 12
+        let dayOfYear = (153 * shifted + 2) / 5 + day - 1
+        let dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear
+        let days = era * 146_097 + dayOfEra - 719_468
+        return Date(timeIntervalSince1970: Double(days * 86400 + time[0] * 3600 + time[1] * 60 + time[2]))
     }
 }
 

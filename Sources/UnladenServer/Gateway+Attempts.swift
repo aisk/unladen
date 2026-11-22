@@ -245,7 +245,9 @@ extension Gateway {
     /// at its address.
     func recordFailure(_ http: UpstreamHTTPError, of candidate: Candidate, log: RequestLog) {
         let status = http.status.code
-        let retryAfter = http.retryAfter
+        // A rate limit's reset headers say when it lifts; other errors
+        // carry them too, about limits that are not the matter.
+        let retryAfter = status == 429 ? HealthStore.retryAfter(http.headerFields) : HealthStore.retryAfter(http.retryAfter)
         let key = candidate.keyScope ?? candidate.modelScope
         let reason = "\(status)"
         switch status {
@@ -253,7 +255,7 @@ extension Gateway {
             health.recordFailure(key, base: HealthStore.suspendedCooldown, reason: "403: suspended")
         case 429 where Self.names(http.body, model: candidate.target.model):
             let scope = candidate.keyModelScope ?? key
-            health.recordFailure(scope, base: HealthStore.rateLimitCooldown, retryAfter: HealthStore.retryAfter(retryAfter), reason: reason)
+            health.recordFailure(scope, base: HealthStore.rateLimitCooldown, retryAfter: retryAfter, reason: reason)
         case 401:
             if let scope = candidate.keyScope, health.recordUnauthorized(scope) {
                 log.emit(
@@ -264,10 +266,10 @@ extension Gateway {
             health.recordFailure(key, base: HealthStore.maxCooldown, reason: reason)
         case 402: health.recordFailure(key, base: HealthStore.paymentCooldown, reason: reason)
         case 403: health.recordFailure(key, base: HealthStore.maxCooldown, reason: reason)
-        case 429: health.recordFailure(key, base: HealthStore.rateLimitCooldown, retryAfter: HealthStore.retryAfter(retryAfter), reason: reason)
+        case 429: health.recordFailure(key, base: HealthStore.rateLimitCooldown, retryAfter: retryAfter, reason: reason)
         case 404: health.recordFailure(candidate.modelScope, base: HealthStore.maxCooldown, reason: reason)
         default:
-            health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, retryAfter: HealthStore.retryAfter(retryAfter), reason: reason)
+            health.recordFailure(candidate.modelScope, base: HealthStore.failureCooldown, retryAfter: retryAfter, reason: reason)
         }
     }
 

@@ -1,3 +1,4 @@
+import Foundation
 import HTTPTypes
 import Hummingbird
 import HummingbirdTesting
@@ -261,6 +262,58 @@ private func keyScope(_ secret: String) -> HealthScope { .key(provider: "togethe
         health.recordFailure(scope, base: .seconds(10), retryAfter: .seconds(1000))
         let capped = health.snapshot().cooldowns[scope]! - ContinuousClock.now
         #expect(capped <= HealthStore.maxCooldown && capped > .seconds(290))
+    }
+
+    @Test func waitsUpstreamsAskFor() throws {
+        let now = Date(timeIntervalSince1970: 784_111_717) // Sun, 06 Nov 1994 08:48:37 GMT
+        func fields(_ pairs: [String: String]) -> HTTPFields {
+            var fields = HTTPFields()
+            for (name, value) in pairs { fields[HTTPField.Name(name)!] = value }
+            return fields
+        }
+        #expect(HealthStore.retryAfter("120", now: now) == .seconds(120))
+        #expect(HealthStore.retryAfter("Sun, 06 Nov 1994 08:49:37 GMT", now: now) == .seconds(60))
+        #expect(HealthStore.retryAfter("Sun, 06 Nov 1994 08:47:37 GMT", now: now) == nil)
+        #expect(HealthStore.retryAfter("Sunday, 06-Nov-94 08:49:37 GMT", now: now) == nil)
+        #expect(HealthStore.httpDate("Thu, 29 Feb 2024 23:59:59 GMT") == Date(timeIntervalSince1970: 1_709_251_199))
+
+        #expect(HealthStore.goDuration("1s") == .seconds(1))
+        #expect(HealthStore.goDuration("6m0s") == .seconds(360))
+        #expect(HealthStore.goDuration("250ms") == .milliseconds(250))
+        #expect(HealthStore.goDuration("1h2m3.5s") == .milliseconds(3_723_500))
+        #expect(HealthStore.goDuration("soon") == nil)
+
+        // Retry-After wins over the reset headers.
+        #expect(HealthStore.retryAfter(fields(["retry-after": "7", "x-ratelimit-reset-tokens": "6m0s"]), now: now) == .seconds(7))
+        // The exhausted limit decides.
+        #expect(HealthStore.retryAfter(fields([
+            "x-ratelimit-remaining-requests": "99", "x-ratelimit-reset-requests": "250ms",
+            "x-ratelimit-remaining-tokens": "0", "x-ratelimit-reset-tokens": "6m0s",
+        ]), now: now) == .seconds(360))
+        // Without a count, the soonest.
+        #expect(HealthStore.retryAfter(fields(["x-ratelimit-reset-requests": "2s", "x-ratelimit-reset-tokens": "1m"]), now: now) == .seconds(2))
+        #expect(HealthStore.retryAfter(fields([
+            "anthropic-ratelimit-tokens-remaining": "0", "anthropic-ratelimit-tokens-reset": "1994-11-06T08:49:07Z",
+        ]), now: now) == .seconds(30))
+        #expect(HealthStore.retryAfter(fields(["x-ratelimit-reset": "784111747000"]), now: now) == .seconds(30))
+        #expect(HealthStore.retryAfter(fields(["x-ratelimit-reset": "784111747"]), now: now) == .seconds(30))
+        #expect(HealthStore.retryAfter(fields([:]), now: now) == nil)
+    }
+
+    @Test func aRateLimitResetHeaderSetsTheCooldown() async throws {
+        let upstream = MockUpstream([
+            { _ in
+                reply(status: .tooManyRequests, headers: [HTTPField.Name("x-ratelimit-reset-requests")!: "2m0s"], #"{"error":{"message":"busy"}}"#)
+            },
+            { _ in reply(fixture("Chat/responses/text.json")) },
+        ])
+        let gateway = makeGateway(upstream, keys: keys)
+        try await makeApp(gateway).test(.router) { client in
+            _ = try await client.post("/v1/chat/completions", ClientRequest.chat(model: "x"))
+        }
+        let health = gateway.health.snapshot()
+        let until = try #require(health.cooldowns[keyScope("k1")])
+        #expect(until - health.now > .seconds(100) && until - health.now <= .seconds(120))
     }
 
     @Test func timeoutsCanBeTurnedOff() throws {
