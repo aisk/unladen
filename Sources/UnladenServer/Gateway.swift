@@ -189,7 +189,7 @@ struct Gateway: Sendable {
                 switch outcome {
                 case .reply(let served):
                     if let ticket {
-                        let lifetime = ConversationContext.cacheLifetime(request, provider: served.candidate.target.provider)
+                        let lifetime = ConversationContext.cacheLifetime(request, at: served.candidate.target)
                         placements.answering(served.candidate.reference, estimate: estimate, lifetime: lifetime, for: ticket)
                     }
                 case .failure:

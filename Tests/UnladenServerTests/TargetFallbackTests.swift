@@ -236,6 +236,23 @@ private let session: HTTPFields = [HTTPField.Name("x-session-id")!: "s-1"]
         #expect(placements.placement(for: "c")?.reportedInput == 5200)
     }
 
+    @Test func hourLongCachesAreKnownUnderAnyProviderName() throws {
+        let loaded = try ConfigFile.parse(#"""
+        { "accounts": {
+            "ds-work": { "preset": "deepseek", "key": "sk-1" },
+            "ds-relay": { "endpoints": { "chat": "https://api.deepseek.com/v1" }, "key": "sk-2" },
+            "elsewhere": { "endpoints": { "chat": "https://llm.example.com/v1" }, "key": "sk-3" },
+        } }
+        """#) { _ in nil }
+        let registry = loaded.gateway.registry
+        #expect(ConversationContext.cachesForAnHour(try registry.resolve("deepseek/deepseek-chat")))
+        #expect(ConversationContext.cachesForAnHour(try registry.resolve("ds-work/deepseek-chat")))
+        #expect(ConversationContext.cachesForAnHour(try registry.resolve("ds-relay/deepseek-chat")))
+        #expect(ConversationContext.cachesForAnHour(try registry.resolve("chatgpt/gpt-5")))
+        #expect(!ConversationContext.cachesForAnHour(try registry.resolve("elsewhere/deepseek-chat")))
+        #expect(!ConversationContext.cachesForAnHour(try registry.resolve("anthropic/claude-sonnet-4-5")))
+    }
+
     @Test func aConversationTakenUpAfterAWeekendIsStillPlaced() {
         let placements = Placements()
         placements.answering(primary, estimate: 100_000, for: placements.ticket(for: "c"))

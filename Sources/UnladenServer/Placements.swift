@@ -28,7 +28,7 @@ struct Placement: Sendable, Equatable {
     /// The request it answered (``Placements/Ticket/request``).
     var request = 0
     /// How long its prompt cache lives unread
-    /// (``ConversationContext/cacheLifetime(_:provider:)``).
+    /// (``ConversationContext/cacheLifetime(_:at:)``).
     var lifetime: Duration = .seconds(300)
 }
 
@@ -161,7 +161,7 @@ struct KeptPlace: Sendable, Equatable {
     /// is still a candidate, else the first.
     ///
     /// Not kept: a new conversation, and one whose cache at its target has
-    /// gone cold (``ConversationContext/cacheLifetime(_:provider:)``),
+    /// gone cold (``ConversationContext/cacheLifetime(_:at:)``),
     /// which have nothing to lose; nor one that builds on a stored reply
     /// without a placement, as which target keeps that reply is not known.
     /// `estimate` is ``ConversationContext/estimatedTokens(_:)`` of `request`.
@@ -176,11 +176,11 @@ struct KeptPlace: Sendable, Equatable {
         let storedReply = ConversationContext.buildsOnStoredReply(request)
         // A place that is no candidate any more is no place.
         let placed = placement.flatMap { placement in
-            candidates.first { $0.reference == placement.reference }.map { (placement, $0.target.provider) }
+            candidates.first { $0.reference == placement.reference }.map { (placement, $0.target) }
         }
         if storedReply, placed == nil { return nil }
-        if !storedReply, let (placement, provider) = placed,
-           placement.at + ConversationContext.cacheLifetime(request, provider: provider) < now
+        if !storedReply, let (placement, target) = placed,
+           placement.at + ConversationContext.cacheLifetime(request, at: target) < now
         {
             return nil
         }
@@ -250,16 +250,20 @@ enum ConversationContext {
     /// How long a prompt cache lives unread: five minutes by default (Anthropic's
     /// and OpenAI's); an hour when the request asks for it (a `cache_control`
     /// `ttl` of `1h`, or a longer `prompt_cache_retention`) and at the
-    /// ``hourCaches``.
-    static func cacheLifetime(_ request: WireRequest, provider: String) -> Duration {
-        if hourCaches.contains(provider) || asksForLongCache(request) { return .seconds(3600) }
+    /// targets that ``cachesForAnHour(_:)``.
+    static func cacheLifetime(_ request: WireRequest, at target: ResolvedModel) -> Duration {
+        if cachesForAnHour(target) || asksForLongCache(request) { return .seconds(3600) }
         return .seconds(300)
     }
 
-    /// Providers that keep a conversation's prefix cached for an hour or
+    /// Whether `target` keeps a conversation's prefix cached for an hour or
     /// more unread: the ChatGPT backend a ChatGPT sign-in uses, and
-    /// DeepSeek, whose guide speaks of hours to days.
-    static let hourCaches: Set<String> = ["chatgpt", "deepseek"]
+    /// DeepSeek, whose guide speaks of hours to days, under whatever name
+    /// a provider calls it (its endpoints, or its host).
+    static func cachesForAnHour(_ target: ResolvedModel) -> Bool {
+        target.provider == "chatgpt" || target.endpoint.system == "deepseek"
+            || QuotaReader.host(of: target.endpoint.baseURL) == "api.deepseek.com"
+    }
 
     static func asksForLongCache(_ request: WireRequest) -> Bool {
         if let retention = request.extra["prompt_cache_retention"]?.stringValue, retention != "in_memory" { return true }
