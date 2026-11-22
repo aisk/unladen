@@ -1029,7 +1029,7 @@
                 <div class="text-danger mt-2" x-text="jsonError"></div>
               </div>
               <div class="card-footer d-flex gap-2 justify-content-end">
-                <button class="btn btn-ghost-secondary" x-show="jsonChanged()" @click="showSettings()">Undo</button>
+                <button class="btn btn-ghost-secondary" x-show="jsonChanged()" @click="resetJSON()">Undo</button>
                 <button class="btn btn-primary" :disabled="!jsonChanged() || saving" @click="saveJSON()"><i class="ti ti-device-floppy me-1"></i>Save</button>
               </div>
             </div>

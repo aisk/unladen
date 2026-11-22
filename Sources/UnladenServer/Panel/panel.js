@@ -167,6 +167,8 @@ function panel() {
     signing: null,
     settings: null,
     jsonText: '',
+    // The text the JSON editor was last filled with: it was typed in when it differs.
+    jsonShown: '',
     jsonError: '',
     activity: null,
     session: null,
@@ -745,12 +747,18 @@ function panel() {
       this.signInError = '';
       this.path = config.json.path;
       this.hash = config.json.hash;
+      // What is typed on Settings and not saved stays: the fields of
+      // Behaviour that were changed, over the file's, and the JSON as
+      // typed (see `showSettings`).
+      const before = this.model?.advanced;
+      const changed = this.settings && before ? Object.keys(this.settings).filter(f => this.settings[f] !== before[f]) : [];
+      const edited = Object.fromEntries(changed.map(f => [f, this.settings[f]]));
       const accounts = stringifyOrdered(this.original?.accounts);
       this.original = config.json.document || {};
       this.model = fromDocument(this.original);
       // A provider's list holds while its accounts do.
       if (stringifyOrdered(this.original.accounts) !== accounts) this.providerModels = {};
-      this.settings = null;
+      this.settings = changed.length ? { ...this.model.advanced, ...edited } : null;
       if (this.tab === 'settings') this.showSettings();
       await this.refreshStatus();
       this.runTry();
@@ -859,7 +867,10 @@ function panel() {
     },
     async takeFile() {
       this.conflict = null;
+      // The change that was refused goes, also from the forms of Settings.
+      this.settings = null;
       await this.load();
+      if (this.original) this.resetJSON();
     },
 
     async reloadFile() {
@@ -1559,10 +1570,15 @@ function panel() {
 
     // Settings
 
+    // Fills the forms of Settings, keeping what was typed in them.
     showSettings() {
       if (!this.model) return;
       if (!this.settings) this.settings = { ...this.model.advanced };
-      this.jsonText = stringifyOrdered(this.original, 2);
+      if (this.jsonText === this.jsonShown) this.resetJSON();
+    },
+    // The file as JSON, as it was read; what was typed is dropped.
+    resetJSON() {
+      this.jsonText = this.jsonShown = stringifyOrdered(this.original, 2);
       this.jsonError = '';
     },
     settingsChanged() { return !!this.settings && JSON.stringify(this.settings) !== JSON.stringify(this.model.advanced); },
@@ -1584,8 +1600,10 @@ function panel() {
         return;
       }
       this.jsonError = '';
-      if (await this.persist(document)) this.say('success', 'Saved and in force', '');
-      else this.jsonError = this.saveError;
+      if (await this.persist(document)) {
+        this.resetJSON();
+        this.say('success', 'Saved and in force', '');
+      } else this.jsonError = this.saveError;
     },
 
     // Helpers
