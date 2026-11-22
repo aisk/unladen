@@ -79,9 +79,8 @@ final class ModelCatalog: Sendable {
         }
         let keys = configuration.keyPools[provider]?.keys ?? []
         for endpoint in endpoints {
-            guard let target = try? configuration.registry.resolve(provider + "/models", preferring: endpoint.apiProtocol),
-                  target.endpoint == endpoint
-            else { continue }
+            // A list names no model: the endpoint with its own defaults.
+            let target = ResolvedModel(provider: provider, model: "", endpoint: endpoint, profile: endpoint.defaults)
             // `nil`: no key.
             let credentials: [UpstreamKey?] = configuration.goesWithoutKey(provider, at: endpoint) ? [nil] : keys.map(Optional.some)
             for key in credentials {
